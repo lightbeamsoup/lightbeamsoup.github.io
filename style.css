@@ -1,302 +1,77 @@
-:root {
-  color-scheme: light;
-  --paper: #f8efe2;
-  --paper-deep: #f1e2ca;
-  --ink: #20344a;
-  --muted: #566679;
-  --line: rgba(32, 52, 74, 0.12);
-  --card-shadow: 0 18px 40px rgba(132, 89, 40, 0.14);
-}
-
-* {
-  box-sizing: border-box;
-}
-
 body {
   margin: 0;
-  min-height: 100vh;
-  font-family: "Trebuchet MS", "Avenir Next", sans-serif;
-  color: var(--ink);
-  background:
-    radial-gradient(circle at top left, rgba(255, 194, 110, 0.55), transparent 28%),
-    radial-gradient(circle at top right, rgba(120, 201, 255, 0.4), transparent 24%),
-    linear-gradient(180deg, #fff8ef 0%, #f5eadc 100%);
+  font-family: "Courier New", monospace;
+  background-color: #0a0f14;
+  color: #d0d7de;
 }
 
-.page-shell {
-  width: min(1100px, calc(100% - 32px));
-  margin: 0 auto;
-  padding: 48px 0 72px;
+.container {
+  max-width: 760px;
+  margin: 100px auto;
+  padding: 20px;
 }
 
-.hero,
-.picker-panel,
-.history-panel {
-  background: rgba(255, 249, 240, 0.9);
-  border: 1px solid var(--line);
-  border-radius: 28px;
-  box-shadow: var(--card-shadow);
-}
-
-.hero {
-  padding: 32px;
-  margin-bottom: 24px;
-}
-
-.eyebrow {
-  margin: 0 0 12px;
-  font-size: 0.8rem;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: #e26d5a;
-}
-
-h1,
-h2,
-strong {
-  font-family: "Arial Rounded MT Bold", "Trebuchet MS", sans-serif;
+header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 h1 {
+  font-size: 42px;
   margin: 0;
-  font-size: clamp(2.2rem, 5vw, 4.6rem);
-  line-height: 0.96;
-  max-width: 10ch;
 }
 
-.intro,
-.section-copy {
-  color: var(--muted);
-  max-width: 64ch;
-  line-height: 1.6;
+.cursor {
+  font-size: 42px;
+  animation: blink 1s infinite;
 }
 
-.picker-panel,
-.history-panel {
-  padding: 28px;
-  margin-bottom: 24px;
+@keyframes blink {
+  50% { opacity: 0; }
 }
 
-.section-heading,
-.history-header {
-  display: flex;
-  justify-content: space-between;
-  gap: 24px;
-  align-items: end;
-  margin-bottom: 20px;
+.subtitle {
+  color: #8b949e;
+  margin: 20px 0 40px 0;
+}
+
+nav {
+  margin-bottom: 40px;
+}
+
+nav a {
+  margin-right: 20px;
+  color: #58a6ff;
+  text-decoration: none;
+}
+
+nav a:hover,
+.project a:hover {
+  text-decoration: underline;
 }
 
 h2 {
-  margin: 0 0 8px;
-  font-size: 1.7rem;
+  border-bottom: 1px solid #30363d;
+  padding-bottom: 5px;
+  margin-top: 40px;
 }
 
-.energy-grid {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 16px;
+.project {
+  margin: 20px 0;
 }
 
-.energy-card {
-  position: relative;
-  border: 0;
-  border-radius: 24px;
-  padding: 18px 16px 16px;
-  text-align: left;
-  color: var(--ink);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 12%, white), white);
-  box-shadow: inset 0 0 0 1px rgba(32, 52, 74, 0.08);
-  cursor: pointer;
-  transition: transform 180ms ease, box-shadow 180ms ease;
+.project h3 {
+  margin-bottom: 5px;
 }
 
-.energy-card:hover,
-.energy-card:focus-visible {
-  transform: translateY(-6px) rotate(-1deg);
-  box-shadow:
-    0 18px 28px rgba(32, 52, 74, 0.14),
-    inset 0 0 0 2px color-mix(in srgb, var(--accent) 55%, white);
-  outline: none;
+.project a {
+  color: #58a6ff;
+  text-decoration: none;
 }
 
-.energy-meter {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  width: 32px;
-  height: 32px;
-  display: grid;
-  place-items: center;
-  border-radius: 999px;
-  font-weight: 800;
-  background: color-mix(in srgb, var(--accent) 22%, white);
-}
-
-.energy-art {
-  display: block;
-  width: 100%;
-  aspect-ratio: 1;
-  object-fit: contain;
-  margin: 0 0 14px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.55);
-}
-
-.energy-card strong,
-.energy-card span {
-  display: block;
-}
-
-.energy-card strong {
-  margin-bottom: 4px;
-  font-size: 1rem;
-}
-
-.energy-card span:last-child {
-  color: var(--muted);
-  font-size: 0.93rem;
-}
-
-.status-row {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-  margin-top: 18px;
-}
-
-.action-row {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin-top: 16px;
-}
-
-.status-card,
-.chart-card,
-.range-filter select,
-.utility-button {
-  border: 1px solid var(--line);
-  border-radius: 20px;
-  background: var(--paper);
-}
-
-.status-card {
-  padding: 16px 18px;
-}
-
-.status-label {
-  display: block;
-  color: var(--muted);
-  font-size: 0.9rem;
-  margin-bottom: 6px;
-}
-
-.range-filter {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  color: var(--muted);
-  font-weight: 700;
-}
-
-.range-filter select {
-  padding: 10px 14px;
-  color: var(--ink);
-  font: inherit;
-}
-
-.utility-button {
-  padding: 12px 18px;
-  color: var(--ink);
-  font: inherit;
-  font-weight: 700;
-  cursor: pointer;
-  transition: transform 160ms ease, box-shadow 160ms ease;
-}
-
-.utility-button:hover,
-.utility-button:focus-visible {
-  transform: translateY(-2px);
-  box-shadow: 0 10px 18px rgba(32, 52, 74, 0.1);
-  outline: none;
-}
-
-.utility-button-accent {
-  background: #ffdfb9;
-  border-color: rgba(226, 109, 90, 0.3);
-}
-
-.chart-card {
-  position: relative;
-  min-height: 420px;
-  padding: 16px;
-}
-
-#energyChart {
-  width: 100%;
-  height: 380px;
-  display: block;
-}
-
-.chart-empty {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  color: var(--muted);
-  font-size: 1.05rem;
-}
-
-.hidden {
-  display: none;
-}
-
-.legend {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-  color: var(--muted);
-  margin-top: 14px;
-  font-size: 0.92rem;
-}
-
-@media (max-width: 920px) {
-  .energy-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .section-heading,
-  .history-header {
-    align-items: start;
-    flex-direction: column;
-  }
-}
-
-@media (max-width: 560px) {
-  .page-shell {
-    width: min(100% - 20px, 1100px);
-    padding-top: 20px;
-  }
-
-  .hero,
-  .picker-panel,
-  .history-panel {
-    border-radius: 22px;
-    padding: 20px;
-  }
-
-  .energy-grid,
-  .status-row {
-    grid-template-columns: 1fr;
-  }
-
-  #energyChart {
-    height: 280px;
-  }
-
-  .chart-card {
-    min-height: 320px;
-    padding: 10px;
-  }
+footer {
+  margin-top: 60px;
+  font-size: 12px;
+  color: #6e7681;
 }
