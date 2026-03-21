@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Task Deck</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
+      <div>
+        <p class="eyebrow">Task Deck</p>
+        <h1>Stack tasks like index cards.</h1>
+        <p class="intro">
+          Capture one-off work, chain smaller tasks into larger ones, and generate recurring tasks
+          from a simple schedule rule. Keep a local cache in the browser, then sync the full task
+          store into your own Google Drive app data space.
+        </p>
+      </div>
+      <a class="home-link" href="/">Back to home</a>
+    </section>
+
+    <section class="workspace">
+      <aside class="composer">
+        <h2>Create task</h2>
+        <form id="taskForm" class="task-form">
+          <label>
+            <span>Name</span>
+            <input id="taskName" name="name" type="text" maxlength="80" required />
+          </label>
+
+          <label>
+            <span>Details</span>
+            <textarea id="taskDetails" name="details" rows="4" maxlength="400"></textarea>
+          </label>
+
+          <div class="split">
+            <label>
+              <span>Start date</span>
+              <input id="startDate" name="startDate" type="date" />
+            </label>
+            <label>
+              <span>Due date</span>
+              <input id="dueDate" name="dueDate" type="date" />
+            </label>
+          </div>
+
+          <label>
+            <span>Length</span>
+            <select id="taskLength" name="length">
+              <option value="very-short">Very short</option>
+              <option value="short">Short</option>
+              <option value="medium" selected>Medium</option>
+              <option value="long">Long</option>
+              <option value="very-long">Very long</option>
+            </select>
+          </label>
+
+          <label>
+            <span>Depends on</span>
+            <select id="dependencies" name="dependencies" multiple size="5"></select>
+          </label>
+
+          <fieldset class="recurrence-panel">
+            <legend>Recurrence</legend>
+
+            <label>
+              <span>Pattern</span>
+              <select id="recurrenceType" name="recurrenceType">
+                <option value="none" selected>Does not repeat</option>
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly-date">Monthly on day</option>
+                <option value="monthly-weekday">Monthly on ordinal weekday</option>
+              </select>
+            </label>
+
+            <div class="split recurrence-extra" data-show-for="weekly">
+              <label>
+                <span>Every</span>
+                <input id="weeklyInterval" name="weeklyInterval" type="number" min="1" value="1" />
+              </label>
+              <label>
+                <span>Weekday</span>
+                <select id="weeklyWeekday" name="weeklyWeekday">
+                  <option value="0">Sunday</option>
+                  <option value="1">Monday</option>
+                  <option value="2">Tuesday</option>
+                  <option value="3">Wednesday</option>
+                  <option value="4">Thursday</option>
+                  <option value="5">Friday</option>
+                  <option value="6">Saturday</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="split recurrence-extra" data-show-for="monthly-date">
+              <label>
+                <span>Day of month</span>
+                <input id="monthlyDay" name="monthlyDay" type="number" min="1" max="31" value="1" />
+              </label>
+              <label>
+                <span>Every</span>
+                <input id="monthlyInterval" name="monthlyInterval" type="number" min="1" value="1" />
+              </label>
+            </div>
+
+            <div class="split recurrence-extra recurrence-ordinal" data-show-for="monthly-weekday">
+              <label>
+                <span>Ordinal</span>
+                <select id="monthlyOrdinal" name="monthlyOrdinal">
+                  <option value="first">First</option>
+                  <option value="second">Second</option>
+                  <option value="third">Third</option>
+                  <option value="fourth">Fourth</option>
+                  <option value="last">Last</option>
+                </select>
+              </label>
+              <label>
+                <span>Weekday</span>
+                <select id="monthlyWeekday" name="monthlyWeekday">
+                  <option value="0">Sunday</option>
+                  <option value="1">Monday</option>
+                  <option value="2">Tuesday</option>
+                  <option value="3">Wednesday</option>
+                  <option value="4">Thursday</option>
+                  <option value="5">Friday</option>
+                  <option value="6">Saturday</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="split recurrence-extra" data-show-for="daily weekly monthly-date monthly-weekday">
+              <label>
+                <span>End date</span>
+                <input id="recurrenceEndDate" name="recurrenceEndDate" type="date" />
+              </label>
+              <label>
+                <span>Occurrences</span>
+                <input id="recurrenceCount" name="recurrenceCount" type="number" min="1" placeholder="No limit" />
+              </label>
+            </div>
+          </fieldset>
+
+          <div class="form-actions">
+            <button type="submit" class="primary-button">Add task</button>
+            <button type="button" class="ghost-button" id="clearForm">Reset</button>
+          </div>
+        </form>
+      </aside>
+
+      <section class="board">
+        <div class="sync-panel">
+          <div>
+            <h2>Google Drive sync</h2>
+            <p id="syncStatus" class="sync-status">Local-only mode. Add your Google OAuth client ID in <code>todo/config.js</code> to enable Drive sync.</p>
+          </div>
+          <div class="sync-actions">
+            <button type="button" class="ghost-button" id="googleSignIn">Connect Google</button>
+            <button type="button" class="ghost-button" id="loadDrive">Load from Drive</button>
+            <button type="button" class="ghost-button" id="saveDrive">Save to Drive</button>
+            <button type="button" class="ghost-button" id="googleSignOut">Disconnect</button>
+          </div>
+        </div>
+
+        <div class="toolbar">
+          <div class="toolbar-group">
+            <label>
+              <span>Filter</span>
+              <select id="statusFilter">
+                <option value="all">All tasks</option>
+                <option value="open">Open</option>
+                <option value="done">Completed</option>
+                <option value="blocked">Blocked</option>
+                <option value="recurring">Recurring</option>
+              </select>
+            </label>
+
+            <label>
+              <span>Length</span>
+              <select id="lengthFilter">
+                <option value="all">All lengths</option>
+                <option value="very-short">Very short</option>
+                <option value="short">Short</option>
+                <option value="medium">Medium</option>
+                <option value="long">Long</option>
+                <option value="very-long">Very long</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="toolbar-group">
+            <label>
+              <span>Sort</span>
+              <select id="sortBy">
+                <option value="due-date">Due date</option>
+                <option value="start-date">Start date</option>
+                <option value="created-at">Created</option>
+                <option value="name">Name</option>
+                <option value="length">Length</option>
+              </select>
+            </label>
+
+            <label class="search-field">
+              <span>Search</span>
+              <input id="searchQuery" type="search" placeholder="Find a task" />
+            </label>
+          </div>
+        </div>
+
+        <div class="summary-row">
+          <div class="summary-card">
+            <span class="summary-label">Open tasks</span>
+            <strong id="openCount">0</strong>
+          </div>
+          <div class="summary-card">
+            <span class="summary-label">Completed</span>
+            <strong id="doneCount">0</strong>
+          </div>
+          <div class="summary-card">
+            <span class="summary-label">Recurring templates</span>
+            <strong id="recurringCount">0</strong>
+          </div>
+        </div>
+
+        <div id="taskGrid" class="task-grid"></div>
+        <p id="emptyState" class="empty-state">No tasks match the current filters.</p>
+      </section>
+    </section>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
