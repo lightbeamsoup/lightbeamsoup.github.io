@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 220" role="img" aria-labelledby="title desc">
+  <title id="title">Very high energy rocket</title>
+  <desc id="desc">A thrilled cartoon rocket blasting upward with pink flames.</desc>
+  <rect width="220" height="220" rx="40" fill="#ffeaf0"/>
+  <ellipse cx="111" cy="180" rx="70" ry="16" fill="#f5c5d1"/>
+  <path d="M110 36c33 18 48 50 40 96H70c-8-46 7-78 40-96z" fill="#ff6a86"/>
+  <path d="M110 36c16 10 26 26 31 48H79c5-22 15-38 31-48z" fill="#ffc1ce"/>
+  <circle cx="110" cy="93" r="19" fill="#eaf7ff" stroke="#32516b" stroke-width="5"/>
+  <path d="M70 132l-22 22 10-34z" fill="#ff8ca1"/>
+  <path d="M150 132l22 22-10-34z" fill="#ff8ca1"/>
+  <path d="M90 132v23l-12 19 20-8 12 8-12-19v-23z" fill="#ffb347"/>
+  <path d="M110 132v23l12 19-20-8-12 8 12-19v-23z" fill="#ffd166"/>
+  <circle cx="103" cy="93" r="3" fill="#32516b"/>
+  <circle cx="117" cy="93" r="3" fill="#32516b"/>
+  <path d="M102 104c5 4 11 4 16 0" fill="none" stroke="#32516b" stroke-linecap="round" stroke-width="4"/>
+</svg>

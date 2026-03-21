@@ -2,54 +2,84 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>joshcodes</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Energy Garden</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div class="container">
-
-    <header>
-      <h1>joshcodes</h1>
-      <div class="cursor">_</div>
-    </header>
-
-    <p class="subtitle">
-      systems • ai • experiments
-    </p>
-
-    <nav>
-      <a href="#projects">projects</a>
-      <a href="#about">about</a>
-      <a href="https://github.com/lightbeamsoup" target="_blank">github</a>
-    </nav>
-
-    <section id="projects">
-      <h2>projects</h2>
-
-      <div class="project">
-        <h3>llm-agent-cli</h3>
-        <p>codex-style cli using completions endpoint</p>
-      </div>
-
-      <div class="project">
-        <h3>iseps-automator</h3>
-        <p>vision-based task automation system</p>
-      </div>
-
-    </section>
-
-    <section id="about">
-      <h2>about</h2>
-      <p>
-        building tools for automation, ai workflows, and system optimization.
+  <main class="page-shell">
+    <section class="hero">
+      <p class="eyebrow">Energy Garden</p>
+      <h1>Track how charged you feel right now.</h1>
+      <p class="intro">
+        Pick the cartoon that matches your current energy. Each tap drops a timestamped entry
+        into a cookie-backed history and plots it over time.
       </p>
     </section>
 
-    <footer>
-      <p>© 2026 joshcodes.ai</p>
-    </footer>
+    <section class="picker-panel" aria-labelledby="energy-picker-title">
+      <div class="section-heading">
+        <h2 id="energy-picker-title">Choose your level</h2>
+        <p class="section-copy">Five quick moods from barely-awake to rocket-fuel.</p>
+      </div>
 
-  </div>
+      <div class="energy-grid" id="energyGrid" role="list"></div>
+
+      <div class="status-row">
+        <div class="status-card">
+          <span class="status-label">Latest check-in</span>
+          <strong id="latestEntry">No entries yet</strong>
+        </div>
+        <div class="status-card">
+          <span class="status-label">Entries stored</span>
+          <strong id="entryCount">0</strong>
+        </div>
+      </div>
+
+      <div class="action-row">
+        <button type="button" class="utility-button" id="clearHistory">Clear history</button>
+        <button type="button" class="utility-button utility-button-accent hidden" id="undoButton">
+          Undo last check-in
+        </button>
+      </div>
+    </section>
+
+    <section class="history-panel" aria-labelledby="history-title">
+      <div class="history-header">
+        <div>
+          <h2 id="history-title">Energy history</h2>
+          <p class="section-copy">Filter the timeline to spot short-term dips or longer trends.</p>
+        </div>
+
+        <label class="range-filter" for="historyRange">
+          <span>Show</span>
+          <select id="historyRange">
+            <option value="1d">Last day</option>
+            <option value="3d">Last 3 days</option>
+            <option value="7d">Last week</option>
+            <option value="30d">Last month</option>
+            <option value="all" selected>All time</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="chart-card">
+        <canvas id="energyChart" width="900" height="420" aria-label="Energy history chart"></canvas>
+        <p class="chart-empty hidden" id="chartEmpty">
+          Start logging to draw the timeline.
+        </p>
+      </div>
+
+      <div class="legend" aria-hidden="true">
+        <span>1 = very low</span>
+        <span>2 = low</span>
+        <span>3 = steady</span>
+        <span>4 = high</span>
+        <span>5 = very high</span>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
 </body>
 </html>

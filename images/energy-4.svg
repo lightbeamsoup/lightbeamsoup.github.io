@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 220" role="img" aria-labelledby="title desc">
+  <title id="title">High energy spark creature</title>
+  <desc id="desc">A lively orange spark creature bouncing with bright eyes.</desc>
+  <rect width="220" height="220" rx="40" fill="#fff0df"/>
+  <ellipse cx="111" cy="171" rx="70" ry="18" fill="#f7d1b4"/>
+  <path d="M111 38l18 34 39 5-28 27 7 39-36-18-36 18 7-39-28-27 39-5z" fill="#ffb25d" stroke="#f28c36" stroke-linejoin="round" stroke-width="6"/>
+  <circle cx="93" cy="104" r="10" fill="#fff"/>
+  <circle cx="129" cy="104" r="10" fill="#fff"/>
+  <circle cx="94" cy="105" r="4" fill="#253646"/>
+  <circle cx="130" cy="105" r="4" fill="#253646"/>
+  <path d="M95 126c10 12 21 12 31 0" fill="none" stroke="#253646" stroke-linecap="round" stroke-width="6"/>
+  <path d="M69 150c-8 7-16 10-25 10" fill="none" stroke="#f28c36" stroke-linecap="round" stroke-width="8"/>
+  <path d="M153 150c8 7 16 10 25 10" fill="none" stroke="#f28c36" stroke-linecap="round" stroke-width="8"/>
+</svg>
