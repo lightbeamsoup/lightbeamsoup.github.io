@@ -675,7 +675,7 @@ async function loadFromDrive() {
     });
 
     if (!response.ok) {
-      throw new Error(`Drive download failed (${response.status})`);
+      throw new Error(await formatGoogleError(response, "Drive download failed"));
     }
 
     const remoteStore = normalizeStore(await response.json());
@@ -704,7 +704,7 @@ async function saveToDrive() {
       });
 
       if (!response.ok) {
-        throw new Error(`Drive download failed (${response.status})`);
+        throw new Error(await formatGoogleError(response, "Drive download failed"));
       }
 
       const remoteStore = normalizeStore(await response.json());
@@ -756,7 +756,7 @@ async function findDriveFile(token) {
   );
 
   if (!response.ok) {
-    throw new Error(`Drive lookup failed (${response.status})`);
+    throw new Error(await formatGoogleError(response, "Drive lookup failed"));
   }
 
   const payload = await response.json();
@@ -793,10 +793,31 @@ async function upsertDriveFile(token, nextStore) {
   });
 
   if (!response.ok) {
-    throw new Error(`Drive upload failed (${response.status})`);
+    throw new Error(await formatGoogleError(response, "Drive upload failed"));
   }
 
   return response.json();
+}
+
+async function formatGoogleError(response, prefix) {
+  let detail = "";
+
+  try {
+    const payload = await response.clone().json();
+    const topLevel = payload?.error;
+    const first = Array.isArray(topLevel?.errors) ? topLevel.errors[0] : null;
+    const reason = first?.reason || "";
+    const message = first?.message || topLevel?.message || "";
+    detail = [reason, message].filter(Boolean).join(": ");
+  } catch {
+    try {
+      detail = (await response.text()).trim();
+    } catch {
+      detail = "";
+    }
+  }
+
+  return detail ? `${prefix} (${response.status}) - ${detail}` : `${prefix} (${response.status})`;
 }
 
 function mergeStores(localStore, remoteStore) {
