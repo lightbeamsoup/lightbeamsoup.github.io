@@ -581,7 +581,7 @@ function clearLegacyCookie() {
 
 function initGoogleIntegration() {
   if (!googleState.clientId) {
-    setSyncStatus("Local-only mode. Add your Google OAuth client ID in todo/config.js to enable Drive sync.", "info");
+    setSyncStatus("Local-only mode. Add your Google OAuth client ID in lifetree/config.js to enable Drive sync.", "info");
     updateGoogleButtons();
     return;
   }
@@ -598,7 +598,7 @@ function initGoogleIntegration() {
     callback: handleTokenResponse
   });
   googleState.ready = true;
-  setSyncStatus("Google Drive sync is ready. Connect Google to load or save your task deck.", "info");
+    setSyncStatus("Google Drive sync is ready. Connect Google to load or save your Lifetree data.", "info");
   updateGoogleButtons();
 }
 
@@ -720,7 +720,7 @@ async function saveToDrive() {
     store.driveFileId = savedFile.id;
     persistStore();
     renderAll();
-    setSyncStatus("Merged local and remote changes, then saved the task deck to Google Drive app data.", "success");
+    setSyncStatus("Merged local and remote changes, then saved the Lifetree data to Google Drive app data.", "success");
   } catch (error) {
     setSyncStatus(`Save failed: ${error.message}`, "error");
   }
@@ -865,7 +865,7 @@ function choosePreferredTask(localTask, remoteTask, localUpdatedAt, remoteUpdate
 
 function describeMergeResult(localStore, remoteStore) {
   if ((remoteStore.updatedAt || 0) > (localStore.updatedAt || 0)) {
-    return "Loaded and merged newer changes from Google Drive into the local task deck.";
+    return "Loaded and merged newer changes from Google Drive into the local Lifetree data.";
   }
 
   if ((remoteStore.updatedAt || 0) < (localStore.updatedAt || 0)) {

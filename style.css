@@ -47,7 +47,8 @@ nav a {
 }
 
 nav a:hover,
-.project a:hover {
+.project a:hover,
+footer a:hover {
   text-decoration: underline;
 }
 
@@ -74,4 +75,9 @@ footer {
   margin-top: 60px;
   font-size: 12px;
   color: #6e7681;
+}
+
+footer a {
+  color: #58a6ff;
+  text-decoration: none;
 }

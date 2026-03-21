@@ -376,6 +376,22 @@ textarea {
   display: block;
 }
 
+.page-footer {
+  display: flex;
+  gap: 16px;
+  justify-content: end;
+  padding: 16px 4px 0;
+}
+
+.page-footer a {
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.page-footer a:hover {
+  text-decoration: underline;
+}
+
 @media (max-width: 1040px) {
   .workspace {
     grid-template-columns: 1fr;
@@ -396,5 +412,9 @@ textarea {
   .summary-row,
   .split {
     grid-template-columns: 1fr;
+  }
+
+  .page-footer {
+    justify-content: start;
   }
 }
