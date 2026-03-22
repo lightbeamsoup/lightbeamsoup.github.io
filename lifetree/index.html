@@ -7,299 +7,366 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <main class="page">
-    <section class="hero">
+  <main class="page lifetree-shell">
+    <section class="dashboard-hero">
       <div>
         <p class="eyebrow">Lifetree</p>
-        <h1>Stack tasks like index cards.</h1>
+        <h1>Grow your ecosystem around a single task engine.</h1>
         <p class="intro">
-          Capture one-off work, chain smaller tasks into larger ones, and generate recurring tasks
-          from a simple schedule rule. Keep a local cache in the browser, then sync the full task
-          store into your own Google Drive app data space through the Lifetree backend.
+          The tree is the center of Lifetree. Around it live up to eight widgets, each with its own
+          focused workflow and its own owned tasks. The task desk is still the manual override where
+          you can review, edit, and organize everything directly.
         </p>
       </div>
-      <a class="home-link" href="https://www.joshcodes.ai/">Back to home</a>
+      <div class="hero-actions">
+        <button type="button" class="primary-button" id="openTaskDesk">Open Task Desk</button>
+        <a class="home-link" href="https://www.joshcodes.ai/">Back to home</a>
+      </div>
     </section>
 
-    <section class="workspace">
-      <aside class="composer">
-        <h2>Create task</h2>
-        <div id="editPanel" class="edit-panel hidden">
-          <strong id="editTitle">Editing task</strong>
-          <p id="editCopy">Changes apply to one task unless you switch to whole series.</p>
-          <label id="editScopeRow" class="hidden">
-            <span>Edit scope</span>
-            <select id="editScope">
-              <option value="single">This task only</option>
-              <option value="series">Whole series</option>
-            </select>
-          </label>
-        </div>
-        <form id="taskForm" class="task-form">
-          <label>
-            <span>Name</span>
-            <input id="taskName" name="name" type="text" maxlength="80" required />
-          </label>
+    <section class="ecosystem-stage">
+      <div class="ecosystem-ring" id="widgetOrbit">
+        <article class="widget-slot" data-slot-index="0" aria-label="Widget slot 1"></article>
+        <article class="widget-slot" data-slot-index="1" aria-label="Widget slot 2"></article>
+        <article class="widget-slot" data-slot-index="2" aria-label="Widget slot 3"></article>
+        <article class="widget-slot" data-slot-index="3" aria-label="Widget slot 4"></article>
+        <article class="widget-slot" data-slot-index="4" aria-label="Widget slot 5"></article>
+        <article class="widget-slot" data-slot-index="5" aria-label="Widget slot 6"></article>
+        <article class="widget-slot" data-slot-index="6" aria-label="Widget slot 7"></article>
+        <article class="widget-slot" data-slot-index="7" aria-label="Widget slot 8"></article>
 
-          <label>
-            <span>Details</span>
-            <textarea id="taskDetails" name="details" rows="4" maxlength="400"></textarea>
-          </label>
-
-          <div class="split">
-            <label>
-              <span>Start date</span>
-              <input id="startDate" name="startDate" type="date" />
-            </label>
-            <label>
-              <span>Due date</span>
-              <input id="dueDate" name="dueDate" type="date" />
-            </label>
+        <section class="lifetree-core">
+          <div class="tree-frame">
+            <img src="images/oak-tree-hub.svg" alt="Oak tree growing from bright grass on a white circular field" />
           </div>
+          <div class="core-copy">
+            <h2>Your Lifetree</h2>
+            <p>Progress will eventually change the tree itself. For now this hub is the stable center for the task engine and early widgets.</p>
+          </div>
+        </section>
+      </div>
+    </section>
 
-          <label>
-            <span>Time of day</span>
-            <input id="timeOfDay" name="timeOfDay" type="time" />
-          </label>
+    <section id="widgetMenu" class="widget-menu hidden">
+      <div>
+        <p class="eyebrow">Add Widget</p>
+        <h2 id="widgetMenuTitle">Choose a widget</h2>
+        <p id="widgetMenuCopy" class="sync-status">Fill this slot with one of the available Lifetree plugins.</p>
+      </div>
+      <div class="widget-menu-actions">
+        <button type="button" class="primary-button" id="addEnergyWidget">Add Energy Widget</button>
+        <button type="button" class="ghost-button" id="closeWidgetMenu">Cancel</button>
+      </div>
+    </section>
 
-          <label>
-            <span>Length</span>
-            <select id="taskLength" name="length">
-              <option value="very-short">Very short</option>
-              <option value="short">Short</option>
-              <option value="medium" selected>Medium</option>
-              <option value="long">Long</option>
-              <option value="very-long">Very long</option>
-            </select>
-          </label>
+    <footer class="shell-footer">
+      <a href="https://www.joshcodes.ai/privacy/">Privacy policy</a>
+      <a href="https://www.joshcodes.ai/">Home</a>
+    </footer>
+  </main>
 
-          <label>
-            <span>Depends on</span>
-            <select id="dependencies" name="dependencies" multiple size="5"></select>
-          </label>
+  <div id="taskDeskModal" class="task-desk-modal hidden" aria-hidden="true">
+    <div class="task-desk-backdrop" id="closeTaskDeskBackdrop"></div>
+    <section class="task-desk-panel" role="dialog" aria-modal="true" aria-labelledby="taskDeskTitle">
+      <div class="task-desk-header">
+        <div>
+          <p class="eyebrow">Task Desk</p>
+          <h2 id="taskDeskTitle">Manual control over the Lifetree backend</h2>
+          <p class="sync-status">Widgets can own tasks, but you can still inspect and edit everything here.</p>
+        </div>
+        <button type="button" class="ghost-button" id="closeTaskDesk">Close</button>
+      </div>
 
-          <fieldset class="recurrence-panel">
-            <legend>Recurrence</legend>
-
-            <label>
-              <span>Pattern</span>
-              <select id="recurrenceType" name="recurrenceType">
-                <option value="none" selected>Does not repeat</option>
-                <option value="daily">Daily</option>
-                <option value="weekly">Weekly</option>
-                <option value="monthly-date">Monthly on day</option>
-                <option value="monthly-weekday">Monthly on ordinal weekday</option>
+      <section class="workspace">
+        <aside class="composer">
+          <h2>Create task</h2>
+          <div id="editPanel" class="edit-panel hidden">
+            <strong id="editTitle">Editing task</strong>
+            <p id="editCopy">Changes apply to one task unless you switch to whole series.</p>
+            <label id="editScopeRow" class="hidden">
+              <span>Edit scope</span>
+              <select id="editScope">
+                <option value="single">This task only</option>
+                <option value="series">Whole series</option>
               </select>
             </label>
-
-            <div class="split recurrence-extra" data-show-for="weekly">
-              <label>
-                <span>Every</span>
-                <input id="weeklyInterval" name="weeklyInterval" type="number" min="1" value="1" />
-              </label>
-              <label>
-                <span>Weekday</span>
-                <select id="weeklyWeekday" name="weeklyWeekday">
-                  <option value="0">Sunday</option>
-                  <option value="1">Monday</option>
-                  <option value="2">Tuesday</option>
-                  <option value="3">Wednesday</option>
-                  <option value="4">Thursday</option>
-                  <option value="5">Friday</option>
-                  <option value="6">Saturday</option>
-                </select>
-              </label>
-            </div>
-
-            <div class="split recurrence-extra" data-show-for="monthly-date">
-              <label>
-                <span>Day of month</span>
-                <input id="monthlyDay" name="monthlyDay" type="number" min="1" max="31" value="1" />
-              </label>
-              <label>
-                <span>Every</span>
-                <input id="monthlyInterval" name="monthlyInterval" type="number" min="1" value="1" />
-              </label>
-            </div>
-
-            <div class="split recurrence-extra recurrence-ordinal" data-show-for="monthly-weekday">
-              <label>
-                <span>Ordinal</span>
-                <select id="monthlyOrdinal" name="monthlyOrdinal">
-                  <option value="first">First</option>
-                  <option value="second">Second</option>
-                  <option value="third">Third</option>
-                  <option value="fourth">Fourth</option>
-                  <option value="last">Last</option>
-                </select>
-              </label>
-              <label>
-                <span>Weekday</span>
-                <select id="monthlyWeekday" name="monthlyWeekday">
-                  <option value="0">Sunday</option>
-                  <option value="1">Monday</option>
-                  <option value="2">Tuesday</option>
-                  <option value="3">Wednesday</option>
-                  <option value="4">Thursday</option>
-                  <option value="5">Friday</option>
-                  <option value="6">Saturday</option>
-                </select>
-              </label>
-            </div>
-
-            <div class="split recurrence-extra" data-show-for="daily weekly monthly-date monthly-weekday">
-              <label>
-                <span>End date</span>
-                <input id="recurrenceEndDate" name="recurrenceEndDate" type="date" />
-              </label>
-              <label>
-                <span>Occurrences</span>
-                <input id="recurrenceCount" name="recurrenceCount" type="number" min="1" placeholder="No limit" />
-              </label>
-            </div>
-
-            <label class="recurrence-extra recurrence-toggle" data-show-for="daily weekly monthly-date monthly-weekday">
-              <input id="recurrenceForever" name="recurrenceForever" type="checkbox" />
-              <span>Repeat indefinitely</span>
-            </label>
-          </fieldset>
-
-          <div class="form-actions">
-            <button type="submit" class="primary-button" id="submitButton">Add task</button>
-            <button type="button" class="ghost-button" id="clearForm">Reset</button>
-            <button type="button" class="ghost-button hidden" id="cancelEdit">Cancel edit</button>
           </div>
-        </form>
-      </aside>
-
-      <section class="board">
-        <div class="sync-panel">
-          <div>
-            <h2>Google Drive sync</h2>
-          <p id="syncStatus" class="sync-status">Local-only mode. Configure the Lifetree backend to enable Google Drive sync.</p>
-          </div>
-          <div class="sync-actions">
-            <button type="button" class="ghost-button" id="googleSignIn">Connect Google</button>
-            <button type="button" class="ghost-button" id="loadDrive">Load from Drive</button>
-            <button type="button" class="ghost-button" id="saveDrive">Save to Drive</button>
-            <button type="button" class="ghost-button" id="googleSignOut">Disconnect</button>
-          </div>
-        </div>
-
-        <div class="toolbar">
-          <div class="toolbar-group">
+          <form id="taskForm" class="task-form">
             <label>
-              <span>Filter</span>
-              <select id="statusFilter">
-                <option value="all">All tasks</option>
-                <option value="open">Open</option>
-                <option value="done">Completed</option>
-                <option value="skipped">Skipped</option>
-                <option value="blocked">Blocked</option>
-                <option value="recurring">Recurring</option>
-              </select>
+              <span>Name</span>
+              <input id="taskName" name="name" type="text" maxlength="80" required />
             </label>
+
+            <label>
+              <span>Details</span>
+              <textarea id="taskDetails" name="details" rows="4" maxlength="400"></textarea>
+            </label>
+
+            <div class="split">
+              <label>
+                <span>Start date</span>
+                <input id="startDate" name="startDate" type="date" />
+              </label>
+              <label>
+                <span>Due date</span>
+                <input id="dueDate" name="dueDate" type="date" />
+              </label>
+            </div>
+
+            <label>
+              <span>Time of day</span>
+              <input id="timeOfDay" name="timeOfDay" type="time" />
+            </label>
+
+            <fieldset class="skip-panel">
+              <legend>Auto skip</legend>
+              <label>
+                <span>Rule</span>
+                <select id="skipRuleType" name="skipRuleType">
+                  <option value="none" selected>Do not auto-skip</option>
+                  <option value="after-due-minutes">After due time by minutes</option>
+                  <option value="end-of-day">At end of scheduled day</option>
+                </select>
+              </label>
+              <label id="skipGraceRow" class="skip-extra hidden">
+                <span>Grace minutes</span>
+                <input id="skipGraceMinutes" name="skipGraceMinutes" type="number" min="0" value="15" />
+              </label>
+            </fieldset>
 
             <label>
               <span>Length</span>
-              <select id="lengthFilter">
-                <option value="all">All lengths</option>
+              <select id="taskLength" name="length">
                 <option value="very-short">Very short</option>
                 <option value="short">Short</option>
-                <option value="medium">Medium</option>
+                <option value="medium" selected>Medium</option>
                 <option value="long">Long</option>
                 <option value="very-long">Very long</option>
               </select>
             </label>
-          </div>
 
-          <div class="toolbar-group">
             <label>
-              <span>Sort</span>
-              <select id="sortBy">
-                <option value="due-date">Due date</option>
-                <option value="start-date">Start date</option>
-                <option value="created-at">Created</option>
-                <option value="name">Name</option>
-                <option value="length">Length</option>
-              </select>
+              <span>Depends on</span>
+              <select id="dependencies" name="dependencies" multiple size="5"></select>
             </label>
 
-            <label class="search-field">
-              <span>Search</span>
-              <input id="searchQuery" type="search" placeholder="Find a task" />
-            </label>
-          </div>
-        </div>
+            <fieldset class="recurrence-panel">
+              <legend>Recurrence</legend>
 
-        <div class="summary-row">
-          <div class="summary-card">
-            <span class="summary-label">Open tasks</span>
-            <strong id="openCount">0</strong>
-          </div>
-          <div class="summary-card">
-            <span class="summary-label">Completed</span>
-            <strong id="doneCount">0</strong>
-          </div>
-          <div class="summary-card">
-            <span class="summary-label">Recurring templates</span>
-            <strong id="recurringCount">0</strong>
-          </div>
-        </div>
+              <label>
+                <span>Pattern</span>
+                <select id="recurrenceType" name="recurrenceType">
+                  <option value="none" selected>Does not repeat</option>
+                  <option value="daily">Daily</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="monthly-date">Monthly on day</option>
+                  <option value="monthly-weekday">Monthly on ordinal weekday</option>
+                </select>
+              </label>
 
-        <div id="taskGrid" class="task-grid"></div>
-        <p id="emptyState" class="empty-state">No tasks match the current filters.</p>
+              <div class="split recurrence-extra" data-show-for="weekly">
+                <label>
+                  <span>Every</span>
+                  <input id="weeklyInterval" name="weeklyInterval" type="number" min="1" value="1" />
+                </label>
+                <label>
+                  <span>Weekday</span>
+                  <select id="weeklyWeekday" name="weeklyWeekday">
+                    <option value="0">Sunday</option>
+                    <option value="1">Monday</option>
+                    <option value="2">Tuesday</option>
+                    <option value="3">Wednesday</option>
+                    <option value="4">Thursday</option>
+                    <option value="5">Friday</option>
+                    <option value="6">Saturday</option>
+                  </select>
+                </label>
+              </div>
 
-        <section class="history-panel-board">
-          <div class="history-panel-header">
-            <div>
-              <h2>Task history</h2>
-              <p class="sync-status">Review completed, skipped, and edited activity across active tasks and series.</p>
+              <div class="split recurrence-extra" data-show-for="monthly-date">
+                <label>
+                  <span>Day of month</span>
+                  <input id="monthlyDay" name="monthlyDay" type="number" min="1" max="31" value="1" />
+                </label>
+                <label>
+                  <span>Every</span>
+                  <input id="monthlyInterval" name="monthlyInterval" type="number" min="1" value="1" />
+                </label>
+              </div>
+
+              <div class="split recurrence-extra recurrence-ordinal" data-show-for="monthly-weekday">
+                <label>
+                  <span>Ordinal</span>
+                  <select id="monthlyOrdinal" name="monthlyOrdinal">
+                    <option value="first">First</option>
+                    <option value="second">Second</option>
+                    <option value="third">Third</option>
+                    <option value="fourth">Fourth</option>
+                    <option value="last">Last</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Weekday</span>
+                  <select id="monthlyWeekday" name="monthlyWeekday">
+                    <option value="0">Sunday</option>
+                    <option value="1">Monday</option>
+                    <option value="2">Tuesday</option>
+                    <option value="3">Wednesday</option>
+                    <option value="4">Thursday</option>
+                    <option value="5">Friday</option>
+                    <option value="6">Saturday</option>
+                  </select>
+                </label>
+              </div>
+
+              <div class="split recurrence-extra" data-show-for="daily weekly monthly-date monthly-weekday">
+                <label>
+                  <span>End date</span>
+                  <input id="recurrenceEndDate" name="recurrenceEndDate" type="date" />
+                </label>
+                <label>
+                  <span>Occurrences</span>
+                  <input id="recurrenceCount" name="recurrenceCount" type="number" min="1" placeholder="No limit" />
+                </label>
+              </div>
+
+              <label class="recurrence-extra recurrence-toggle" data-show-for="daily weekly monthly-date monthly-weekday">
+                <input id="recurrenceForever" name="recurrenceForever" type="checkbox" />
+                <span>Repeat indefinitely</span>
+              </label>
+            </fieldset>
+
+            <div class="form-actions">
+              <button type="submit" class="primary-button" id="submitButton">Add task</button>
+              <button type="button" class="ghost-button" id="clearForm">Reset</button>
+              <button type="button" class="ghost-button hidden" id="cancelEdit">Cancel edit</button>
             </div>
-            <div class="history-controls">
+          </form>
+        </aside>
+
+        <section class="board">
+          <div class="sync-panel">
+            <div>
+              <h2>Google Drive sync</h2>
+              <p id="syncStatus" class="sync-status">Local-only mode. Configure the Lifetree backend to enable Google Drive sync.</p>
+            </div>
+            <div class="sync-actions">
+              <button type="button" class="ghost-button" id="googleSignIn">Connect Google</button>
+              <button type="button" class="ghost-button" id="loadDrive">Load from Drive</button>
+              <button type="button" class="ghost-button" id="saveDrive">Save to Drive</button>
+              <button type="button" class="ghost-button" id="googleSignOut">Disconnect</button>
+            </div>
+          </div>
+
+          <div class="toolbar">
+            <div class="toolbar-group">
+              <label>
+                <span>Filter</span>
+                <select id="statusFilter">
+                  <option value="all">All tasks</option>
+                  <option value="open">Open</option>
+                  <option value="done">Completed</option>
+                  <option value="skipped">Skipped</option>
+                  <option value="blocked">Blocked</option>
+                  <option value="recurring">Recurring</option>
+                </select>
+              </label>
+
+              <label>
+                <span>Length</span>
+                <select id="lengthFilter">
+                  <option value="all">All lengths</option>
+                  <option value="very-short">Very short</option>
+                  <option value="short">Short</option>
+                  <option value="medium">Medium</option>
+                  <option value="long">Long</option>
+                  <option value="very-long">Very long</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="toolbar-group">
               <label>
                 <span>Sort</span>
-                <select id="historySort">
-                  <option value="newest">Newest first</option>
-                  <option value="oldest">Oldest first</option>
-                  <option value="task-name">Task name</option>
+                <select id="sortBy">
+                  <option value="due-date">Due date</option>
+                  <option value="start-date">Start date</option>
+                  <option value="created-at">Created</option>
+                  <option value="name">Name</option>
+                  <option value="length">Length</option>
                 </select>
               </label>
-              <label>
-                <span>Type</span>
-                <select id="historyFilter">
-                  <option value="all">All events</option>
-                  <option value="completed">Completed</option>
-                  <option value="skipped">Skipped</option>
-                  <option value="edited">Edited</option>
-                  <option value="reopened">Reopened</option>
-                </select>
+
+              <label class="search-field">
+                <span>Search</span>
+                <input id="searchQuery" type="search" placeholder="Find a task" />
               </label>
             </div>
           </div>
-          <div id="historyList" class="history-list"></div>
-          <p id="historyEmpty" class="empty-state">No history entries yet.</p>
+
+          <div class="summary-row">
+            <div class="summary-card">
+              <span class="summary-label">Open tasks</span>
+              <strong id="openCount">0</strong>
+            </div>
+            <div class="summary-card">
+              <span class="summary-label">Completed</span>
+              <strong id="doneCount">0</strong>
+            </div>
+            <div class="summary-card">
+              <span class="summary-label">Recurring templates</span>
+              <strong id="recurringCount">0</strong>
+            </div>
+          </div>
+
+          <div id="taskGrid" class="task-grid"></div>
+          <p id="emptyState" class="empty-state">No tasks match the current filters.</p>
+
+          <section class="history-panel-board">
+            <div class="history-panel-header">
+              <div>
+                <h2>Task history</h2>
+                <p class="sync-status">Review completed, skipped, and edited activity across active tasks and series.</p>
+              </div>
+              <div class="history-controls">
+                <label>
+                  <span>Sort</span>
+                  <select id="historySort">
+                    <option value="newest">Newest first</option>
+                    <option value="oldest">Oldest first</option>
+                    <option value="task-name">Task name</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Type</span>
+                  <select id="historyFilter">
+                    <option value="all">All events</option>
+                    <option value="completed">Completed</option>
+                    <option value="skipped">Skipped</option>
+                    <option value="edited">Edited</option>
+                    <option value="reopened">Reopened</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+            <div id="historyList" class="history-list"></div>
+            <p id="historyEmpty" class="empty-state">No history entries yet.</p>
+          </section>
+
+          <section id="developerPanel" class="developer-panel hidden">
+            <div>
+              <p class="eyebrow">Developer</p>
+              <h2>Private tools</h2>
+              <p class="sync-status">Signed in as <span id="developerEmail">developer</span>. These options are only visible for the owner account.</p>
+            </div>
+            <div class="sync-actions">
+              <button type="button" class="ghost-button" id="clearDriveData">Clear Google Drive data</button>
+            </div>
+          </section>
         </section>
       </section>
     </section>
-
-    <footer class="page-footer">
-      <section id="developerPanel" class="developer-panel hidden">
-        <div>
-          <p class="eyebrow">Developer</p>
-          <h2>Private tools</h2>
-          <p class="sync-status">Signed in as <span id="developerEmail">developer</span>. These options are only visible for the owner account.</p>
-        </div>
-        <div class="sync-actions">
-          <button type="button" class="ghost-button" id="clearDriveData">Clear Google Drive data</button>
-        </div>
-      </section>
-      <div class="page-footer-links">
-        <a href="https://www.joshcodes.ai/privacy/">Privacy policy</a>
-        <a href="https://www.joshcodes.ai/">Home</a>
-      </div>
-    </footer>
-  </main>
+  </div>
 
   <script src="config.js"></script>
   <script type="module" src="app.js"></script>

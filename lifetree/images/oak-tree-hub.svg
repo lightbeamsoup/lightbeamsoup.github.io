@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Oak tree hub</title>
+  <desc id="desc">A round white badge with grass and a stylized oak tree.</desc>
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="30%" r="70%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#f2ecdf"/>
+    </radialGradient>
+    <linearGradient id="grass" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#8fd179"/>
+      <stop offset="100%" stop-color="#5aa14a"/>
+    </linearGradient>
+    <linearGradient id="trunk" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#8e5b34"/>
+      <stop offset="100%" stop-color="#6b3f23"/>
+    </linearGradient>
+  </defs>
+
+  <circle cx="256" cy="256" r="232" fill="url(#bg)" />
+  <circle cx="256" cy="256" r="232" fill="none" stroke="#e3d8c1" stroke-width="12" />
+
+  <path d="M88 338c46-26 98-40 168-40s122 14 168 40v104H88z" fill="url(#grass)"/>
+  <path d="M192 354c26-8 50-12 64-12s38 4 64 12v26H192z" fill="#71b25f" opacity="0.45"/>
+
+  <path d="M240 342c-8-78-8-140 0-186h32c8 46 8 108 0 186z" fill="url(#trunk)"/>
+  <path d="M228 232c-28-46-48-76-78-110l18-18c34 28 60 60 82 104z" fill="#744828"/>
+  <path d="M284 222c20-40 46-76 82-112l18 18c-32 36-54 66-80 112z" fill="#744828"/>
+  <path d="M248 190c-14-34-34-68-60-98l18-14c28 28 50 62 68 102z" fill="#744828"/>
+
+  <circle cx="202" cy="168" r="58" fill="#4f8d49"/>
+  <circle cx="258" cy="120" r="66" fill="#5aa24f"/>
+  <circle cx="320" cy="170" r="62" fill="#4f944a"/>
+  <circle cx="252" cy="198" r="74" fill="#63a954"/>
+  <circle cx="164" cy="214" r="46" fill="#5aa04a"/>
+  <circle cx="352" cy="220" r="50" fill="#5ca34e"/>
+
+  <circle cx="212" cy="144" r="8" fill="#88c26d"/>
+  <circle cx="292" cy="100" r="8" fill="#92cb73"/>
+  <circle cx="340" cy="188" r="8" fill="#86bf68"/>
+  <circle cx="226" cy="214" r="8" fill="#8bc96d"/>
+</svg>

@@ -102,3 +102,102 @@ export function createArchivedSeriesRecord(template) {
     recurrence: { type: "archived-series" }
   };
 }
+
+export function taskScheduleKey(task) {
+  return task.dueDate || task.startDate || "";
+}
+
+export function compareTaskSchedule(left, right) {
+  const leftDate = taskScheduleKey(left);
+  const rightDate = taskScheduleKey(right);
+
+  if (leftDate !== rightDate) {
+    if (!leftDate) return 1;
+    if (!rightDate) return -1;
+    return leftDate.localeCompare(rightDate);
+  }
+
+  const leftTime = left.timeOfDay || "";
+  const rightTime = right.timeOfDay || "";
+  if (leftTime !== rightTime) {
+    if (!leftTime) return 1;
+    if (!rightTime) return -1;
+    return leftTime.localeCompare(rightTime);
+  }
+
+  const leftIndex = Number.isFinite(left.occurrenceIndex) ? left.occurrenceIndex : 0;
+  const rightIndex = Number.isFinite(right.occurrenceIndex) ? right.occurrenceIndex : 0;
+  if (leftIndex !== rightIndex) {
+    return leftIndex - rightIndex;
+  }
+
+  return (left.createdAt || 0) - (right.createdAt || 0);
+}
+
+export function isTaskEligibleForWidgetCompletion(task, today = toDateString(new Date())) {
+  if (!task || task.status !== "open" || task.archived) {
+    return false;
+  }
+
+  const mechanism = task.widgetCompletion?.mechanism || "";
+  if (!mechanism) {
+    return false;
+  }
+
+  const lockout = task.widgetCompletion?.lockout || "none";
+  if (lockout === "current-day") {
+    const scheduledDate = taskScheduleKey(task);
+    return !scheduledDate || scheduledDate <= today;
+  }
+
+  return true;
+}
+
+export function findNextWidgetCompletionTask(tasks, widgetId, mechanism, today = toDateString(new Date())) {
+  return [...tasks]
+    .filter((task) => task.ownerWidgetId === widgetId && task.widgetCompletion?.mechanism === mechanism)
+    .filter((task) => isTaskEligibleForWidgetCompletion(task, today))
+    .sort(compareTaskSchedule)[0] || null;
+}
+
+function buildTaskDateTime(task, fallbackTime = "23:59") {
+  const date = taskScheduleKey(task);
+  if (!date) {
+    return null;
+  }
+  const time = task.timeOfDay || fallbackTime;
+  const [hours, minutes] = time.split(":").map(Number);
+  return new Date(
+    Number(date.slice(0, 4)),
+    Number(date.slice(5, 7)) - 1,
+    Number(date.slice(8, 10)),
+    Number.isFinite(hours) ? hours : 23,
+    Number.isFinite(minutes) ? minutes : 59,
+    0,
+    0
+  );
+}
+
+export function shouldAutoSkipTask(task, now = new Date()) {
+  if (!task || task.status !== "open" || task.archived) {
+    return false;
+  }
+
+  const skipType = task.skipRule?.type || "none";
+  if (skipType === "none" || skipType === "widget-lockout") {
+    return false;
+  }
+
+  if (skipType === "end-of-day") {
+    const cutoff = buildTaskDateTime(task, "23:59");
+    return Boolean(cutoff && now > cutoff);
+  }
+
+  if (skipType === "after-due-minutes") {
+    const dueAt = buildTaskDateTime(task, "23:59");
+    const graceMinutes = Number(task.skipRule?.graceMinutes || 0);
+    return Boolean(dueAt && now.getTime() >= dueAt.getTime() + Math.max(graceMinutes, 0) * 60_000);
+  }
+
+  return false;
+}

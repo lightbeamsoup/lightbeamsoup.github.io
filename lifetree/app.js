@@ -1,10 +1,28 @@
-import { buildHistoryFeed, computeOccurrenceDate, createArchivedSeriesRecord, nthWeekdayOfMonth, toDateString } from "./logic.js";
+import {
+  buildHistoryFeed,
+  computeOccurrenceDate,
+  createArchivedSeriesRecord,
+  findNextWidgetCompletionTask,
+  nthWeekdayOfMonth,
+  shouldAutoSkipTask,
+  toDateString
+} from "./logic.js";
 
 const LOCAL_STORE_KEY = "task_deck_store_v2";
 const LEGACY_COOKIE_NAME = "task_deck_store";
-const MAX_TASKS = 180;
+const MAX_TASKS = 3000;
 const MAX_ROLLING_SERIES_INSTANCES = 100;
+const MAX_WIDGETS = 8;
 const DEV_EMAIL = "jbkallman@gmail.com";
+const ENERGY_WIDGET_TYPE = "energy";
+const DEFAULT_ENERGY_REMINDER_TIMES = ["07:00", "12:00", "19:00"];
+const ENERGY_LEVELS = [
+  { level: 1, label: "Very low", icon: "../energy/images/energy-1.svg" },
+  { level: 2, label: "Low", icon: "../energy/images/energy-2.svg" },
+  { level: 3, label: "Steady", icon: "../energy/images/energy-3.svg" },
+  { level: 4, label: "High", icon: "../energy/images/energy-4.svg" },
+  { level: 5, label: "Very high", icon: "../energy/images/energy-5.svg" }
+];
 
 const LENGTH_ORDER = {
   "very-short": 1,
@@ -27,6 +45,16 @@ const appConfig = window.TASK_DECK_CONFIG || {};
 const API_BASE = resolveApiBase(appConfig.apiBase || "");
 const FETCH_CREDENTIALS = API_BASE && API_BASE !== window.location.origin ? "include" : "same-origin";
 
+const taskDeskModal = document.getElementById("taskDeskModal");
+const openTaskDeskButton = document.getElementById("openTaskDesk");
+const closeTaskDeskButton = document.getElementById("closeTaskDesk");
+const closeTaskDeskBackdrop = document.getElementById("closeTaskDeskBackdrop");
+const widgetSlots = Array.from(document.querySelectorAll(".widget-slot"));
+const widgetMenu = document.getElementById("widgetMenu");
+const widgetMenuTitle = document.getElementById("widgetMenuTitle");
+const widgetMenuCopy = document.getElementById("widgetMenuCopy");
+const addEnergyWidgetButton = document.getElementById("addEnergyWidget");
+const closeWidgetMenuButton = document.getElementById("closeWidgetMenu");
 const form = document.getElementById("taskForm");
 const submitButton = document.getElementById("submitButton");
 const cancelEditButton = document.getElementById("cancelEdit");
@@ -41,6 +69,9 @@ const taskDetailsInput = document.getElementById("taskDetails");
 const startDateInput = document.getElementById("startDate");
 const dueDateInput = document.getElementById("dueDate");
 const timeOfDayInput = document.getElementById("timeOfDay");
+const skipRuleTypeInput = document.getElementById("skipRuleType");
+const skipGraceMinutesInput = document.getElementById("skipGraceMinutes");
+const skipGraceRow = document.getElementById("skipGraceRow");
 const taskLengthInput = document.getElementById("taskLength");
 const dependenciesSelect = document.getElementById("dependencies");
 const recurrenceType = document.getElementById("recurrenceType");
@@ -78,13 +109,29 @@ const editState = {
   scope: "single"
 };
 
+const widgetMenuState = {
+  slotIndex: null
+};
+
 let store = loadStore();
+ensureWidgetIntegrity();
 reconcileRecurringSeries();
+ensureWidgetTasks();
 
 renderAll();
 updateRecurrenceVisibility();
+updateSkipVisibility();
 refreshAuthStatus();
 
+openTaskDeskButton.addEventListener("click", openTaskDesk);
+closeTaskDeskButton.addEventListener("click", closeTaskDesk);
+closeTaskDeskBackdrop.addEventListener("click", closeTaskDesk);
+closeWidgetMenuButton.addEventListener("click", closeWidgetMenu);
+addEnergyWidgetButton.addEventListener("click", addEnergyWidgetToSelectedSlot);
+widgetSlots.forEach((slot) => {
+  slot.addEventListener("click", handleWidgetSlotClick);
+});
+document.addEventListener("keydown", handleGlobalKeydown);
 form.addEventListener("submit", handleSubmit);
 clearFormButton.addEventListener("click", resetComposer);
 cancelEditButton.addEventListener("click", clearEditState);
@@ -94,6 +141,7 @@ editScope.addEventListener("change", () => {
 });
 recurrenceType.addEventListener("change", updateRecurrenceVisibility);
 recurrenceForeverInput.addEventListener("change", updateRecurrenceVisibility);
+skipRuleTypeInput.addEventListener("change", updateSkipVisibility);
 statusFilter.addEventListener("change", renderTaskGrid);
 lengthFilter.addEventListener("change", renderTaskGrid);
 sortBy.addEventListener("change", renderTaskGrid);
@@ -105,6 +153,111 @@ googleSignOutButton.addEventListener("click", disconnectGoogle);
 loadDriveButton.addEventListener("click", loadFromDrive);
 saveDriveButton.addEventListener("click", saveToDrive);
 clearDriveDataButton.addEventListener("click", clearDriveData);
+
+function openTaskDesk() {
+  closeWidgetMenu();
+  taskDeskModal.classList.remove("hidden");
+  taskDeskModal.setAttribute("aria-hidden", "false");
+  document.body.classList.add("task-desk-open");
+}
+
+function handleGlobalKeydown(event) {
+  if (event.key !== "Escape") {
+    return;
+  }
+
+  if (!widgetMenu.classList.contains("hidden")) {
+    closeWidgetMenu();
+    return;
+  }
+
+  if (!taskDeskModal.classList.contains("hidden")) {
+    closeTaskDesk();
+  }
+}
+
+function closeTaskDesk() {
+  taskDeskModal.classList.add("hidden");
+  taskDeskModal.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("task-desk-open");
+}
+
+function handleWidgetSlotClick(event) {
+  const slot = event.currentTarget;
+  const slotIndex = Number(slot.getAttribute("data-slot-index"));
+  const actionTarget = event.target.closest("[data-widget-action]");
+
+  if (!actionTarget) {
+    if (!store.widgets.some((widget) => widget.slotIndex === slotIndex)) {
+      openWidgetMenu(slotIndex);
+    }
+    return;
+  }
+
+  const action = actionTarget.getAttribute("data-widget-action");
+  if (action === "add-widget") {
+    openWidgetMenu(slotIndex);
+    return;
+  }
+
+  if (action === "energy-vote") {
+    const widget = store.widgets.find((item) => item.slotIndex === slotIndex);
+    if (!widget || widget.type !== ENERGY_WIDGET_TYPE) {
+      return;
+    }
+    logEnergyVote(widget, Number(actionTarget.getAttribute("data-level")));
+    return;
+  }
+
+  if (action === "open-task-desk") {
+    openTaskDesk();
+  }
+}
+
+function openWidgetMenu(slotIndex) {
+  widgetMenuState.slotIndex = slotIndex;
+  widgetMenu.classList.remove("hidden");
+  widgetMenuTitle.textContent = `Choose a widget for slot ${slotIndex + 1}`;
+  widgetMenuCopy.textContent = "Start small. The Energy widget is available now, and widget types cannot be duplicated.";
+  addEnergyWidgetButton.disabled = store.widgets.some((widget) => widget.type === ENERGY_WIDGET_TYPE);
+}
+
+function closeWidgetMenu() {
+  widgetMenuState.slotIndex = null;
+  widgetMenu.classList.add("hidden");
+}
+
+function addEnergyWidgetToSelectedSlot() {
+  if (widgetMenuState.slotIndex === null) {
+    return;
+  }
+  if (store.widgets.some((widget) => widget.type === ENERGY_WIDGET_TYPE)) {
+    setSyncStatus("The Energy widget is already part of this Lifetree.", "error");
+    closeWidgetMenu();
+    return;
+  }
+
+  const widget = {
+    id: createId(),
+    type: ENERGY_WIDGET_TYPE,
+    slotIndex: widgetMenuState.slotIndex,
+    settings: {
+      reminderTimes: [...DEFAULT_ENERGY_REMINDER_TIMES]
+    },
+    data: {
+      entries: []
+    },
+    createdAt: Date.now()
+  };
+
+  store.widgets.push(widget);
+  ensureWidgetIntegrity();
+  ensureWidgetTasks();
+  persistStore();
+  renderAll();
+  closeWidgetMenu();
+  setSyncStatus("Added the Energy widget and created its default reminder tasks.", "info");
+}
 
 function handleSubmit(event) {
   event.preventDefault();
@@ -134,6 +287,10 @@ function handleSubmit(event) {
 }
 
 function buildTaskFromForm(formData, originalTask = null) {
+  const skipRule = originalTask?.skipRule?.type === "widget-lockout"
+    ? normalizeSkipRule(originalTask.skipRule)
+    : buildSkipRule(formData, originalTask?.skipRule);
+
   return {
     id: originalTask?.id || createId(),
     templateId: originalTask?.templateId || "",
@@ -146,10 +303,35 @@ function buildTaskFromForm(formData, originalTask = null) {
     length: String(formData.get("length") || "medium"),
     status: originalTask?.status || "open",
     createdAt: originalTask?.createdAt || Date.now(),
+    ownerWidgetId: originalTask?.ownerWidgetId || "",
+    ownerWidgetType: originalTask?.ownerWidgetType || "",
+    ownerTaskKey: originalTask?.ownerTaskKey || "",
+    widgetCompletion: normalizeWidgetCompletion(originalTask?.widgetCompletion),
+    skipRule,
     dependencies: Array.from(dependenciesSelect.selectedOptions).map((option) => option.value),
     recurrence: buildRecurrence(formData, originalTask?.recurrence),
     history: Array.isArray(originalTask?.history) ? originalTask.history : []
   };
+}
+
+function buildSkipRule(formData, originalSkipRule = null) {
+  const type = String(formData.get("skipRuleType") || originalSkipRule?.type || "none");
+  if (type === "none") {
+    return { type: "none" };
+  }
+
+  if (type === "after-due-minutes") {
+    return {
+      type,
+      graceMinutes: parsePositiveOrZeroNumber(formData.get("skipGraceMinutes")) ?? originalSkipRule?.graceMinutes ?? 0
+    };
+  }
+
+  if (type === "end-of-day") {
+    return { type };
+  }
+
+  return normalizeSkipRule(originalSkipRule);
 }
 
 function buildRecurrence(formData, originalRecurrence = null) {
@@ -291,6 +473,11 @@ function regenerateSeries(templateId, { preserveClosed }) {
 }
 
 function renderAll() {
+  if (applyAutoSkipRules()) {
+    reconcileRecurringSeries();
+    persistStore();
+  }
+  renderWidgetOrbit();
   renderDependencyOptions();
   renderSummary();
   renderTaskGrid();
@@ -298,6 +485,165 @@ function renderAll() {
   renderDeveloperPanel();
   syncEditPanel();
   updateGoogleButtons();
+}
+
+function renderWidgetOrbit() {
+  for (const slot of widgetSlots) {
+    const slotIndex = Number(slot.getAttribute("data-slot-index"));
+    const widget = store.widgets.find((item) => item.slotIndex === slotIndex);
+    slot.classList.remove("empty", "filled");
+
+    if (!widget) {
+      slot.classList.add("empty");
+      slot.innerHTML = `
+        <div class="plus">+</div>
+        <strong>Empty slot</strong>
+        <p>Add a Lifetree widget here.</p>
+        <button type="button" class="ghost-button" data-widget-action="add-widget">Choose widget</button>
+      `;
+      continue;
+    }
+
+    if (widget.type === ENERGY_WIDGET_TYPE) {
+      renderEnergyWidget(slot, widget);
+      continue;
+    }
+
+    slot.classList.add("filled");
+    slot.innerHTML = `
+      <div class="widget-slot-header">
+        <h3>Unknown widget</h3>
+        <span class="widget-badge">Stub</span>
+      </div>
+      <p>This widget type is not rendered yet.</p>
+    `;
+  }
+}
+
+function renderEnergyWidget(slot, widget) {
+  const latest = widget.data.entries[widget.data.entries.length - 1] || null;
+  const reminderSummary = widget.settings.reminderTimes.join(", ");
+  slot.classList.add("filled");
+  slot.innerHTML = `
+    <div class="widget-slot-header">
+      <div>
+        <h3>Energy</h3>
+        <p>Track your current energy and feed the task system from the widget layer.</p>
+      </div>
+      <span class="widget-badge">Live</span>
+    </div>
+    <div class="energy-widget-levels">
+      ${ENERGY_LEVELS.map((item) => `
+        <button type="button" class="energy-widget-level" data-widget-action="energy-vote" data-level="${item.level}">
+          <img src="${item.icon}" alt="${item.label}" />
+          <span>${item.level}</span>
+        </button>
+      `).join("")}
+    </div>
+    <p>Latest vote: ${latest ? `${latest.level}/5 at ${formatDateTime(latest.at)}` : "none yet"}</p>
+    <p>Reminder tasks: ${escapeHtml(reminderSummary)}</p>
+    <button type="button" class="ghost-button" data-widget-action="open-task-desk">Open tasks</button>
+  `;
+}
+
+function logEnergyVote(widget, level) {
+  if (!ENERGY_LEVELS.some((item) => item.level === level)) {
+    return;
+  }
+
+  const entryTime = Date.now();
+  widget.data.entries.push({ level, at: entryTime });
+  if (widget.data.entries.length > 400) {
+    widget.data.entries = widget.data.entries.slice(-400);
+  }
+  applyAutoSkipRules(new Date(entryTime));
+  const completedTask = completeNextTaskFromWidget(widget, "energy-vote", entryTime);
+  reconcileRecurringSeries();
+  persistStore();
+  renderAll();
+  setSyncStatus(
+    completedTask
+      ? `Logged an energy vote of ${level}/5 and completed ${completedTask.name}.`
+      : `Logged an energy vote of ${level}/5. No eligible Energy reminder task was due today.`,
+    "info"
+  );
+}
+
+function completeNextTaskFromWidget(widget, mechanism, at = Date.now()) {
+  const nextTask = findNextWidgetCompletionTask(
+    store.tasks.filter((task) => !isBlocked(task)),
+    widget.id,
+    mechanism,
+    toDateString(new Date(at))
+  );
+  if (!nextTask) {
+    return null;
+  }
+
+  nextTask.status = "done";
+  pushHistory(nextTask, "completed");
+  return nextTask;
+}
+
+function applyAutoSkipRules(now = new Date()) {
+  let changed = false;
+
+  for (const task of store.tasks) {
+    if (shouldSkipTask(task, now)) {
+      task.status = "skipped";
+      pushHistory(task, "skipped");
+      changed = true;
+    }
+  }
+
+  return changed;
+}
+
+function shouldSkipTask(task, now = new Date()) {
+  if (shouldAutoSkipTask(task, now)) {
+    return true;
+  }
+
+  if (task.skipRule?.type === "widget-lockout") {
+    return shouldSkipWidgetLockoutTask(task, now);
+  }
+
+  return false;
+}
+
+function shouldSkipWidgetLockoutTask(task, now = new Date()) {
+  if (task.skipRule?.policy === "energy-next-window") {
+    return shouldSkipEnergyWindowTask(task, now);
+  }
+  return false;
+}
+
+function shouldSkipEnergyWindowTask(task, now = new Date()) {
+  const scheduledDate = task.dueDate || task.startDate || "";
+  if (!scheduledDate) {
+    return false;
+  }
+
+  const today = toDateString(now);
+  if (scheduledDate < today) {
+    return true;
+  }
+  if (scheduledDate > today) {
+    return false;
+  }
+
+  const widget = store.widgets.find((item) => item.id === task.ownerWidgetId && item.type === ENERGY_WIDGET_TYPE);
+  if (!widget) {
+    return false;
+  }
+
+  const reminderIndex = Number(task.ownerTaskKey.split("-").pop() || "-1");
+  const nextReminderTime = normalizeReminderTimes(widget.settings.reminderTimes)[reminderIndex + 1];
+  if (!nextReminderTime) {
+    return false;
+  }
+
+  return currentTimeString(now) >= nextReminderTime;
 }
 
 function renderDependencyOptions() {
@@ -346,6 +692,7 @@ function renderTaskGrid() {
       <div class="chip-row">
         <span class="task-chip length-${cardData.task.length}">${humanizeLength(cardData.task.length)}</span>
         <span class="task-chip">${escapeHtml(statusLabel(cardData.status))}</span>
+        ${cardData.task.ownerWidgetType ? `<span class="task-chip">${escapeHtml(ownerWidgetLabel(cardData.task))}</span>` : ""}
         ${cardData.kind === "series" ? `<span class="task-chip">${escapeHtml(describeRecurrence(cardData.template.recurrence))}</span>` : ""}
       </div>
       <div class="task-meta">
@@ -461,7 +808,7 @@ function filterCards(cards) {
     if (!query) {
       return true;
     }
-    return `${card.displayName} ${card.task.details}`.toLowerCase().includes(query);
+    return `${card.displayName} ${card.task.details} ${ownerWidgetLabel(card.task)}`.toLowerCase().includes(query);
   });
 }
 
@@ -518,6 +865,7 @@ function handleTaskAction(event) {
     return;
   }
 
+  reconcileRecurringSeries();
   persistStore();
   renderAll();
   setSyncStatus("Saved locally. Sync to Drive when ready.", "info");
@@ -580,9 +928,16 @@ function beginEdit(task, scope) {
   Array.from(dependenciesSelect.options).forEach((option) => {
     option.selected = dependencySet.has(option.value);
   });
+  applySkipRuleToForm(target.skipRule);
   applyRecurrenceToForm(scope === "series" ? target.recurrence : { type: "none" });
+  updateSkipVisibility();
   updateRecurrenceVisibility();
   syncEditPanel();
+}
+
+function applySkipRuleToForm(skipRule) {
+  skipRuleTypeInput.value = skipRule?.type === "widget-lockout" ? "none" : (skipRule?.type || "none");
+  skipGraceMinutesInput.value = skipRule?.graceMinutes ?? 15;
 }
 
 function applyRecurrenceToForm(recurrence) {
@@ -627,6 +982,7 @@ function resetComposer() {
   form.reset();
   recurrenceForeverInput.checked = false;
   updateRecurrenceVisibility();
+  updateSkipVisibility();
   Array.from(dependenciesSelect.options).forEach((option) => {
     option.selected = false;
   });
@@ -735,6 +1091,13 @@ function renderDependencies(task) {
   return `Depends on: ${escapeHtml(names.join(", "))}`;
 }
 
+function ownerWidgetLabel(task) {
+  if (task.ownerWidgetType === ENERGY_WIDGET_TYPE) {
+    return "Energy widget";
+  }
+  return "";
+}
+
 function describeCompletionGate(task) {
   if (!task.dependencies || task.dependencies.length === 0) {
     if (task.status === "done") {
@@ -783,6 +1146,15 @@ function updateRecurrenceVisibility() {
   document.getElementById("recurrenceCount").disabled = !recurring || recurrenceForeverInput.checked;
 }
 
+function updateSkipVisibility() {
+  const value = skipRuleTypeInput.value;
+  const editingTask = editState.taskId ? store.tasks.find((task) => task.id === editState.taskId) : null;
+  const widgetManaged = editingTask?.skipRule?.type === "widget-lockout";
+  skipGraceRow.classList.toggle("hidden", value !== "after-due-minutes");
+  skipGraceMinutesInput.disabled = value !== "after-due-minutes" || widgetManaged;
+  skipRuleTypeInput.disabled = widgetManaged;
+}
+
 function loadStore() {
   const local = loadLocalStore();
   if (local) {
@@ -828,10 +1200,11 @@ function loadLegacyCookieStore() {
 function normalizeStore(input) {
   const tasks = Array.isArray(input.tasks) ? input.tasks.map(normalizeTask).slice(0, MAX_TASKS) : [];
   return {
-    version: 4,
+    version: 5,
     updatedAt: typeof input.updatedAt === "number" ? input.updatedAt : Date.now(),
     driveFileId: typeof input.driveFileId === "string" ? input.driveFileId : "",
     tasks,
+    widgets: normalizeWidgets(input.widgets),
     deletedTaskIds: normalizeDeletedIds(input.deletedTaskIds),
     deletedSeriesIds: normalizeDeletedIds(input.deletedSeriesIds)
   };
@@ -850,6 +1223,11 @@ function normalizeTask(task) {
     length: LENGTH_ORDER[task.length] ? task.length : "medium",
     status: normalizeStatus(task),
     createdAt: typeof task.createdAt === "number" ? task.createdAt : Date.now(),
+    ownerWidgetId: typeof task.ownerWidgetId === "string" ? task.ownerWidgetId : "",
+    ownerWidgetType: typeof task.ownerWidgetType === "string" ? task.ownerWidgetType : "",
+    ownerTaskKey: typeof task.ownerTaskKey === "string" ? task.ownerTaskKey : "",
+    widgetCompletion: normalizeWidgetCompletion(task.widgetCompletion),
+    skipRule: normalizeSkipRule(task.skipRule),
     dependencies: Array.isArray(task.dependencies) ? task.dependencies.filter((id) => typeof id === "string") : [],
     recurrence: normalizeRecurrence(task.recurrence),
     archived: task.archived === true,
@@ -897,10 +1275,11 @@ function persistLocalStore(nextStore) {
 
 function createEmptyStore() {
   return {
-    version: 4,
+    version: 5,
     updatedAt: Date.now(),
     driveFileId: "",
     tasks: [],
+    widgets: [],
     deletedTaskIds: [],
     deletedSeriesIds: []
   };
@@ -975,6 +1354,8 @@ async function loadFromDrive() {
       );
       if (keepLocalChanges) {
         store = mergeStores(store, remoteStore);
+        ensureWidgetIntegrity();
+        ensureWidgetTasks();
         reconcileRecurringSeries();
         persistStore();
         renderAll();
@@ -983,6 +1364,8 @@ async function loadFromDrive() {
       }
 
       store = remoteStore;
+      ensureWidgetIntegrity();
+      ensureWidgetTasks();
       reconcileRecurringSeries();
       persistStore();
       renderAll();
@@ -991,6 +1374,8 @@ async function loadFromDrive() {
     }
 
     store = mergeStores(store, remoteStore);
+    ensureWidgetIntegrity();
+    ensureWidgetTasks();
     reconcileRecurringSeries();
     persistStore();
     renderAll();
@@ -1012,6 +1397,8 @@ async function saveToDrive() {
       const remoteStore = normalizeStore(remotePayload.payload);
       remoteStore.driveFileId = remotePayload.fileId || "";
       store = mergeStores(store, remoteStore);
+      ensureWidgetIntegrity();
+      ensureWidgetTasks();
       reconcileRecurringSeries();
       persistStore();
       renderAll();
@@ -1053,10 +1440,11 @@ function mergeStores(localStore, remoteStore) {
     mergedById.set(task.id, choosePreferredTask(task, existing, localStore.updatedAt, remoteStore.updatedAt));
   }
   return {
-    version: 4,
+    version: 5,
     updatedAt: Math.max(localStore.updatedAt || 0, remoteStore.updatedAt || 0, Date.now()),
     driveFileId: remoteStore.driveFileId || localStore.driveFileId || "",
     tasks: Array.from(mergedById.values()).sort((a, b) => b.createdAt - a.createdAt).slice(0, MAX_TASKS),
+    widgets: mergeWidgets(localStore.widgets, remoteStore.widgets),
     deletedTaskIds,
     deletedSeriesIds
   };
@@ -1169,8 +1557,17 @@ function parsePositiveNumber(value) {
   return Number.isFinite(number) && number > 0 ? number : null;
 }
 
+function parsePositiveOrZeroNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : null;
+}
+
 function todayString() {
   return toDateString(new Date());
+}
+
+function currentTimeString(date = new Date()) {
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
 }
 
 function formatDate(value) {
@@ -1184,6 +1581,150 @@ function formatDateTime(value) {
     hour: "numeric",
     minute: "2-digit"
   });
+}
+
+function normalizeWidgets(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const seenTypes = new Set();
+  const widgets = [];
+
+  for (const widget of value) {
+    const normalized = normalizeWidget(widget);
+    if (!normalized) {
+      continue;
+    }
+    if (seenTypes.has(normalized.type)) {
+      continue;
+    }
+    seenTypes.add(normalized.type);
+    widgets.push(normalized);
+    if (widgets.length >= MAX_WIDGETS) {
+      break;
+    }
+  }
+
+  return widgets;
+}
+
+function normalizeWidgetCompletion(value) {
+  if (!value || typeof value !== "object") {
+    return { mechanism: "", lockout: "none" };
+  }
+  return {
+    mechanism: typeof value.mechanism === "string" ? value.mechanism : "",
+    lockout: typeof value.lockout === "string" ? value.lockout : "none"
+  };
+}
+
+function normalizeSkipRule(value) {
+  if (!value || typeof value !== "object") {
+    return { type: "none" };
+  }
+
+  if (value.type === "after-due-minutes") {
+    return {
+      type: value.type,
+      graceMinutes: parsePositiveOrZeroNumber(value.graceMinutes) ?? 0
+    };
+  }
+
+  if (value.type === "end-of-day") {
+    return { type: value.type };
+  }
+
+  if (value.type === "widget-lockout") {
+    return {
+      type: value.type,
+      policy: typeof value.policy === "string" ? value.policy : ""
+    };
+  }
+
+  return { type: "none" };
+}
+
+function normalizeWidget(widget) {
+  if (!widget || typeof widget !== "object") {
+    return null;
+  }
+
+  if (widget.type === ENERGY_WIDGET_TYPE) {
+    return {
+      id: typeof widget.id === "string" ? widget.id : createId(),
+      type: ENERGY_WIDGET_TYPE,
+      slotIndex: normalizeSlotIndex(widget.slotIndex),
+      settings: {
+        reminderTimes: normalizeReminderTimes(widget.settings?.reminderTimes)
+      },
+      data: {
+        entries: normalizeEnergyEntries(widget.data?.entries)
+      },
+      createdAt: typeof widget.createdAt === "number" ? widget.createdAt : Date.now()
+    };
+  }
+
+  return null;
+}
+
+function normalizeSlotIndex(value) {
+  const number = Number(value);
+  if (Number.isInteger(number) && number >= 0 && number < MAX_WIDGETS) {
+    return number;
+  }
+  return 0;
+}
+
+function normalizeReminderTimes(value) {
+  if (!Array.isArray(value)) {
+    return [...DEFAULT_ENERGY_REMINDER_TIMES];
+  }
+  const normalized = value
+    .filter((item) => typeof item === "string" && /^\d{2}:\d{2}$/.test(item))
+    .slice(0, 3);
+  return normalized.length > 0 ? normalized : [...DEFAULT_ENERGY_REMINDER_TIMES];
+}
+
+function normalizeEnergyEntries(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((item) => Number.isInteger(item?.level) && typeof item?.at === "number")
+    .slice(-400);
+}
+
+function mergeWidgets(localWidgets = [], remoteWidgets = []) {
+  const mergedByType = new Map();
+
+  for (const widget of normalizeWidgets(remoteWidgets)) {
+    mergedByType.set(widget.type, widget);
+  }
+  for (const widget of normalizeWidgets(localWidgets)) {
+    const existing = mergedByType.get(widget.type);
+    if (!existing) {
+      mergedByType.set(widget.type, widget);
+      continue;
+    }
+    mergedByType.set(widget.type, choosePreferredWidget(widget, existing));
+  }
+
+  return Array.from(mergedByType.values()).slice(0, MAX_WIDGETS);
+}
+
+function choosePreferredWidget(localWidget, remoteWidget) {
+  const localLatest = getWidgetUpdatedAt(localWidget);
+  const remoteLatest = getWidgetUpdatedAt(remoteWidget);
+  return localLatest >= remoteLatest ? localWidget : remoteWidget;
+}
+
+function getWidgetUpdatedAt(widget) {
+  if (widget.type === ENERGY_WIDGET_TYPE) {
+    const latestEntry = widget.data.entries[widget.data.entries.length - 1];
+    return latestEntry?.at || widget.createdAt || 0;
+  }
+  return widget.createdAt || 0;
 }
 
 function normalizeDeletedIds(value) {
@@ -1221,6 +1762,92 @@ function rememberDeletedSeries(templateId) {
   store.deletedSeriesIds = unionIds(store.deletedSeriesIds, [templateId]);
 }
 
+function ensureWidgetIntegrity() {
+  store.widgets = normalizeWidgets(store.widgets).map((widget, index, widgets) => {
+    const occupiedSlots = new Set(widgets.slice(0, index).map((item) => item.slotIndex));
+    if (occupiedSlots.has(widget.slotIndex)) {
+      return {
+        ...widget,
+        slotIndex: findFirstOpenSlot(occupiedSlots)
+      };
+    }
+    return widget;
+  });
+}
+
+function findFirstOpenSlot(occupiedSlots = new Set()) {
+  for (let index = 0; index < MAX_WIDGETS; index += 1) {
+    if (!occupiedSlots.has(index)) {
+      return index;
+    }
+  }
+  return 0;
+}
+
+function ensureWidgetTasks() {
+  for (const widget of store.widgets) {
+    if (widget.type === ENERGY_WIDGET_TYPE) {
+      ensureEnergyWidgetTasks(widget);
+    }
+  }
+}
+
+function ensureEnergyWidgetTasks(widget) {
+  const labels = ["Morning", "Midday", "Evening"];
+  const reminderTimes = normalizeReminderTimes(widget.settings.reminderTimes);
+
+  reminderTimes.forEach((time, index) => {
+    const ownerTaskKey = `energy-reminder-${index}`;
+    const existing = store.tasks.find(
+      (task) => task.ownerWidgetId === widget.id && task.ownerTaskKey === ownerTaskKey && !task.archived
+    );
+
+    if (existing) {
+      return;
+    }
+
+    const task = {
+      id: createId(),
+      templateId: "",
+      occurrenceIndex: 0,
+      name: `${labels[index]} energy check-in`,
+      details: "Created by the Energy widget. Other widgets should not edit this task.",
+      startDate: todayString(),
+      dueDate: todayString(),
+      timeOfDay: time,
+      length: "very-short",
+      status: "open",
+      createdAt: Date.now() + index,
+      ownerWidgetId: widget.id,
+      ownerWidgetType: widget.type,
+      ownerTaskKey,
+      widgetCompletion: {
+        mechanism: "energy-vote",
+        lockout: "current-day"
+      },
+      skipRule: {
+        type: "widget-lockout",
+        policy: "energy-next-window"
+      },
+      dependencies: [],
+      recurrence: {
+        type: "daily",
+        interval: 1,
+        weekday: 0,
+        day: 1,
+        ordinal: "first",
+        endDate: "",
+        count: null,
+        forever: true
+      },
+      history: []
+    };
+
+    store.tasks.unshift(task);
+    regenerateSeries(task.id, { preserveClosed: false });
+  });
+}
+
 function isInfiniteRecurrence(recurrence) {
   return Boolean(
     recurrence &&
@@ -1254,6 +1881,11 @@ function buildGeneratedInstance(template, occurrenceIndex, startDate, dueDate, e
     length: template.length,
     status: existingTask?.status || "open",
     createdAt: existingTask?.createdAt || Date.now() + occurrenceIndex,
+    ownerWidgetId: existingTask?.ownerWidgetId || template.ownerWidgetId || "",
+    ownerWidgetType: existingTask?.ownerWidgetType || template.ownerWidgetType || "",
+    ownerTaskKey: existingTask?.ownerTaskKey || template.ownerTaskKey || "",
+    widgetCompletion: normalizeWidgetCompletion(existingTask?.widgetCompletion || template.widgetCompletion),
+    skipRule: normalizeSkipRule(existingTask?.skipRule || template.skipRule),
     dependencies: [],
     recurrence: { type: "generated" },
     history: Array.isArray(existingTask?.history) ? existingTask.history : []
