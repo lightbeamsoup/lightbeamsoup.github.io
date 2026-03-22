@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Lifetree</title>
   <link rel="stylesheet" href="style.css" />
-  <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
   <main class="page">
@@ -16,7 +15,7 @@
         <p class="intro">
           Capture one-off work, chain smaller tasks into larger ones, and generate recurring tasks
           from a simple schedule rule. Keep a local cache in the browser, then sync the full task
-          store into your own Google Drive app data space.
+          store into your own Google Drive app data space through the Lifetree backend.
         </p>
       </div>
       <a class="home-link" href="/">Back to home</a>
@@ -155,7 +154,7 @@
         <div class="sync-panel">
           <div>
             <h2>Google Drive sync</h2>
-          <p id="syncStatus" class="sync-status">Local-only mode. Add your Google OAuth client ID in <code>lifetree/config.js</code> to enable Drive sync.</p>
+          <p id="syncStatus" class="sync-status">Local-only mode. Configure the Lifetree backend to enable Google Drive sync.</p>
           </div>
           <div class="sync-actions">
             <button type="button" class="ghost-button" id="googleSignIn">Connect Google</button>

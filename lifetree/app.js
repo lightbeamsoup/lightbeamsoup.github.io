@@ -1,7 +1,5 @@
 const LOCAL_STORE_KEY = "task_deck_store_v2";
 const LEGACY_COOKIE_NAME = "task_deck_store";
-const DRIVE_FILE_NAME = "task-deck-store.json";
-const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.appdata";
 const MAX_TASKS = 120;
 
 const LENGTH_ORDER = {
@@ -20,6 +18,9 @@ const ORDINAL_LABELS = {
   fourth: "fourth",
   last: "last"
 };
+
+const appConfig = window.TASK_DECK_CONFIG || {};
+const API_BASE = normalizeApiBase(appConfig.apiBase || "");
 
 const form = document.getElementById("taskForm");
 const clearFormButton = document.getElementById("clearForm");
@@ -41,24 +42,16 @@ const googleSignOutButton = document.getElementById("googleSignOut");
 const loadDriveButton = document.getElementById("loadDrive");
 const saveDriveButton = document.getElementById("saveDrive");
 
-const googleConfig = window.TASK_DECK_CONFIG || {};
-
-const googleState = {
-  clientId: typeof googleConfig.googleClientId === "string" ? googleConfig.googleClientId.trim() : "",
-  tokenClient: null,
-  accessToken: "",
-  fileId: "",
-  tokenResolver: null,
-  tokenRejecter: null,
-  ready: false
+const authState = {
+  authenticated: false,
+  user: null
 };
 
 let store = loadStore();
-googleState.fileId = store.driveFileId || "";
 
 renderAll();
 updateRecurrenceVisibility();
-bootstrapGoogleIntegration();
+refreshAuthStatus();
 
 form.addEventListener("submit", handleSubmit);
 clearFormButton.addEventListener("click", () => {
@@ -552,7 +545,6 @@ function normalizeRecurrence(recurrence) {
 
 function persistStore() {
   store.updatedAt = Date.now();
-  store.driveFileId = googleState.fileId;
   persistLocalStore(store);
 }
 
@@ -579,110 +571,72 @@ function clearLegacyCookie() {
   document.cookie = `${LEGACY_COOKIE_NAME}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Lax`;
 }
 
-function initGoogleIntegration() {
-  if (!googleState.clientId) {
-    setSyncStatus("Local-only mode. Add your Google OAuth client ID in lifetree/config.js to enable Drive sync.", "info");
-    updateGoogleButtons();
-    return;
-  }
-
-  if (!window.google?.accounts?.oauth2) {
-    setSyncStatus("Google Identity Services did not load. Refresh the page and try again.", "error");
-    updateGoogleButtons();
-    return;
-  }
-
-  googleState.tokenClient = window.google.accounts.oauth2.initTokenClient({
-    client_id: googleState.clientId,
-    scope: DRIVE_SCOPE,
-    callback: handleTokenResponse
-  });
-  googleState.ready = true;
-    setSyncStatus("Google Drive sync is ready. Connect Google to load or save your Lifetree data.", "info");
-  updateGoogleButtons();
-}
-
-function bootstrapGoogleIntegration(attempt = 0) {
-  if (!googleState.clientId) {
-    initGoogleIntegration();
-    return;
-  }
-
-  if (window.google?.accounts?.oauth2) {
-    initGoogleIntegration();
-    return;
-  }
-
-  if (attempt >= 20) {
-    setSyncStatus("Google Identity Services did not finish loading. Refresh the page and try again.", "error");
-    updateGoogleButtons();
-    return;
-  }
-
-  window.setTimeout(() => bootstrapGoogleIntegration(attempt + 1), 250);
-}
-
-function handleTokenResponse(response) {
-  if (response.error) {
-    if (googleState.tokenRejecter) {
-      googleState.tokenRejecter(new Error(response.error));
-    }
-  } else {
-    googleState.accessToken = response.access_token || "";
-    if (googleState.tokenResolver) {
-      googleState.tokenResolver(googleState.accessToken);
-    }
-  }
-
-  googleState.tokenResolver = null;
-  googleState.tokenRejecter = null;
-  updateGoogleButtons();
-}
-
-async function connectGoogle() {
+async function refreshAuthStatus() {
   try {
-    await ensureAccessToken(true);
-    setSyncStatus("Connected to Google. You can now load from Drive or save to Drive.", "success");
-  } catch (error) {
-    setSyncStatus(`Google sign-in failed: ${error.message}`, "error");
+    const response = await fetch(`${API_BASE}/api/auth/status`, {
+      credentials: "same-origin"
+    });
+    const payload = await response.json();
+    authState.authenticated = Boolean(payload.authenticated);
+    authState.user = payload.user || null;
+
+    if (authState.authenticated && authState.user?.email) {
+      setSyncStatus(`Connected as ${authState.user.email}.`, "success");
+    } else {
+      setSyncStatus("Local-only mode. Configure the Lifetree backend to enable Google Drive sync.", "info");
+    }
+  } catch {
+    authState.authenticated = false;
+    authState.user = null;
+    setSyncStatus("Backend not reachable. Start the Lifetree server to enable Google Drive sync.", "error");
   }
+
+  updateGoogleButtons();
 }
 
-function disconnectGoogle() {
-  if (window.google?.accounts?.oauth2 && googleState.accessToken) {
-    window.google.accounts.oauth2.revoke(googleState.accessToken, () => {});
-  }
+function connectGoogle() {
+  const returnTo = encodeURIComponent(window.location.pathname);
+  window.location.href = `${API_BASE}/api/auth/google/start?returnTo=${returnTo}`;
+}
 
-  googleState.accessToken = "";
-  googleState.fileId = store.driveFileId || "";
+async function disconnectGoogle() {
+  try {
+    await fetch(`${API_BASE}/api/auth/logout`, {
+      method: "POST",
+      credentials: "same-origin"
+    });
+  } catch {}
+
+  authState.authenticated = false;
+  authState.user = null;
   updateGoogleButtons();
   setSyncStatus("Disconnected. Local cache remains on this device.", "info");
 }
 
 async function loadFromDrive() {
+  if (!authState.authenticated) {
+    setSyncStatus("Connect Google first to load from Drive.", "error");
+    return;
+  }
+
   try {
-    const token = await ensureAccessToken(false);
-    const file = await findDriveFile(token);
-    if (!file) {
+    const response = await fetch(`${API_BASE}/api/lifetree/load`, {
+      credentials: "same-origin"
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || "Drive load failed");
+    }
+
+    if (!payload.found) {
       setSyncStatus("No Drive task file found yet. Save to Drive to create it.", "info");
       return;
     }
 
-    const response = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`, {
-      headers: {
-        Authorization: `Bearer ${token}`
-      }
-    });
-
-    if (!response.ok) {
-      throw new Error(await formatGoogleError(response, "Drive download failed"));
-    }
-
-    const remoteStore = normalizeStore(await response.json());
-    remoteStore.driveFileId = file.id;
+    const remoteStore = normalizeStore(payload.payload);
+    remoteStore.driveFileId = payload.fileId || "";
     const previousLocalStore = store;
     store = mergeStores(store, remoteStore);
-    googleState.fileId = file.id;
     persistStore();
     renderAll();
     setSyncStatus(describeMergeResult(previousLocalStore, remoteStore), "success");
@@ -692,132 +646,46 @@ async function loadFromDrive() {
 }
 
 async function saveToDrive() {
+  if (!authState.authenticated) {
+    setSyncStatus("Connect Google first to save to Drive.", "error");
+    return;
+  }
+
   try {
-    const token = await ensureAccessToken(false);
-    const existingFile = await findDriveFile(token);
-
-    if (existingFile) {
-      const response = await fetch(`https://www.googleapis.com/drive/v3/files/${existingFile.id}?alt=media`, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error(await formatGoogleError(response, "Drive download failed"));
-      }
-
-      const remoteStore = normalizeStore(await response.json());
-      remoteStore.driveFileId = existingFile.id;
+    const remoteResponse = await fetch(`${API_BASE}/api/lifetree/load`, {
+      credentials: "same-origin"
+    });
+    const remotePayload = await remoteResponse.json();
+    if (remoteResponse.ok && remotePayload.found) {
+      const remoteStore = normalizeStore(remotePayload.payload);
+      remoteStore.driveFileId = remotePayload.fileId || "";
       store = mergeStores(store, remoteStore);
-      googleState.fileId = existingFile.id;
       persistStore();
       renderAll();
     }
 
-    const savedFile = await upsertDriveFile(token, store);
-    googleState.fileId = savedFile.id;
-    store.driveFileId = savedFile.id;
-    persistStore();
-    renderAll();
+    const saveResponse = await fetch(`${API_BASE}/api/lifetree/save`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      credentials: "same-origin",
+      body: JSON.stringify({ payload: store })
+    });
+    const savePayload = await saveResponse.json();
+    if (!saveResponse.ok) {
+      throw new Error(savePayload.error || "Drive save failed");
+    }
+
+    if (savePayload.fileId) {
+      store.driveFileId = savePayload.fileId;
+      persistStore();
+    }
+
     setSyncStatus("Merged local and remote changes, then saved the Lifetree data to Google Drive app data.", "success");
   } catch (error) {
     setSyncStatus(`Save failed: ${error.message}`, "error");
   }
-}
-
-function ensureAccessToken(forceConsent) {
-  if (!googleState.ready || !googleState.tokenClient) {
-    return Promise.reject(new Error("Google OAuth is not configured yet"));
-  }
-
-  if (googleState.accessToken) {
-    return Promise.resolve(googleState.accessToken);
-  }
-
-  return new Promise((resolve, reject) => {
-    googleState.tokenResolver = resolve;
-    googleState.tokenRejecter = reject;
-    googleState.tokenClient.requestAccessToken({
-      prompt: forceConsent ? "consent" : ""
-    });
-  });
-}
-
-async function findDriveFile(token) {
-  const query = encodeURIComponent(`name='${DRIVE_FILE_NAME}' and trashed=false`);
-  const response = await fetch(
-    `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=${query}&fields=files(id,name,modifiedTime)`,
-    {
-      headers: {
-        Authorization: `Bearer ${token}`
-      }
-    }
-  );
-
-  if (!response.ok) {
-    throw new Error(await formatGoogleError(response, "Drive lookup failed"));
-  }
-
-  const payload = await response.json();
-  return Array.isArray(payload.files) && payload.files.length > 0 ? payload.files[0] : null;
-}
-
-async function upsertDriveFile(token, nextStore) {
-  const existing = googleState.fileId ? { id: googleState.fileId } : await findDriveFile(token);
-  const metadata = existing
-    ? { name: DRIVE_FILE_NAME, mimeType: "application/json" }
-    : { name: DRIVE_FILE_NAME, mimeType: "application/json", parents: ["appDataFolder"] };
-  const boundary = `taskdeck-${Date.now()}`;
-  const body =
-    `--${boundary}\r\n` +
-    "Content-Type: application/json; charset=UTF-8\r\n\r\n" +
-    `${JSON.stringify(metadata)}\r\n` +
-    `--${boundary}\r\n` +
-    "Content-Type: application/json; charset=UTF-8\r\n\r\n" +
-    `${JSON.stringify({ ...nextStore, driveFileId: existing?.id || "" })}\r\n` +
-    `--${boundary}--`;
-
-  const method = existing ? "PATCH" : "POST";
-  const endpoint = existing
-    ? `https://www.googleapis.com/upload/drive/v3/files/${existing.id}?uploadType=multipart&fields=id,name,modifiedTime`
-    : "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,modifiedTime";
-
-  const response = await fetch(endpoint, {
-    method,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": `multipart/related; boundary=${boundary}`
-    },
-    body
-  });
-
-  if (!response.ok) {
-    throw new Error(await formatGoogleError(response, "Drive upload failed"));
-  }
-
-  return response.json();
-}
-
-async function formatGoogleError(response, prefix) {
-  let detail = "";
-
-  try {
-    const payload = await response.clone().json();
-    const topLevel = payload?.error;
-    const first = Array.isArray(topLevel?.errors) ? topLevel.errors[0] : null;
-    const reason = first?.reason || "";
-    const message = first?.message || topLevel?.message || "";
-    detail = [reason, message].filter(Boolean).join(": ");
-  } catch {
-    try {
-      detail = (await response.text()).trim();
-    } catch {
-      detail = "";
-    }
-  }
-
-  return detail ? `${prefix} (${response.status}) - ${detail}` : `${prefix} (${response.status})`;
 }
 
 function mergeStores(localStore, remoteStore) {
@@ -837,15 +705,13 @@ function mergeStores(localStore, remoteStore) {
     mergedById.set(task.id, choosePreferredTask(task, existing, localStore.updatedAt, remoteStore.updatedAt));
   }
 
-  const mergedTasks = Array.from(mergedById.values())
-    .sort((left, right) => right.createdAt - left.createdAt)
-    .slice(0, MAX_TASKS);
-
   return {
     version: 2,
     updatedAt: Math.max(localStore.updatedAt || 0, remoteStore.updatedAt || 0, Date.now()),
     driveFileId: remoteStore.driveFileId || localStore.driveFileId || "",
-    tasks: mergedTasks
+    tasks: Array.from(mergedById.values())
+      .sort((left, right) => right.createdAt - left.createdAt)
+      .slice(0, MAX_TASKS)
   };
 }
 
@@ -854,9 +720,11 @@ function choosePreferredTask(localTask, remoteTask, localUpdatedAt, remoteUpdate
     return localUpdatedAt >= remoteUpdatedAt ? localTask : remoteTask;
   }
 
-  const localDue = localTask.dueDate || "";
-  const remoteDue = remoteTask.dueDate || "";
-  if (localTask.name !== remoteTask.name || localTask.details !== remoteTask.details || localDue !== remoteDue) {
+  if (
+    localTask.name !== remoteTask.name ||
+    localTask.details !== remoteTask.details ||
+    (localTask.dueDate || "") !== (remoteTask.dueDate || "")
+  ) {
     return localUpdatedAt >= remoteUpdatedAt ? localTask : remoteTask;
   }
 
@@ -876,18 +744,23 @@ function describeMergeResult(localStore, remoteStore) {
 }
 
 function updateGoogleButtons() {
-  const configured = Boolean(googleState.clientId);
-  const connected = Boolean(googleState.accessToken);
-
-  googleSignInButton.disabled = !configured || connected || !googleState.ready;
-  googleSignOutButton.disabled = !connected;
-  loadDriveButton.disabled = !connected;
-  saveDriveButton.disabled = !connected;
+  googleSignInButton.disabled = authState.authenticated;
+  googleSignOutButton.disabled = !authState.authenticated;
+  loadDriveButton.disabled = !authState.authenticated;
+  saveDriveButton.disabled = !authState.authenticated;
 }
 
 function setSyncStatus(message, tone) {
   syncStatus.textContent = message;
   syncStatus.dataset.tone = tone;
+}
+
+function normalizeApiBase(value) {
+  const trimmed = String(value || "").trim();
+  if (!trimmed) {
+    return "";
+  }
+  return trimmed.endsWith("/") ? trimmed.slice(0, -1) : trimmed;
 }
 
 function compareDateish(left, right) {

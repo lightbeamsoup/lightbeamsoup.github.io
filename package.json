@@ -1,0 +1,14 @@
+{
+  "name": "joshcodes-ai",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node server/app.js",
+    "dev": "node server/app.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2"
+  }
+}
