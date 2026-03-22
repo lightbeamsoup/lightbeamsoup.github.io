@@ -104,6 +104,20 @@ h1 {
   padding: 22px;
 }
 
+.edit-panel {
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px dashed rgba(37, 50, 67, 0.24);
+  background: rgba(255, 247, 234, 0.9);
+}
+
+.edit-panel p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
 .sync-panel {
   display: flex;
   justify-content: space-between;
@@ -159,6 +173,22 @@ h1 {
   gap: 6px;
   color: var(--muted);
   font-size: 0.93rem;
+}
+
+.recurrence-toggle {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 10px;
+}
+
+.recurrence-toggle input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+}
+
+.hidden {
+  display: none !important;
 }
 
 input,
@@ -276,6 +306,62 @@ textarea {
   gap: 16px;
 }
 
+.history-panel-board {
+  margin-top: 24px;
+  padding: 18px;
+  border-radius: 24px;
+  border: 1px solid var(--line);
+  background: rgba(255, 252, 247, 0.88);
+}
+
+.history-panel-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: end;
+  margin-bottom: 14px;
+}
+
+.history-controls {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.history-controls label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.history-list {
+  display: grid;
+  gap: 10px;
+}
+
+.history-entry {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: start;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: var(--paper);
+  border: 1px solid rgba(37, 50, 67, 0.08);
+}
+
+.history-entry strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.history-entry span {
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
 .task-card {
   position: relative;
   border-radius: 24px;
@@ -290,6 +376,10 @@ textarea {
 
 .task-card.done {
   opacity: 0.72;
+}
+
+.task-card.skipped {
+  opacity: 0.62;
 }
 
 .task-card.blocked::before {
@@ -307,6 +397,21 @@ textarea {
   text-transform: uppercase;
 }
 
+.task-card.skipped::before {
+  content: "skipped";
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #e7d9ff;
+  color: #6743a7;
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .task-card h3 {
   margin: 0 0 8px;
   padding-right: 70px;
@@ -315,7 +420,8 @@ textarea {
 
 .task-meta,
 .dependency-list,
-.recurrence-copy {
+.recurrence-copy,
+.history-copy {
   color: var(--muted);
   font-size: 0.92rem;
   line-height: 1.5;
@@ -355,7 +461,8 @@ textarea {
 .task-chip.length-very-long { background: #ffc0c0; }
 
 .dependency-list,
-.recurrence-copy {
+.recurrence-copy,
+.history-copy {
   margin-top: auto;
 }
 
@@ -377,10 +484,30 @@ textarea {
 }
 
 .page-footer {
+  display: grid;
+  gap: 16px;
+  padding: 16px 4px 0;
+}
+
+.developer-panel {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: start;
+  padding: 18px 20px;
+  border-radius: 24px;
+  border: 1px dashed rgba(37, 50, 67, 0.24);
+  background: rgba(255, 249, 240, 0.9);
+}
+
+.developer-panel h2 {
+  margin: 0 0 8px;
+}
+
+.page-footer-links {
   display: flex;
   gap: 16px;
   justify-content: end;
-  padding: 16px 4px 0;
 }
 
 .page-footer a {
@@ -407,11 +534,23 @@ textarea {
     flex-direction: column;
   }
 
+  .developer-panel,
+  .page-footer-links {
+    flex-direction: column;
+    align-items: start;
+  }
+
   .toolbar,
   .toolbar-group,
   .summary-row,
   .split {
     grid-template-columns: 1fr;
+  }
+
+  .history-panel-header,
+  .history-entry {
+    flex-direction: column;
+    align-items: start;
   }
 
   .page-footer {

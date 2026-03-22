@@ -8,14 +8,14 @@ import express from "express";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, "..");
-const dataDir = process.env.DATA_DIR
-  ? path.resolve(process.env.DATA_DIR)
-  : path.join(__dirname, "data");
+const defaultDataDir = path.join(__dirname, "data");
+const dataDir = resolveDataDir(process.env.DATA_DIR, defaultDataDir);
 const storePath = path.join(dataDir, "auth-store.json");
 
 const PORT = Number(process.env.PORT || 3000);
 const SESSION_COOKIE = "lifetree_session";
 const DRIVE_FILE_NAME = "task-deck-store.json";
+const DEV_EMAIL = "jbkallman@gmail.com";
 const OAUTH_SCOPES = [
   "openid",
   "email",
@@ -27,6 +27,24 @@ const app = express();
 app.set("trust proxy", 1);
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: false }));
+
+app.use((req, res, next) => {
+  const origin = String(req.headers.origin || "");
+  if (isAllowedDevOrigin(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+    res.setHeader("Vary", "Origin");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+    res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  }
+
+  if (req.method === "OPTIONS") {
+    res.status(204).end();
+    return;
+  }
+
+  next();
+});
 
 app.use((req, res, next) => {
   req.cookies = parseCookies(req.headers.cookie || "");
@@ -181,6 +199,28 @@ app.post("/api/lifetree/save", async (req, res) => {
 
     const file = await upsertDriveFile(accessToken, payload);
     res.json({ ok: true, fileId: file.id });
+  } catch (error) {
+    res.status(401).json({ error: error.message });
+  }
+});
+
+app.post("/api/lifetree/reset", async (req, res) => {
+  try {
+    const user = requireUser(req);
+    if (user.email !== DEV_EMAIL) {
+      res.status(403).json({ error: "Developer reset is restricted to the owner account." });
+      return;
+    }
+
+    const accessToken = await refreshAccessToken(user);
+    const file = await findDriveFile(accessToken);
+    if (!file) {
+      res.json({ ok: true, cleared: false });
+      return;
+    }
+
+    await deleteDriveFile(accessToken, file.id);
+    res.json({ ok: true, cleared: true });
   } catch (error) {
     res.status(401).json({ error: error.message });
   }
@@ -373,6 +413,19 @@ async function upsertDriveFile(accessToken, payload) {
   return response.json();
 }
 
+async function deleteDriveFile(accessToken, fileId) {
+  const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${accessToken}`
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(await formatGoogleError(response, "Drive delete failed"));
+  }
+}
+
 function loadStore() {
   fs.mkdirSync(dataDir, { recursive: true });
   if (!fs.existsSync(storePath)) {
@@ -414,7 +467,18 @@ function serializeCookie(name, value, options) {
 }
 
 function sanitizeReturnTo(value) {
-  return value.startsWith("/") ? value : "/lifetree/";
+  if (value.startsWith("/")) {
+    return value;
+  }
+
+  try {
+    const parsed = new URL(value);
+    if (isAllowedDevOrigin(parsed.origin) && parsed.pathname.startsWith("/")) {
+      return parsed.toString();
+    }
+  } catch {}
+
+  return "/lifetree/";
 }
 
 function shouldUseSecureCookies() {
@@ -450,6 +514,46 @@ function decryptIfPresent(value) {
 
 function getCipherKey() {
   return crypto.createHash("sha256").update(process.env.TOKEN_SECRET || "").digest();
+}
+
+function resolveDataDir(configuredDir, fallbackDir) {
+  const preferredDir = configuredDir ? path.resolve(configuredDir) : fallbackDir;
+  if (ensureDirectoryWritable(preferredDir)) {
+    return preferredDir;
+  }
+
+  if (preferredDir !== fallbackDir && ensureDirectoryWritable(fallbackDir)) {
+    console.warn(`DATA_DIR ${preferredDir} is not writable. Falling back to ${fallbackDir}.`);
+    return fallbackDir;
+  }
+
+  return preferredDir;
+}
+
+function ensureDirectoryWritable(directory) {
+  try {
+    fs.mkdirSync(directory, { recursive: true });
+    fs.accessSync(directory, fs.constants.W_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isAllowedDevOrigin(origin) {
+  if (!origin) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(origin);
+    return (
+      (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1") &&
+      parsed.protocol === "http:"
+    );
+  } catch {
+    return false;
+  }
 }
 
 async function formatGoogleError(response, prefix) {

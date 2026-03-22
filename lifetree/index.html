@@ -24,6 +24,17 @@
     <section class="workspace">
       <aside class="composer">
         <h2>Create task</h2>
+        <div id="editPanel" class="edit-panel hidden">
+          <strong id="editTitle">Editing task</strong>
+          <p id="editCopy">Changes apply to one task unless you switch to whole series.</p>
+          <label id="editScopeRow" class="hidden">
+            <span>Edit scope</span>
+            <select id="editScope">
+              <option value="single">This task only</option>
+              <option value="series">Whole series</option>
+            </select>
+          </label>
+        </div>
         <form id="taskForm" class="task-form">
           <label>
             <span>Name</span>
@@ -45,6 +56,11 @@
               <input id="dueDate" name="dueDate" type="date" />
             </label>
           </div>
+
+          <label>
+            <span>Time of day</span>
+            <input id="timeOfDay" name="timeOfDay" type="time" />
+          </label>
 
           <label>
             <span>Length</span>
@@ -141,11 +157,17 @@
                 <input id="recurrenceCount" name="recurrenceCount" type="number" min="1" placeholder="No limit" />
               </label>
             </div>
+
+            <label class="recurrence-extra recurrence-toggle" data-show-for="daily weekly monthly-date monthly-weekday">
+              <input id="recurrenceForever" name="recurrenceForever" type="checkbox" />
+              <span>Repeat indefinitely</span>
+            </label>
           </fieldset>
 
           <div class="form-actions">
-            <button type="submit" class="primary-button">Add task</button>
+            <button type="submit" class="primary-button" id="submitButton">Add task</button>
             <button type="button" class="ghost-button" id="clearForm">Reset</button>
+            <button type="button" class="ghost-button hidden" id="cancelEdit">Cancel edit</button>
           </div>
         </form>
       </aside>
@@ -172,6 +194,7 @@
                 <option value="all">All tasks</option>
                 <option value="open">Open</option>
                 <option value="done">Completed</option>
+                <option value="skipped">Skipped</option>
                 <option value="blocked">Blocked</option>
                 <option value="recurring">Recurring</option>
               </select>
@@ -226,16 +249,59 @@
 
         <div id="taskGrid" class="task-grid"></div>
         <p id="emptyState" class="empty-state">No tasks match the current filters.</p>
+
+        <section class="history-panel-board">
+          <div class="history-panel-header">
+            <div>
+              <h2>Task history</h2>
+              <p class="sync-status">Review completed, skipped, and edited activity across active tasks and series.</p>
+            </div>
+            <div class="history-controls">
+              <label>
+                <span>Sort</span>
+                <select id="historySort">
+                  <option value="newest">Newest first</option>
+                  <option value="oldest">Oldest first</option>
+                  <option value="task-name">Task name</option>
+                </select>
+              </label>
+              <label>
+                <span>Type</span>
+                <select id="historyFilter">
+                  <option value="all">All events</option>
+                  <option value="completed">Completed</option>
+                  <option value="skipped">Skipped</option>
+                  <option value="edited">Edited</option>
+                  <option value="reopened">Reopened</option>
+                </select>
+              </label>
+            </div>
+          </div>
+          <div id="historyList" class="history-list"></div>
+          <p id="historyEmpty" class="empty-state">No history entries yet.</p>
+        </section>
       </section>
     </section>
 
     <footer class="page-footer">
-      <a href="https://www.joshcodes.ai/privacy/">Privacy policy</a>
-      <a href="https://www.joshcodes.ai/">Home</a>
+      <section id="developerPanel" class="developer-panel hidden">
+        <div>
+          <p class="eyebrow">Developer</p>
+          <h2>Private tools</h2>
+          <p class="sync-status">Signed in as <span id="developerEmail">developer</span>. These options are only visible for the owner account.</p>
+        </div>
+        <div class="sync-actions">
+          <button type="button" class="ghost-button" id="clearDriveData">Clear Google Drive data</button>
+        </div>
+      </section>
+      <div class="page-footer-links">
+        <a href="https://www.joshcodes.ai/privacy/">Privacy policy</a>
+        <a href="https://www.joshcodes.ai/">Home</a>
+      </div>
     </footer>
   </main>
 
   <script src="config.js"></script>
-  <script src="app.js"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>
