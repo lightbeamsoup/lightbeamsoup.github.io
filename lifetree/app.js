@@ -13,8 +13,29 @@ import {
   toDateString
 } from "./logic.js";
 import { renderCanopyColumns } from "./modules/canopy.js";
+import { createAutosaveController } from "./modules/autosave.js";
 import { createDriveSyncController, resolveApiBase } from "./modules/driveSync.js";
+import {
+  buildTaskPointEntry as buildTaskPointEntryBase,
+  choosePreferredTreeState as choosePreferredTreeStateBase,
+  DEFAULT_MAX_TASK_POINTS,
+  defaultPointsForLength,
+  formatPointsLabel,
+  mergePointLedger as mergePointLedgerBase,
+  normalizeDevSettings,
+  normalizePointLedger as normalizePointLedgerBase,
+  normalizeTaskPoints,
+  normalizeTreeState as normalizeTreeStateBase,
+  renderDeveloperFruitSummary as renderDeveloperFruitSummaryBase,
+  renderDeveloperPointsSummary as renderDeveloperPointsSummaryBase
+} from "./modules/points.js";
+import {
+  choosePreferredProfile,
+  normalizeAutosaveIntervalMinutes,
+  normalizeProfile
+} from "./modules/profile.js";
 import { createTaskDeskController } from "./modules/taskDesk.js";
+import { buildPointSummary, buildFruitDisplayState } from "./modules/treeState.js";
 import {
   buildAppliedTreeAppearance,
   buildTreeStyleCatalog,
@@ -27,6 +48,7 @@ import {
   removeOwnedTreeSkin,
   equipTreeSkin
 } from "./modules/treeStyles.js";
+import { buildTemporalState, formatDate, formatDateTime } from "./modules/time.js";
 import { createWidgetDetailController } from "./modules/widgetDetail.js";
 import {
   getWidgetDefinition,
@@ -52,15 +74,7 @@ const DEFAULT_CATEGORY_COLOR = "#7dbf74";
 const DEFAULT_CATEGORY_KEY = "productivity";
 const DEFAULT_IMPORTANCE = "medium";
 const DEFAULT_LATE_GRACE_MINUTES = 15;
-const DEFAULT_MAX_TASK_POINTS = 10;
 const TEMPORAL_REFRESH_MS = 30_000;
-const LENGTH_POINT_DEFAULTS = {
-  "very-short": 1,
-  short: 2,
-  medium: 3,
-  long: 4,
-  "very-long": 5
-};
 
 const BASE_CATEGORIES = [
   { key: "fun", label: "Fun", color: "#f4b64e", builtin: true },
@@ -127,6 +141,8 @@ const closeSettingsBackdrop = document.getElementById("closeSettingsBackdrop");
 const cancelSettingsButton = document.getElementById("cancelSettings");
 const settingsForm = document.getElementById("settingsForm");
 const settingsDisplayNameInput = document.getElementById("settingsDisplayName");
+const settingsAutosaveEnabledInput = document.getElementById("settingsAutosaveEnabled");
+const settingsAutosaveIntervalInput = document.getElementById("settingsAutosaveInterval");
 const taskDeskModal = document.getElementById("taskDeskModal");
 const openTaskDeskButton = document.getElementById("openTaskDesk");
 const closeTaskDeskButton = document.getElementById("closeTaskDesk");
@@ -304,6 +320,14 @@ const {
   saveToDriveOnExit
 } = driveSyncController;
 
+let autosaveController = createAutosaveController({
+  getProfile: () => normalizeProfile(store.profile),
+  getStore: () => store,
+  isAuthenticated: () => authState.authenticated,
+  computeStoreFingerprint,
+  saveToDrive
+});
+
 updateRecurrenceVisibility();
 updateSkipVisibility();
 applyHeroState(loadHeroCollapsed());
@@ -350,9 +374,9 @@ historySort.addEventListener("change", renderHistoryPanel);
 historyFilter.addEventListener("change", renderHistoryPanel);
 historyWidgetFilter.addEventListener("change", renderHistoryPanel);
 googleSignInButton.addEventListener("click", connectGoogle);
-googleSignOutButton.addEventListener("click", disconnectGoogle);
-loadDriveButton.addEventListener("click", loadFromDrive);
-saveDriveButton.addEventListener("click", saveToDrive);
+googleSignOutButton.addEventListener("click", handleGoogleDisconnect);
+loadDriveButton.addEventListener("click", handleManualLoadFromDrive);
+saveDriveButton.addEventListener("click", handleManualSaveToDrive);
 clearDriveDataButton.addEventListener("click", clearDriveData);
 openDeveloperButton.addEventListener("click", openDeveloper);
 developerMaxTaskPoints.addEventListener("change", updateMaxTaskPointsSetting);
@@ -376,6 +400,7 @@ closeSettingsButton.addEventListener("click", closeSettings);
 closeSettingsBackdrop.addEventListener("click", closeSettings);
 cancelSettingsButton.addEventListener("click", closeSettings);
 settingsForm.addEventListener("submit", handleSettingsSubmit);
+settingsAutosaveEnabledInput.addEventListener("change", syncSettingsAutosaveInputs);
 closeTreeDetailButton.addEventListener("click", closeTreeDetail);
 closeTreeDetailBackdrop.addEventListener("click", closeTreeDetail);
 closeTreeStyleButton.addEventListener("click", closeTreeStyle);
@@ -390,6 +415,10 @@ async function initializeApp() {
   const startupResult = await initializeFromDrive({ timeoutMs: 10000 });
   finalizeStoreState();
   renderAll();
+  autosaveController.refreshSchedule();
+  if (startupResult.loaded && startupResult.synced) {
+    autosaveController.markCurrentAsSaved();
+  }
 
   if (startupResult.timedOut) {
     setSyncStatus("Google Drive did not respond within 10 seconds. Using local data on this device.", "info");
@@ -398,6 +427,27 @@ async function initializeApp() {
 
   if (!authState.authenticated) {
     refreshAuthStatus({ suppressUnavailableError: true });
+  }
+}
+
+async function handleGoogleDisconnect() {
+  await disconnectGoogle();
+  autosaveController.clearSavedBaseline();
+  autosaveController.refreshSchedule();
+}
+
+async function handleManualLoadFromDrive() {
+  const result = await loadFromDrive();
+  autosaveController.refreshSchedule();
+  if (result?.applied && result.synced) {
+    autosaveController.markCurrentAsSaved();
+  }
+}
+
+async function handleManualSaveToDrive() {
+  const success = await saveToDrive();
+  if (success) {
+    autosaveController.markCurrentAsSaved();
   }
 }
 
@@ -479,7 +529,11 @@ function openDeveloper() {
 }
 
 function openSettings() {
-  settingsDisplayNameInput.value = normalizeProfile(store.profile).displayName;
+  const profile = normalizeProfile(store.profile);
+  settingsDisplayNameInput.value = profile.displayName;
+  settingsAutosaveEnabledInput.checked = profile.autosaveEnabled;
+  settingsAutosaveIntervalInput.value = String(profile.autosaveIntervalMinutes);
+  syncSettingsAutosaveInputs();
   settingsModal.classList.remove("hidden");
   settingsModal.setAttribute("aria-hidden", "false");
   document.body.classList.add("settings-open");
@@ -543,21 +597,35 @@ function applyHeroState(collapsed) {
 
 function handleSettingsSubmit(event) {
   event.preventDefault();
+  const currentProfile = normalizeProfile(store.profile);
   const displayName = String(settingsDisplayNameInput.value || "").trim().slice(0, 40);
-  const previous = normalizeProfile(store.profile).displayName;
-  if (displayName === previous) {
+  const autosaveEnabled = settingsAutosaveEnabledInput.checked;
+  const autosaveIntervalMinutes = normalizeAutosaveIntervalMinutes(settingsAutosaveIntervalInput.value);
+  const unchanged = (
+    displayName === currentProfile.displayName
+    && autosaveEnabled === currentProfile.autosaveEnabled
+    && autosaveIntervalMinutes === currentProfile.autosaveIntervalMinutes
+  );
+  if (unchanged) {
     closeSettings();
     return;
   }
   store.profile = normalizeProfile({
     ...store.profile,
     displayName,
+    autosaveEnabled,
+    autosaveIntervalMinutes,
     updatedAt: Date.now()
   });
   persistStore();
   renderTemporalUi();
+  autosaveController.refreshSchedule();
   closeSettings();
-  setSyncStatus(displayName ? `Saved settings for ${displayName}.` : "Cleared your welcome name.", "info");
+  setSyncStatus(displayName ? `Saved settings for ${displayName}.` : "Saved Lifetree settings.", "info");
+}
+
+function syncSettingsAutosaveInputs() {
+  settingsAutosaveIntervalInput.disabled = !settingsAutosaveEnabledInput.checked;
 }
 
 function handleWidgetSlotClick(event) {
@@ -1185,6 +1253,69 @@ function renderAll() {
   updateGoogleButtons();
 }
 
+function getTreeDisplayState() {
+  return buildFruitDisplayState({
+    pointLedger: store.pointLedger,
+    treeState: normalizeTreeState(store.treeState),
+    categories: getAllCategoryDefinitions(),
+    resolveCategorySnapshot
+  });
+}
+
+function getPointLedgerSummary() {
+  return buildPointSummary(store.pointLedger);
+}
+
+function normalizeTreeState(value) {
+  return normalizeTreeStateBase(value, {
+    normalizeTreeStyleState,
+    slugifyCategoryKey
+  });
+}
+
+function choosePreferredTreeState(localTreeState, remoteTreeState) {
+  return choosePreferredTreeStateBase(localTreeState, remoteTreeState, {
+    normalizeTreeStyleState,
+    slugifyCategoryKey
+  });
+}
+
+function normalizePointLedger(value) {
+  return normalizePointLedgerBase(value, {
+    defaultCategoryKey: DEFAULT_CATEGORY_KEY,
+    normalizeCategoryColor,
+    resolveCategorySnapshot
+  });
+}
+
+function mergePointLedger(localEntries = [], remoteEntries = []) {
+  return mergePointLedgerBase(localEntries, remoteEntries, {
+    defaultCategoryKey: DEFAULT_CATEGORY_KEY,
+    normalizeCategoryColor,
+    resolveCategorySnapshot
+  });
+}
+
+function buildTaskPointEntry(task, at = Date.now(), id = createId()) {
+  return buildTaskPointEntryBase(task, {
+    at,
+    id,
+    createId,
+    normalizeCategoryColor,
+    defaultCategoryKey: DEFAULT_CATEGORY_KEY,
+    resolveCategorySnapshot,
+    ownerWidgetLabel
+  });
+}
+
+function renderDeveloperPointsSummary(summary) {
+  return renderDeveloperPointsSummaryBase(summary, { escapeHtml });
+}
+
+function renderDeveloperFruitSummary(treeState) {
+  return renderDeveloperFruitSummaryBase(treeState, { escapeHtml });
+}
+
 function renderCanopy() {
   const manualCards = getVisibleCards()
     .filter((card) => !card.task.ownerWidgetType && !card.task.archived && card.status === "open")
@@ -1240,7 +1371,7 @@ function renderTreeSky(now = new Date()) {
 }
 
 function renderTreeCore() {
-  const treeState = buildFruitDisplayState();
+  const treeState = getTreeDisplayState();
   treeHarvestButton.classList.toggle("ripe-ready", treeState.ripeFruitCount > 0);
   treeHarvestHint.textContent = treeState.ripeFruitCount > 0
     ? `${treeState.ripeFruitCount} ripe ${treeState.ripeFruitCount === 1 ? "fruit is" : "fruits are"} ready to harvest for ${formatPointsLabel(treeState.ripePoints)}.`
@@ -1283,8 +1414,8 @@ function renderTreeDetailIfOpen() {
     return;
   }
 
-  const treeState = buildFruitDisplayState();
-  const pointSummary = buildPointSummary(store.pointLedger);
+  const treeState = getTreeDisplayState();
+  const pointSummary = getPointLedgerSummary();
   const visibleCategories = treeState.categories.filter((category) => category.availablePoints > 0 || category.bankedPoints > 0 || category.earnedPoints > 0 || category.adjustmentPoints !== 0);
 
   treeDetailBody.innerHTML = `
@@ -1498,7 +1629,7 @@ function handleTreeStyleAction(event) {
 }
 
 function harvestRipeFruit() {
-  const treeState = buildFruitDisplayState();
+  const treeState = getTreeDisplayState();
   if (treeState.ripePoints <= 0) {
     setSyncStatus("There is no ripe fruit to harvest yet.", "info");
     return;
@@ -3002,7 +3133,7 @@ function loadLegacyCookieStore() {
 function normalizeStore(input) {
   const tasks = Array.isArray(input.tasks) ? input.tasks.map(normalizeTask).slice(0, MAX_TASKS) : [];
   return {
-    version: 11,
+    version: 12,
     updatedAt: typeof input.updatedAt === "number" ? input.updatedAt : Date.now(),
     driveFileId: typeof input.driveFileId === "string" ? input.driveFileId : "",
     profile: normalizeProfile(input.profile),
@@ -3245,7 +3376,7 @@ function persistLocalStore(nextStore) {
 
 function createEmptyStore() {
   return {
-    version: 11,
+    version: 12,
     updatedAt: Date.now(),
     driveFileId: "",
     profile: normalizeProfile({}),
@@ -3291,7 +3422,7 @@ function mergeStores(localStore, remoteStore) {
     mergedById.set(task.id, choosePreferredTask(task, existing, localStore.updatedAt, remoteStore.updatedAt));
   }
   return {
-    version: 11,
+    version: 12,
     updatedAt: Math.max(localStore.updatedAt || 0, remoteStore.updatedAt || 0),
     driveFileId: remoteStore.driveFileId || localStore.driveFileId || "",
     profile: choosePreferredProfile(localStore.profile, remoteStore.profile),
@@ -3314,7 +3445,9 @@ function computeStoreFingerprint(sourceStore) {
   const normalized = normalizeStore(sourceStore || createEmptyStore());
   const comparable = {
     profile: {
-      displayName: normalizeProfile(normalized.profile).displayName
+      displayName: normalizeProfile(normalized.profile).displayName,
+      autosaveEnabled: normalizeProfile(normalized.profile).autosaveEnabled,
+      autosaveIntervalMinutes: normalizeProfile(normalized.profile).autosaveIntervalMinutes
     },
     tasks: normalized.tasks
       .map((task) => ({
@@ -3516,21 +3649,8 @@ function renderDeveloperPanel() {
   const devSettings = normalizeDevSettings(store.devSettings);
   developerMaxTaskPoints.value = String(devSettings.maxTaskPoints);
   taskPointsInput.max = String(devSettings.maxTaskPoints);
-  developerFruitSummary.innerHTML = renderDeveloperFruitSummary(buildFruitDisplayState());
-  developerPointsSummary.innerHTML = renderDeveloperPointsSummary(buildPointSummary(store.pointLedger));
-}
-
-function normalizeProfile(value) {
-  return {
-    displayName: typeof value?.displayName === "string" ? value.displayName.trim().slice(0, 40) : "",
-    updatedAt: typeof value?.updatedAt === "number" ? value.updatedAt : 0
-  };
-}
-
-function choosePreferredProfile(localProfile, remoteProfile) {
-  const local = normalizeProfile(localProfile);
-  const remote = normalizeProfile(remoteProfile);
-  return (local.updatedAt || 0) >= (remote.updatedAt || 0) ? local : remote;
+  developerFruitSummary.innerHTML = renderDeveloperFruitSummary(getTreeDisplayState());
+  developerPointsSummary.innerHTML = renderDeveloperPointsSummary(getPointLedgerSummary());
 }
 
 function updateMaxTaskPointsSetting() {
@@ -3750,29 +3870,8 @@ function humanizeLength(value) {
   return value.replace("-", " ");
 }
 
-function formatPointsLabel(value) {
-  const points = normalizeTaskPoints(value, 0, 1000);
-  return `${points} ${points === 1 ? "pt" : "pts"}`;
-}
-
-function formatSignedPointsLabel(value) {
-  const numeric = Number.isFinite(Number(value)) ? Math.round(Number(value)) : 0;
-  const absolute = Math.abs(numeric);
-  return `${numeric < 0 ? "-" : numeric > 0 ? "+" : ""}${absolute} ${absolute === 1 ? "pt" : "pts"}`;
-}
-
-function defaultPointsForLength(length = "medium") {
-  return LENGTH_POINT_DEFAULTS[length] || LENGTH_POINT_DEFAULTS.medium;
-}
-
 function getMaxTaskPoints() {
   return normalizeDevSettings(store?.devSettings).maxTaskPoints;
-}
-
-function normalizeTaskPoints(value, fallback = defaultPointsForLength("medium"), max = Number.POSITIVE_INFINITY) {
-  const number = Number(value);
-  const safe = Number.isFinite(number) ? Math.round(number) : fallback;
-  return Math.max(0, Math.min(Math.max(0, max), safe));
 }
 
 function setTaskPointsInput(value) {
@@ -3794,274 +3893,6 @@ function syncTaskPointsAutoState() {
   const current = normalizeTaskPoints(taskPointsInput.value, defaultPointsForLength(taskLengthInput.value), getMaxTaskPoints());
   taskPointsInput.value = String(current);
   taskPointsInput.dataset.auto = current === defaultPointsForLength(taskLengthInput.value || "medium") ? "true" : "false";
-}
-
-function normalizeDevSettings(value) {
-  return {
-    maxTaskPoints: Math.max(1, Math.min(50, parsePositiveNumber(value?.maxTaskPoints) || DEFAULT_MAX_TASK_POINTS))
-  };
-}
-
-function normalizePointLedger(value) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value
-    .filter((entry) => typeof entry?.id === "string" && typeof entry?.at === "number")
-    .map((entry) => ({
-      id: entry.id,
-      taskId: typeof entry.taskId === "string" ? entry.taskId : "",
-      taskName: typeof entry.taskName === "string" ? entry.taskName : "",
-      at: entry.at,
-      points: normalizeTaskPoints(entry.points, 0, 1000),
-      categoryKey: typeof entry.categoryKey === "string" ? entry.categoryKey : DEFAULT_CATEGORY_KEY,
-      categoryLabel: typeof entry.categoryLabel === "string" ? entry.categoryLabel : resolveCategorySnapshot(DEFAULT_CATEGORY_KEY).label,
-      categoryColor: normalizeCategoryColor(entry.categoryColor || resolveCategorySnapshot(DEFAULT_CATEGORY_KEY).color),
-      sourceKey: typeof entry.sourceKey === "string" ? entry.sourceKey : "",
-      sourceType: typeof entry.sourceType === "string" ? entry.sourceType : "manual",
-      sourceLabel: typeof entry.sourceLabel === "string" ? entry.sourceLabel : "Manual task"
-    }))
-    .sort((left, right) => left.at - right.at);
-}
-
-function mergePointLedger(localEntries = [], remoteEntries = []) {
-  const mergedById = new Map();
-  for (const entry of normalizePointLedger(remoteEntries)) {
-    mergedById.set(entry.id, entry);
-  }
-  for (const entry of normalizePointLedger(localEntries)) {
-    if (!mergedById.has(entry.id)) {
-      mergedById.set(entry.id, entry);
-    }
-  }
-  return Array.from(mergedById.values()).sort((left, right) => left.at - right.at);
-}
-
-function normalizeTreePointMap(value, { allowNegative = false } = {}) {
-  const result = {};
-  if (!value || typeof value !== "object") {
-    return result;
-  }
-
-  for (const [key, raw] of Object.entries(value)) {
-    const categoryKey = slugifyCategoryKey(key);
-    if (!categoryKey) {
-      continue;
-    }
-    const numeric = Number(raw);
-    if (!Number.isFinite(numeric)) {
-      continue;
-    }
-    const rounded = Math.round(numeric);
-    const safe = allowNegative ? rounded : Math.max(0, rounded);
-    if (safe !== 0) {
-      result[categoryKey] = safe;
-    }
-  }
-
-  return result;
-}
-
-function normalizeTreeState(value) {
-  return {
-    harvestedByCategory: normalizeTreePointMap(value?.harvestedByCategory),
-    devFruitPoints: normalizeTreePointMap(value?.devFruitPoints, { allowNegative: true }),
-    styleState: normalizeTreeStyleState(value?.styleState),
-    updatedAt: typeof value?.updatedAt === "number" ? value.updatedAt : 0
-  };
-}
-
-function choosePreferredTreeState(localTreeState, remoteTreeState) {
-  const local = normalizeTreeState(localTreeState);
-  const remote = normalizeTreeState(remoteTreeState);
-  return (local.updatedAt || 0) >= (remote.updatedAt || 0) ? local : remote;
-}
-
-function buildPointSummary(entries = []) {
-  const byCategory = new Map();
-  const bySource = new Map();
-
-  for (const entry of normalizePointLedger(entries)) {
-    const category = byCategory.get(entry.categoryKey) || {
-      key: entry.categoryKey,
-      label: entry.categoryLabel,
-      color: entry.categoryColor,
-      points: 0
-    };
-    category.points += entry.points;
-    byCategory.set(entry.categoryKey, category);
-
-    const sourceKey = entry.sourceKey || `${entry.sourceType}:${entry.sourceLabel}`;
-    const source = bySource.get(sourceKey) || {
-      key: sourceKey,
-      label: entry.sourceLabel,
-      type: entry.sourceType,
-      points: 0
-    };
-    source.points += entry.points;
-    bySource.set(sourceKey, source);
-  }
-
-  return {
-    totalPoints: Array.from(byCategory.values()).reduce((sum, entry) => sum + entry.points, 0),
-    byCategory: Array.from(byCategory.values()).sort((left, right) => right.points - left.points || left.label.localeCompare(right.label)),
-    bySource: Array.from(bySource.values()).sort((left, right) => right.points - left.points || left.label.localeCompare(right.label))
-  };
-}
-
-function buildFruitDisplayState() {
-  const pointSummary = buildPointSummary(store.pointLedger);
-  const earnedByCategory = new Map(pointSummary.byCategory.map((entry) => [entry.key, entry]));
-  const treeState = normalizeTreeState(store.treeState);
-  const mergedCategories = new Map(getAllCategoryDefinitions().map((category) => [category.key, category]));
-  for (const entry of pointSummary.byCategory) {
-    if (!mergedCategories.has(entry.key)) {
-      mergedCategories.set(entry.key, {
-        key: entry.key,
-        label: entry.label,
-        color: entry.color,
-        active: true,
-        builtin: false,
-        updatedAt: 0
-      });
-    }
-  }
-  for (const categoryKey of Object.keys(treeState.harvestedByCategory)) {
-    if (!mergedCategories.has(categoryKey)) {
-      const snapshot = resolveCategorySnapshot(categoryKey);
-      mergedCategories.set(categoryKey, {
-        key: categoryKey,
-        label: snapshot.label,
-        color: snapshot.color,
-        active: true,
-        builtin: false,
-        updatedAt: 0
-      });
-    }
-  }
-  for (const categoryKey of Object.keys(treeState.devFruitPoints)) {
-    if (!mergedCategories.has(categoryKey)) {
-      const snapshot = resolveCategorySnapshot(categoryKey);
-      mergedCategories.set(categoryKey, {
-        key: categoryKey,
-        label: snapshot.label,
-        color: snapshot.color,
-        active: true,
-        builtin: false,
-        updatedAt: 0
-      });
-    }
-  }
-
-  const categories = Array.from(mergedCategories.values()).sort((left, right) => left.label.localeCompare(right.label)).map((category, index) => {
-    const earned = earnedByCategory.get(category.key)?.points || 0;
-    const adjustment = treeState.devFruitPoints[category.key] || 0;
-    const banked = treeState.harvestedByCategory[category.key] || 0;
-    const available = Math.max(0, earned + adjustment - banked);
-    const fruits = buildFruitSlots(available);
-    const ripePoints = fruits.filter((fruit) => fruit.ripe).reduce((sum, fruit) => sum + fruit.points, 0);
-    return {
-      ...category,
-      order: index,
-      earnedPoints: earned,
-      availablePoints: available,
-      bankedPoints: banked,
-      adjustmentPoints: adjustment,
-      ripePoints,
-      visibleFruitCount: fruits.length,
-      overflowPoints: Math.max(available - 75, 0),
-      fruits
-    };
-  });
-
-  const visibleCategories = categories.filter((category) => category.visibleFruitCount > 0);
-  const fruitDescriptors = visibleCategories.flatMap((category, categoryIndex) => {
-    const anchor = computeFruitAnchor(categoryIndex, visibleCategories.length);
-    return category.fruits.map((fruit, fruitIndex) => {
-      const offset = [
-        { left: -4.5, top: 4.5 },
-        { left: 0, top: -5.5 },
-        { left: 4.5, top: 4.2 }
-      ][fruitIndex] || { left: 0, top: 0 };
-      return {
-        categoryKey: category.key,
-        categoryLabel: category.label,
-        color: category.color,
-        stage: fruit.stage,
-        points: fruit.points,
-        ripe: fruit.ripe,
-        size: 11 + (fruit.stage * 4),
-        left: anchor.left + offset.left,
-        top: anchor.top + offset.top
-      };
-    });
-  });
-
-  return {
-    categories,
-    bankedPoints: categories.reduce((sum, category) => sum + category.bankedPoints, 0),
-    growingPoints: categories.reduce((sum, category) => sum + category.availablePoints, 0),
-    ripePoints: categories.reduce((sum, category) => sum + category.ripePoints, 0),
-    ripeFruitCount: categories.reduce((sum, category) => sum + category.fruits.filter((fruit) => fruit.ripe).length, 0),
-    fruitDescriptors
-  };
-}
-
-function buildFruitSlots(points) {
-  const fruits = [];
-  for (let slotIndex = 0; slotIndex < 3; slotIndex += 1) {
-    const slotPoints = Math.max(0, Math.min(25, points - (slotIndex * 25)));
-    if (slotPoints <= 0) {
-      continue;
-    }
-    fruits.push({
-      slotIndex,
-      points: slotPoints,
-      stage: Math.min(5, Math.ceil(slotPoints / 5)),
-      ripe: slotPoints >= 21
-    });
-  }
-  return fruits;
-}
-
-function computeFruitAnchor(index, count) {
-  if (count <= 1) {
-    return { left: 50, top: 31 };
-  }
-  const startAngle = 205;
-  const endAngle = 335;
-  const angle = startAngle + ((endAngle - startAngle) * index) / Math.max(count - 1, 1);
-  const radians = (angle * Math.PI) / 180;
-  return {
-    left: 50 + (Math.cos(radians) * 27),
-    top: 44 + (Math.sin(radians) * 16)
-  };
-}
-
-function buildTaskPointEntry(task, at = Date.now(), id = createId()) {
-  const points = normalizeTaskPoints(task.pointsValue, 0, 1000);
-  if (points <= 0) {
-    return null;
-  }
-
-  const category = resolveCategorySnapshot(task.categoryKey || DEFAULT_CATEGORY_KEY, task);
-  return {
-    id,
-    taskId: task.id,
-    taskName: task.name,
-    at,
-    points,
-    categoryKey: category.key,
-    categoryLabel: task.categoryLabel || category.label,
-    categoryColor: normalizeCategoryColor(task.categoryColor || category.color),
-    sourceKey: task.ownerWidgetType
-      ? `${task.ownerWidgetType}:${task.ownerTaskKey || task.name}`
-      : `task:${task.id}`,
-    sourceType: task.ownerWidgetType || "task",
-    sourceLabel: task.ownerWidgetType
-      ? `${ownerWidgetLabel(task)} · ${task.name}`
-      : task.name
-  };
 }
 
 function awardPointsForTask(task, at = Date.now()) {
@@ -4121,66 +3952,6 @@ function syncTaskPointAward(task) {
   ].sort((left, right) => left.at - right.at);
 }
 
-function renderDeveloperPointsSummary(summary) {
-  return `
-    <div class="developer-points-total">
-      <strong>${summary.totalPoints}</strong>
-      <span>Total points tracked</span>
-    </div>
-    <div class="developer-points-grid">
-      <section class="developer-points-section">
-        <h3>By category</h3>
-        <div class="developer-point-list">
-          ${summary.byCategory.length > 0 ? summary.byCategory.map((entry) => `
-            <div class="developer-point-item">
-              <span class="task-chip category-chip" style="--chip-color: ${escapeHtml(entry.color)}">${escapeHtml(entry.label)}</span>
-              <span class="task-chip points-chip" style="--chip-color: ${escapeHtml(entry.color)}">${escapeHtml(formatPointsLabel(entry.points))}</span>
-            </div>
-          `).join("") : '<p class="task-action-note">No points recorded yet.</p>'}
-        </div>
-      </section>
-      <section class="developer-points-section">
-        <h3>By source</h3>
-        <div class="developer-point-list">
-          ${summary.bySource.length > 0 ? summary.bySource.map((entry) => `
-            <div class="developer-point-item source">
-              <span>${escapeHtml(entry.label)}</span>
-              <strong>${escapeHtml(formatPointsLabel(entry.points))}</strong>
-            </div>
-          `).join("") : '<p class="task-action-note">No point sources yet.</p>'}
-        </div>
-      </section>
-    </div>
-  `;
-}
-
-function renderDeveloperFruitSummary(treeState) {
-  const adjustedCategories = treeState.categories.filter((category) => category.adjustmentPoints !== 0);
-  const bankedCategories = treeState.categories.filter((category) => category.bankedPoints > 0);
-  return `
-    <div class="developer-fruit-total">
-      <strong>${escapeHtml(formatPointsLabel(treeState.ripePoints))}</strong>
-      <span>ready to harvest right now</span>
-    </div>
-    <div class="developer-fruit-list">
-      ${bankedCategories.length > 0 ? bankedCategories.map((category) => `
-        <div class="developer-point-item source">
-          <span>${escapeHtml(category.label)} banked</span>
-          <strong>${escapeHtml(formatPointsLabel(category.bankedPoints))}</strong>
-        </div>
-      `).join("") : '<p class="task-action-note">No banked fruit points yet.</p>'}
-    </div>
-    <div class="developer-fruit-list">
-      ${adjustedCategories.length > 0 ? adjustedCategories.map((category) => `
-        <div class="developer-point-item source">
-          <span>${escapeHtml(category.label)} adjustment</span>
-          <strong>${escapeHtml(formatSignedPointsLabel(category.adjustmentPoints))}</strong>
-        </div>
-      `).join("") : '<p class="task-action-note">No fruit testing adjustments are active.</p>'}
-    </div>
-  `;
-}
-
 function deriveTaskNotBeforeAt({ recurrence, startDate, dueDate, originalTask = null }) {
   if (typeof originalTask?.notBeforeAt === "number" && originalTask.notBeforeAt > 0 && recurrence?.type === "none") {
     return originalTask.notBeforeAt;
@@ -4214,183 +3985,8 @@ function parsePositiveOrZeroNumber(value) {
   return Number.isFinite(number) && number >= 0 ? number : null;
 }
 
-function toLocalDate(value) {
-  if (value instanceof Date) {
-    return new Date(value.getTime());
-  }
-  if (typeof value === "number") {
-    return new Date(value);
-  }
-  if (typeof value !== "string" || !value) {
-    return new Date(Number.NaN);
-  }
-
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  if (match) {
-    return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12, 0, 0);
-  }
-
-  return new Date(value);
-}
-
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
-}
-
-function getTimeOfDayPhase(date = new Date()) {
-  const minutes = (date.getHours() * 60) + date.getMinutes() + (date.getSeconds() / 60);
-  if (minutes < 300) return "night";
-  if (minutes < 420) return "sunrise";
-  if (minutes < 660) return "morning";
-  if (minutes < 900) return "midday";
-  if (minutes < 1080) return "evening";
-  if (minutes < 1200) return "sunset";
-  return "night";
-}
-
-function titleCasePhase(phase) {
-  if (phase === "sunrise") return "Sunrise";
-  if (phase === "midday") return "Midday";
-  if (phase === "sunset") return "Sunset";
-  return phase.charAt(0).toUpperCase() + phase.slice(1);
-}
-
-function buildOrbitPosition(progress, {
-  centerX = 50,
-  centerY = 54,
-  radiusX = 38,
-  radiusY = 40,
-  startAngle = 210,
-  endAngle = 330
-}) {
-  const angle = startAngle + ((endAngle - startAngle) * progress);
-  const radians = (angle * Math.PI) / 180;
-  return {
-    left: centerX + (Math.cos(radians) * radiusX),
-    top: centerY + (Math.sin(radians) * radiusY)
-  };
-}
-
-function buildTemporalState(date = new Date()) {
-  const minutes = (date.getHours() * 60) + date.getMinutes() + (date.getSeconds() / 60);
-  const phase = getTimeOfDayPhase(date);
-  const phaseStyles = {
-    sunrise: {
-      skyTop: "#f8c3a2",
-      skyBottom: "#fff1d1",
-      horizonGlow: "rgba(255, 205, 136, 0.82)",
-      sunOpacity: 0.92,
-      moonOpacity: 0.26,
-      starOpacity: 0.18
-    },
-    morning: {
-      skyTop: "#b8defa",
-      skyBottom: "#eef8ff",
-      horizonGlow: "rgba(255, 231, 178, 0.45)",
-      sunOpacity: 0.98,
-      moonOpacity: 0,
-      starOpacity: 0
-    },
-    midday: {
-      skyTop: "#89c6f3",
-      skyBottom: "#ebf9ff",
-      horizonGlow: "rgba(255, 240, 205, 0.28)",
-      sunOpacity: 1,
-      moonOpacity: 0,
-      starOpacity: 0
-    },
-    evening: {
-      skyTop: "#ffd49e",
-      skyBottom: "#fff1d8",
-      horizonGlow: "rgba(255, 190, 122, 0.52)",
-      sunOpacity: 0.84,
-      moonOpacity: 0.12,
-      starOpacity: 0.04
-    },
-    sunset: {
-      skyTop: "#7769aa",
-      skyBottom: "#ffc18f",
-      horizonGlow: "rgba(255, 157, 101, 0.72)",
-      sunOpacity: 0.68,
-      moonOpacity: 0.42,
-      starOpacity: 0.3
-    },
-    night: {
-      skyTop: "#0d1530",
-      skyBottom: "#263a63",
-      horizonGlow: "rgba(89, 121, 188, 0.38)",
-      sunOpacity: 0,
-      moonOpacity: 0.94,
-      starOpacity: 0.88
-    }
-  };
-
-  const sunProgress = clamp((minutes - 300) / 900, 0, 1);
-  const moonMinutes = minutes >= 1200 ? minutes - 1200 : minutes + 240;
-  const moonProgress = clamp(moonMinutes / 540, 0, 1);
-  const sun = buildOrbitPosition(sunProgress, {
-    centerX: 50,
-    centerY: 52,
-    radiusX: 43,
-    radiusY: 43,
-    startAngle: 210,
-    endAngle: 330
-  });
-  const moon = buildOrbitPosition(moonProgress, {
-    centerX: 50,
-    centerY: 52,
-    radiusX: 43,
-    radiusY: 43,
-    startAngle: 330,
-    endAngle: 210
-  });
-  const timeZoneLabel = Intl.DateTimeFormat().resolvedOptions().timeZone || "Local time";
-
-  return {
-    phase,
-    phaseLabel: titleCasePhase(phase),
-    clockLabel: date.toLocaleTimeString([], {
-      hour: "numeric",
-      minute: "2-digit"
-    }),
-    dateLabel: date.toLocaleDateString([], {
-      weekday: "short",
-      month: "short",
-      day: "numeric"
-    }),
-    timeZoneLabel,
-    sunLeft: sun.left,
-    sunTop: sun.top,
-    moonLeft: moon.left,
-    moonTop: moon.top,
-    ...phaseStyles[phase]
-  };
-}
-
 function todayString() {
   return toDateString(new Date());
-}
-
-function formatDate(value) {
-  const date = toLocalDate(value);
-  if (Number.isNaN(date.getTime())) {
-    return String(value || "");
-  }
-  return date.toLocaleDateString([], { month: "short", day: "numeric" });
-}
-
-function formatDateTime(value, { includePhase = false } = {}) {
-  const date = toLocalDate(value);
-  if (Number.isNaN(date.getTime())) {
-    return String(value || "");
-  }
-  const formatted = date.toLocaleString([], {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit"
-  });
-  return includePhase ? `${formatted} · ${titleCasePhase(getTimeOfDayPhase(date))}` : formatted;
 }
 
 function widgetRegistryHelpers() {

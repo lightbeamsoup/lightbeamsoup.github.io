@@ -91,7 +91,7 @@ export function createDriveSyncController({
       if (!suppressAuthError) {
         setSyncStatus("Connect Google first to load from Drive.", "error");
       }
-      return { applied: false, found: false };
+      return { applied: false, found: false, keptLocalChanges: false, synced: false };
     }
     try {
       const response = await fetch(`${apiBase}/api/lifetree/load`, { credentials: fetchCredentials, signal });
@@ -103,7 +103,7 @@ export function createDriveSyncController({
         if (!quietIfMissing) {
           setSyncStatus("No Drive task file found yet. Save to Drive to create it.", "info");
         }
-        return { applied: false, found: false };
+        return { applied: false, found: false, keptLocalChanges: false, synced: false };
       }
 
       const remoteStore = normalizeStore(payload.payload);
@@ -118,25 +118,37 @@ export function createDriveSyncController({
         );
 
         if (keepLocalChanges) {
-          applyStore(mergeStores(previousLocalStore, remoteStore), { finalize: !deferFinalize });
+          const mergedStore = mergeStores(previousLocalStore, remoteStore);
+          applyStore(mergedStore, { finalize: !deferFinalize });
           setSyncStatus("Loaded Google Drive data and kept newer local changes during merge.", "success");
-          return { applied: true, found: true };
+          return {
+            applied: true,
+            found: true,
+            keptLocalChanges: true,
+            synced: computeStoreFingerprint(mergedStore) === remoteFingerprint
+          };
         }
 
         applyStore(remoteStore, { finalize: !deferFinalize });
         setSyncStatus("Discarded newer local changes and loaded the Google Drive version.", "success");
-        return { applied: true, found: true };
+        return { applied: true, found: true, keptLocalChanges: false, synced: true };
       }
 
-      applyStore(mergeStores(previousLocalStore, remoteStore), { finalize: !deferFinalize });
+      const mergedStore = mergeStores(previousLocalStore, remoteStore);
+      applyStore(mergedStore, { finalize: !deferFinalize });
       setSyncStatus(describeMergeResult(previousLocalStore, remoteStore), "success");
-      return { applied: true, found: true };
+      return {
+        applied: true,
+        found: true,
+        keptLocalChanges: false,
+        synced: computeStoreFingerprint(mergedStore) === remoteFingerprint
+      };
     } catch (error) {
       if (error?.name === "AbortError") {
-        return { applied: false, found: false, timedOut: true };
+        return { applied: false, found: false, keptLocalChanges: false, synced: false, timedOut: true };
       }
       setSyncStatus(`Load failed: ${error.message}`, "error");
-      return { applied: false, found: false };
+      return { applied: false, found: false, keptLocalChanges: false, synced: false };
     }
   }
 
@@ -210,12 +222,17 @@ export function createDriveSyncController({
         signal: controller.signal
       });
       if (controller.signal.aborted || result.timedOut) {
-        return { loaded: false, timedOut: true };
+        return { loaded: false, timedOut: true, keptLocalChanges: false, synced: false };
       }
-      return { loaded: result.applied, timedOut: false };
+      return {
+        loaded: result.applied,
+        timedOut: false,
+        keptLocalChanges: result.keptLocalChanges,
+        synced: result.synced
+      };
     } catch (error) {
       if (error?.name === "AbortError") {
-        return { loaded: false, timedOut: true };
+        return { loaded: false, timedOut: true, keptLocalChanges: false, synced: false };
       }
       throw error;
     } finally {
