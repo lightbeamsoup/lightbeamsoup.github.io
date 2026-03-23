@@ -485,36 +485,43 @@ function stageEnergyVote(widget, level, mode, helpers) {
 
   const entryTime = Date.now();
   const store = typeof helpers.getStore === "function" ? helpers.getStore() : { tasks: [] };
-  const effectiveMode = mode === "auto"
-    ? (hasActiveReminderTask(store.tasks, widget.id, entryTime) ? "task" : "extra")
-    : mode;
   const actionType = "energy-vote";
-  const entrySource = effectiveMode === "extra" ? "extra" : "task";
+  const preflightHasReminder = mode !== "extra" && hasActiveReminderTask(store.tasks, widget.id, entryTime);
   helpers.stageWidgetAction(widget, actionType, {
     level,
-    description: effectiveMode === "extra"
+    description: mode === "extra"
       ? `Pending extra energy vote of ${level}/5. Click undo within 5 seconds to cancel.`
-      : `Pending energy vote of ${level}/5. Click undo within 5 seconds to cancel.`,
+      : preflightHasReminder
+        ? `Pending energy vote of ${level}/5. Click undo within 5 seconds to cancel.`
+        : `Pending energy vote of ${level}/5. This will be logged unless a reminder is due by the time it commits.`,
     commit: () => {
+      let completedTask = null;
+      let entrySource = "extra";
+
+      if (mode !== "extra") {
+        helpers.applyAutoSkipRules(new Date(entryTime));
+        completedTask = helpers.completeNextTaskFromWidget(widget, "energy-vote", entryTime);
+        entrySource = completedTask ? "task" : "extra";
+      }
+
       widget.data.entries.push({ level, at: entryTime, source: entrySource });
       widget.data.entries.sort((left, right) => left.at - right.at);
       widget.updatedAt = entryTime;
 
-      if (effectiveMode !== "extra") {
-        helpers.applyAutoSkipRules(new Date(entryTime));
-        const completedTask = helpers.completeNextTaskFromWidget(widget, "energy-vote", entryTime);
-        return {
-          message: completedTask
-            ? `Logged an energy vote of ${level}/5 and completed ${completedTask.name}.`
-            : `Logged an energy vote of ${level}/5. No eligible Energy reminder task was active right now.`,
+      return completedTask
+        ? {
+          message: `Logged an energy vote of ${level}/5 and completed ${completedTask.name}.`,
           tone: "info"
-        };
-      }
-
-      return {
-        message: `Logged an extra energy vote of ${level}/5.`,
-        tone: "info"
-      };
+        }
+        : mode === "extra"
+          ? {
+            message: `Logged an extra energy vote of ${level}/5.`,
+            tone: "info"
+          }
+          : {
+            message: `Logged an energy vote of ${level}/5. No eligible Energy reminder task was active right now.`,
+            tone: "info"
+          };
     }
   });
 }
