@@ -8,42 +8,30 @@
 </head>
 <body>
   <main class="page lifetree-shell">
-    <section class="dashboard-hero">
-      <div>
+    <section class="dashboard-hero" id="dashboardHero">
+      <div class="hero-copy">
         <p class="eyebrow">Lifetree</p>
-        <h1>Grow your ecosystem around a single task engine.</h1>
-        <p class="intro">
-          The tree is the center of Lifetree. Around it live up to eight widgets, each with its own
+        <h1>Lifetree</h1>
+        <p class="hero-detail">
+          Grow your ecosystem around a single task engine.
+        </p>
+        <p class="intro hero-detail">
+          The tree is the center of Lifetree. Around it live up to five widgets, each with its own
           focused workflow and its own owned tasks. The task desk is still the manual override where
           you can review, edit, and organize everything directly.
         </p>
       </div>
       <div class="hero-actions">
-        <button type="button" class="primary-button" id="openTaskDesk">Open Task Desk</button>
-        <a class="home-link" href="https://www.joshcodes.ai/">Back to home</a>
-      </div>
-    </section>
-
-    <section class="ecosystem-stage">
-      <div class="ecosystem-ring" id="widgetOrbit">
-        <article class="widget-slot" data-slot-index="0" aria-label="Widget slot 1"></article>
-        <article class="widget-slot" data-slot-index="1" aria-label="Widget slot 2"></article>
-        <article class="widget-slot" data-slot-index="2" aria-label="Widget slot 3"></article>
-        <article class="widget-slot" data-slot-index="3" aria-label="Widget slot 4"></article>
-        <article class="widget-slot" data-slot-index="4" aria-label="Widget slot 5"></article>
-        <article class="widget-slot" data-slot-index="5" aria-label="Widget slot 6"></article>
-        <article class="widget-slot" data-slot-index="6" aria-label="Widget slot 7"></article>
-        <article class="widget-slot" data-slot-index="7" aria-label="Widget slot 8"></article>
-
-        <section class="lifetree-core">
-          <div class="tree-frame">
-            <img src="images/oak-tree-hub.svg" alt="Oak tree growing from bright grass on a white circular field" />
+        <div class="hero-status-panel">
+          <p class="hero-welcome" id="heroWelcome">Welcome</p>
+          <div class="hero-clock-card">
+            <strong class="hero-clock-time" id="heroClock">--:--</strong>
+            <span class="hero-clock-meta" id="heroClockMeta">Local time</span>
           </div>
-          <div class="core-copy">
-            <h2>Your Lifetree</h2>
-            <p>Progress will eventually change the tree itself. For now this hub is the stable center for the task engine and early widgets.</p>
-          </div>
-        </section>
+        </div>
+        <button type="button" class="ghost-button" id="openSettings">Settings</button>
+        <button type="button" class="ghost-button hidden" id="openDeveloper">Developer</button>
+        <button type="button" class="ghost-button" id="toggleHero">Collapse banner</button>
       </div>
     </section>
 
@@ -54,8 +42,75 @@
         <p id="widgetMenuCopy" class="sync-status">Fill this slot with one of the available Lifetree plugins.</p>
       </div>
       <div class="widget-menu-actions">
-        <button type="button" class="primary-button" id="addEnergyWidget">Add Energy Widget</button>
+        <div class="widget-menu-options" id="widgetMenuOptions"></div>
         <button type="button" class="ghost-button" id="closeWidgetMenu">Cancel</button>
+      </div>
+    </section>
+
+    <section class="ecosystem-stage">
+      <div class="ecosystem-ring" id="widgetOrbit">
+        <section class="canopy-widget">
+          <div class="widget-slot-header">
+            <div>
+              <p class="eyebrow">Canopy</p>
+              <h2>Manual task canopy</h2>
+              <p>Tasks without a dedicated widget live here so you can see what is coming up before opening the Task Desk.</p>
+            </div>
+            <span class="widget-badge">Core</span>
+          </div>
+          <div class="canopy-columns" id="canopyColumns"></div>
+          <div class="widget-actions">
+            <button type="button" class="primary-button" id="openTaskDesk">Open Task Desk</button>
+          </div>
+        </section>
+        <article class="widget-slot" data-slot-index="0" aria-label="Widget slot 1"></article>
+        <article class="widget-slot" data-slot-index="1" aria-label="Widget slot 2"></article>
+        <article class="widget-slot" data-slot-index="2" aria-label="Widget slot 3"></article>
+        <article class="widget-slot" data-slot-index="3" aria-label="Widget slot 4"></article>
+        <article class="widget-slot" data-slot-index="4" aria-label="Widget slot 5"></article>
+
+        <section class="lifetree-core">
+          <button type="button" class="tree-frame" id="treeHarvestButton">
+            <div class="tree-sky-layer" id="treeSkyLayer" aria-hidden="true">
+              <div class="tree-star-field" id="treeStarField">
+                <span class="tree-star"></span>
+                <span class="tree-star"></span>
+                <span class="tree-star"></span>
+                <span class="tree-star"></span>
+                <span class="tree-star"></span>
+                <span class="tree-star"></span>
+              </div>
+              <span class="tree-celestial tree-sun" id="treeSun"></span>
+              <span class="tree-celestial tree-moon" id="treeMoon"></span>
+            </div>
+            <img id="treeShellImage" src="images/oak-tree-hub.svg" alt="Oak tree growing from bright grass on a white circular field" />
+            <div class="tree-fruit-layer" id="treeFruitLayer"></div>
+          </button>
+          <p class="tree-harvest-hint" id="treeHarvestHint">Click the tree to harvest ripe fruit.</p>
+          <div class="core-copy">
+            <h2>Your Lifetree</h2>
+            <p>Fruit quantity, size, and color reflect how your points are accumulating on the tree.</p>
+            <div class="tree-bank" id="treeBankSummary"></div>
+            <div class="tree-points-strip" id="treePointSummary"></div>
+            <div class="widget-actions tree-core-actions">
+              <button type="button" class="ghost-button" id="openTreeStyle">Treestyle</button>
+              <button type="button" class="ghost-button" id="openTreeDetail">View tree details</button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <section class="sync-panel">
+      <div>
+        <h2>Google Drive sync</h2>
+        <p id="syncStatus" class="sync-status">Checking Google Drive before using local data.</p>
+      </div>
+      <div class="sync-actions">
+        <button type="button" class="ghost-button" id="googleSignIn">Connect Google</button>
+        <button type="button" class="ghost-button" id="loadDrive">Load from Drive</button>
+        <button type="button" class="ghost-button" id="saveDrive">Save to Drive</button>
+        <button type="button" class="ghost-button" id="googleSignOut">Disconnect</button>
       </div>
     </section>
 
@@ -78,7 +133,7 @@
       </div>
 
       <section class="workspace">
-        <aside class="composer">
+        <aside class="composer desk-pane">
           <h2>Create task</h2>
           <div id="editPanel" class="edit-panel hidden">
             <strong id="editTitle">Editing task</strong>
@@ -118,6 +173,11 @@
               <input id="timeOfDay" name="timeOfDay" type="time" />
             </label>
 
+            <label>
+              <span>Late grace minutes</span>
+              <input id="lateGraceMinutes" name="lateGraceMinutes" type="number" min="0" value="15" />
+            </label>
+
             <fieldset class="skip-panel">
               <legend>Auto skip</legend>
               <label>
@@ -144,6 +204,44 @@
                 <option value="very-long">Very long</option>
               </select>
             </label>
+
+            <label>
+              <span>Points</span>
+              <input id="taskPoints" name="points" type="number" min="0" max="10" value="3" />
+            </label>
+
+            <div class="split">
+              <label>
+                <span>Category</span>
+                <select id="taskCategory" name="category"></select>
+              </label>
+              <label>
+                <span>Importance</span>
+                <select id="taskImportance" name="importance">
+                  <option value="low">Low</option>
+                  <option value="medium" selected>Medium</option>
+                  <option value="high">High</option>
+                </select>
+              </label>
+            </div>
+
+            <fieldset class="category-panel">
+              <legend>Categories</legend>
+              <div id="categoryList" class="category-list"></div>
+              <div class="split">
+                <label>
+                  <span>New category</span>
+                  <input id="newCategoryName" name="newCategoryName" type="text" maxlength="40" placeholder="Add a category" />
+                </label>
+                <label>
+                  <span>Color</span>
+                  <input id="newCategoryColor" name="newCategoryColor" type="color" value="#7dbf74" />
+                </label>
+              </div>
+              <div class="form-actions">
+                <button type="button" class="ghost-button" id="addCategory">Add category</button>
+              </div>
+            </fieldset>
 
             <label>
               <span>Depends on</span>
@@ -244,20 +342,7 @@
           </form>
         </aside>
 
-        <section class="board">
-          <div class="sync-panel">
-            <div>
-              <h2>Google Drive sync</h2>
-              <p id="syncStatus" class="sync-status">Local-only mode. Configure the Lifetree backend to enable Google Drive sync.</p>
-            </div>
-            <div class="sync-actions">
-              <button type="button" class="ghost-button" id="googleSignIn">Connect Google</button>
-              <button type="button" class="ghost-button" id="loadDrive">Load from Drive</button>
-              <button type="button" class="ghost-button" id="saveDrive">Save to Drive</button>
-              <button type="button" class="ghost-button" id="googleSignOut">Disconnect</button>
-            </div>
-          </div>
-
+        <section class="board desk-pane">
           <div class="toolbar">
             <div class="toolbar-group">
               <label>
@@ -267,6 +352,7 @@
                   <option value="open">Open</option>
                   <option value="done">Completed</option>
                   <option value="skipped">Skipped</option>
+                  <option value="archived">Archived</option>
                   <option value="blocked">Blocked</option>
                   <option value="recurring">Recurring</option>
                 </select>
@@ -319,14 +405,18 @@
             </div>
           </div>
 
-          <div id="taskGrid" class="task-grid"></div>
-          <p id="emptyState" class="empty-state">No tasks match the current filters.</p>
+          <section class="task-board-panel">
+            <div id="taskGrid" class="task-grid"></div>
+            <p id="emptyState" class="empty-state">No tasks match the current filters.</p>
+          </section>
+        </section>
 
+        <aside class="history-column desk-pane">
           <section class="history-panel-board">
             <div class="history-panel-header">
               <div>
                 <h2>Task history</h2>
-                <p class="sync-status">Review completed, skipped, and edited activity across active tasks and series.</p>
+                <p class="sync-status">Review completed, skipped, and reopened activity across active tasks and series.</p>
               </div>
               <div class="history-controls">
                 <label>
@@ -343,27 +433,181 @@
                     <option value="all">All events</option>
                     <option value="completed">Completed</option>
                     <option value="skipped">Skipped</option>
-                    <option value="edited">Edited</option>
                     <option value="reopened">Reopened</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Source</span>
+                  <select id="historyWidgetFilter">
+                    <option value="all">All sources</option>
+                    <option value="manual">Manual tasks</option>
                   </select>
                 </label>
               </div>
             </div>
+            <div class="history-action-row">
+              <button type="button" class="ghost-button" id="clearWidgetHistory">Clear selected source</button>
+              <button type="button" class="ghost-button" id="clearAllHistory">Clear all history</button>
+            </div>
             <div id="historyList" class="history-list"></div>
             <p id="historyEmpty" class="empty-state">No history entries yet.</p>
           </section>
+        </aside>
 
-          <section id="developerPanel" class="developer-panel hidden">
-            <div>
-              <p class="eyebrow">Developer</p>
-              <h2>Private tools</h2>
-              <p class="sync-status">Signed in as <span id="developerEmail">developer</span>. These options are only visible for the owner account.</p>
+      </section>
+    </section>
+  </div>
+
+  <div id="settingsModal" class="widget-detail-modal hidden" aria-hidden="true">
+    <div class="task-desk-backdrop" id="closeSettingsBackdrop"></div>
+    <section class="widget-detail-panel settings-panel" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+      <div class="task-desk-header">
+        <div>
+          <p class="eyebrow">Settings</p>
+          <h2 id="settingsTitle">Personalize Lifetree</h2>
+          <p class="sync-status">Set the name used in the welcome banner. This syncs with your Lifetree data.</p>
+        </div>
+        <button type="button" class="ghost-button" id="closeSettings">Close</button>
+      </div>
+      <form id="settingsForm" class="settings-form">
+        <label>
+          <span>Name</span>
+          <input id="settingsDisplayName" name="displayName" type="text" maxlength="40" placeholder="Enter your name" />
+        </label>
+        <div class="form-actions">
+          <button type="submit" class="primary-button">Save settings</button>
+          <button type="button" class="ghost-button" id="cancelSettings">Cancel</button>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <div id="widgetDetailModal" class="widget-detail-modal hidden" aria-hidden="true">
+    <div class="task-desk-backdrop" id="closeWidgetDetailBackdrop"></div>
+    <section class="widget-detail-panel" role="dialog" aria-modal="true" aria-labelledby="widgetDetailTitle">
+      <div class="task-desk-header">
+        <div>
+          <p class="eyebrow">Widget</p>
+          <h2 id="widgetDetailTitle">Widget detail</h2>
+          <p id="widgetDetailSubtitle" class="sync-status">Expanded controls for this Lifetree widget.</p>
+        </div>
+        <button type="button" class="ghost-button" id="closeWidgetDetail">Close</button>
+      </div>
+      <div id="widgetDetailBody" class="widget-detail-body"></div>
+    </section>
+  </div>
+
+  <div id="treeDetailModal" class="widget-detail-modal hidden" aria-hidden="true">
+    <div class="task-desk-backdrop" id="closeTreeDetailBackdrop"></div>
+    <section class="widget-detail-panel tree-detail-panel" role="dialog" aria-modal="true" aria-labelledby="treeDetailTitle">
+      <div class="task-desk-header">
+        <div>
+          <p class="eyebrow">Lifetree</p>
+          <h2 id="treeDetailTitle">Fruit and point details</h2>
+          <p class="sync-status">See the full point breakdown, current fruit growth, and what is ready to harvest.</p>
+        </div>
+        <button type="button" class="ghost-button" id="closeTreeDetail">Close</button>
+      </div>
+      <div id="treeDetailBody" class="widget-detail-body"></div>
+    </section>
+  </div>
+
+  <div id="treeStyleModal" class="widget-detail-modal hidden" aria-hidden="true">
+    <div class="task-desk-backdrop" id="closeTreeStyleBackdrop"></div>
+    <section class="widget-detail-panel tree-style-panel" role="dialog" aria-modal="true" aria-labelledby="treeStyleTitle">
+      <div class="task-desk-header">
+        <div>
+          <p class="eyebrow">Treestyle</p>
+          <h2 id="treeStyleTitle">Customize your Lifetree</h2>
+          <p class="sync-status">Spend harvested fruit points to unlock new looks, then equip the skins you own for each part of the tree shell.</p>
+        </div>
+        <button type="button" class="ghost-button" id="closeTreeStyle">Close</button>
+      </div>
+      <div id="treeStyleBody" class="widget-detail-body"></div>
+    </section>
+  </div>
+
+  <div id="developerModal" class="widget-detail-modal hidden" aria-hidden="true">
+    <div class="task-desk-backdrop" id="closeDeveloperBackdrop"></div>
+    <section class="widget-detail-panel developer-modal-panel" role="dialog" aria-modal="true" aria-labelledby="developerModalTitle">
+      <div class="task-desk-header">
+        <div>
+          <p class="eyebrow">Developer</p>
+          <h2 id="developerModalTitle">Private tools</h2>
+          <p class="sync-status">Signed in as <span id="developerEmail">developer</span>. These options are only visible for the owner account.</p>
+        </div>
+        <button type="button" class="ghost-button" id="closeDeveloper">Close</button>
+      </div>
+      <section id="developerPanel" class="developer-panel hidden">
+        <label>
+          <span>Widget</span>
+          <select id="developerWidgetType"></select>
+        </label>
+        <label>
+          <span>Max task points</span>
+          <input id="developerMaxTaskPoints" type="number" min="1" max="50" value="10" />
+        </label>
+        <div class="split">
+          <label>
+            <span>Inject category</span>
+            <select id="developerInjectCategory"></select>
+          </label>
+          <label>
+            <span>Inject points</span>
+            <input id="developerInjectPoints" type="number" min="1" max="50" value="1" />
+          </label>
+        </div>
+        <label>
+          <span>Injection source</span>
+          <input id="developerInjectSource" type="text" maxlength="60" value="Developer injection" />
+        </label>
+        <div class="split">
+          <label>
+            <span>Fruit test category</span>
+            <select id="developerFruitCategory"></select>
+          </label>
+          <label>
+            <span>Fruit growth points</span>
+            <input id="developerFruitDelta" type="number" min="1" max="75" value="5" />
+          </label>
+        </div>
+        <div class="split">
+          <label>
+            <span>Banked category</span>
+            <select id="developerBankedCategory"></select>
+          </label>
+          <label>
+            <span>Banked points delta</span>
+            <input id="developerBankedDelta" type="number" min="1" max="500" value="5" />
+          </label>
+        </div>
+        <div class="split">
+          <label>
+            <span>Tree skin</span>
+            <select id="developerTreeSkin"></select>
+          </label>
+          <label>
+            <span>Skin actions</span>
+            <div class="sync-actions developer-inline-actions">
+              <button type="button" class="ghost-button" id="grantTreeSkin">Buy skin</button>
+              <button type="button" class="ghost-button" id="removeTreeSkin">Remove skin</button>
             </div>
-            <div class="sync-actions">
-              <button type="button" class="ghost-button" id="clearDriveData">Clear Google Drive data</button>
-            </div>
-          </section>
-        </section>
+          </label>
+        </div>
+        <div class="sync-actions">
+          <button type="button" class="ghost-button" id="copyWidgetDiagnostics">Copy diagnostics</button>
+          <button type="button" class="ghost-button" id="cleanWidgetData">Run local cleanup</button>
+          <button type="button" class="ghost-button" id="clearWidgetDriveData">Clear widget in Drive</button>
+          <button type="button" class="ghost-button" id="injectPoints">Inject points</button>
+          <button type="button" class="ghost-button" id="addFruitGrowth">Add fruit growth</button>
+          <button type="button" class="ghost-button" id="removeFruitGrowth">Remove fruit growth</button>
+          <button type="button" class="ghost-button" id="addBankedPoints">Add banked points</button>
+          <button type="button" class="ghost-button" id="removeBankedPoints">Remove banked points</button>
+          <button type="button" class="ghost-button" id="resetFruitGrowth">Reset fruit testing</button>
+          <button type="button" class="ghost-button" id="clearDriveData">Clear Google Drive data</button>
+        </div>
+        <div id="developerFruitSummary" class="developer-fruit-summary"></div>
+        <div id="developerPointsSummary" class="developer-points-summary"></div>
       </section>
     </section>
   </div>

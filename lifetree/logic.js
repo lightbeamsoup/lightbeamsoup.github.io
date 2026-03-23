@@ -64,15 +64,29 @@ export function buildHistoryFeed(tasks, sortMode = "newest", filterType = "all")
   for (const task of tasks) {
     const history = Array.isArray(task.history) ? task.history : [];
     for (const item of history) {
+      if (item.type === "edited") {
+        continue;
+      }
       if (filterType !== "all" && item.type !== filterType) {
         continue;
       }
+      const dueAt = getTaskDueTimestamp(task);
+      const timing = describeHistoryTiming(item, dueAt, task.lateGraceMinutes);
       entries.push({
         taskId: task.id,
+        historyId: item.id || "",
         taskName: task.name,
         at: item.at,
         type: item.type,
         status: task.status,
+        archived: task.archived === true,
+        ownerWidgetId: task.ownerWidgetId || "",
+        ownerWidgetType: task.ownerWidgetType || "",
+        dueDate: task.dueDate || task.startDate || "",
+        timeOfDay: task.timeOfDay || "",
+        scheduledLabel: describeScheduledLabel(task),
+        timingStatus: timing.status,
+        timingLabel: timing.label,
         summary: `${task.name} was ${item.type}`
       });
     }
@@ -91,14 +105,194 @@ export function buildHistoryFeed(tasks, sortMode = "newest", filterType = "all")
   return entries;
 }
 
+export function getLatestLifecycleEntry(task) {
+  const history = Array.isArray(task?.history) ? task.history : [];
+  let latest = null;
+  for (const item of history) {
+    if (!item || (item.type !== "completed" && item.type !== "skipped" && item.type !== "reopened")) {
+      continue;
+    }
+    if (!latest || (item.at || 0) > (latest.at || 0)) {
+      latest = item;
+    }
+  }
+  return latest;
+}
+
+export function compareTaskResolutionPreference(leftTask, rightTask) {
+  const leftLatest = getLatestLifecycleEntry(leftTask);
+  const rightLatest = getLatestLifecycleEntry(rightTask);
+  const leftType = effectiveLifecycleType(leftTask, leftLatest);
+  const rightType = effectiveLifecycleType(rightTask, rightLatest);
+
+  if (leftType !== rightType) {
+    if (leftType === "completed" && rightType === "skipped") {
+      return 1;
+    }
+    if (leftType === "skipped" && rightType === "completed") {
+      return -1;
+    }
+  }
+
+  if (leftLatest && rightLatest && (leftLatest.at || 0) !== (rightLatest.at || 0)) {
+    return (leftLatest.at || 0) - (rightLatest.at || 0);
+  }
+  if (leftLatest && !rightLatest) {
+    return 1;
+  }
+  if (!leftLatest && rightLatest) {
+    return -1;
+  }
+
+  const leftRank = resolutionRank(leftTask?.status, leftLatest?.type);
+  const rightRank = resolutionRank(rightTask?.status, rightLatest?.type);
+  if (leftRank !== rightRank) {
+    return leftRank - rightRank;
+  }
+
+  const leftHistoryCount = Array.isArray(leftTask?.history) ? leftTask.history.length : 0;
+  const rightHistoryCount = Array.isArray(rightTask?.history) ? rightTask.history.length : 0;
+  if (leftHistoryCount !== rightHistoryCount) {
+    return leftHistoryCount - rightHistoryCount;
+  }
+
+  return (leftTask?.createdAt || 0) - (rightTask?.createdAt || 0);
+}
+
+export function buildLogicalWidgetTaskKey(task) {
+  const identityKey = task?.ownerWidgetType === "energy" && (task?.dueDate || task?.startDate || task?.timeOfDay)
+    ? ""
+    : (task?.ownerTaskKey || task?.name || "");
+  return [
+    task?.ownerWidgetType || "manual",
+    task?.templateId ? "generated" : (task?.recurrence?.type !== "none" ? "template" : "single"),
+    identityKey,
+    task?.templateId || "",
+    Number.isFinite(task?.occurrenceIndex) ? task.occurrenceIndex : 0,
+    task?.startDate || "",
+    task?.dueDate || "",
+    task?.timeOfDay || ""
+  ].join("|");
+}
+
+export function compactTaskHistory(history = []) {
+  const compacted = [];
+  for (const item of Array.isArray(history) ? history : []) {
+    if (!item?.id) {
+      continue;
+    }
+    const previous = compacted[compacted.length - 1] || null;
+    if (previous && previous.type === item.type) {
+      compacted[compacted.length - 1] = item;
+      continue;
+    }
+    compacted.push(item);
+  }
+  return compacted;
+}
+
+function resolutionRank(status = "open", latestType = "") {
+  if (latestType === "reopened") {
+    return 1;
+  }
+  if (latestType === "completed" || status === "done") {
+    return 3;
+  }
+  if (latestType === "skipped" || status === "skipped") {
+    return 2;
+  }
+  return 1;
+}
+
+function effectiveLifecycleType(task, latestEntry) {
+  if (latestEntry?.type === "completed" || latestEntry?.type === "skipped" || latestEntry?.type === "reopened") {
+    return latestEntry.type;
+  }
+  if (task?.status === "done") {
+    return "completed";
+  }
+  if (task?.status === "skipped") {
+    return "skipped";
+  }
+  return "reopened";
+}
+
+function getTaskDueTimestamp(task) {
+  const dueDate = task.dueDate || task.startDate || "";
+  if (!dueDate) {
+    return null;
+  }
+  const timeOfDay = task.timeOfDay || "23:59";
+  const timestamp = new Date(`${dueDate}T${timeOfDay}:00`).getTime();
+  return Number.isNaN(timestamp) ? null : timestamp;
+}
+
+function describeScheduledLabel(task) {
+  const date = task.dueDate || task.startDate || "";
+  if (!date && !task.timeOfDay) {
+    return "";
+  }
+  if (date && task.timeOfDay) {
+    return `Due ${formatHistoryDate(date)} at ${formatHistoryTime(task.timeOfDay)}`;
+  }
+  if (date) {
+    return `Due ${formatHistoryDate(date)}`;
+  }
+  return `Due at ${formatHistoryTime(task.timeOfDay)}`;
+}
+
+function describeHistoryTiming(item, dueAt, lateGraceMinutes = 15) {
+  if (!dueAt) {
+    return { status: "", label: "" };
+  }
+  const graceCutoff = dueAt + Math.max(Number(lateGraceMinutes) || 0, 0) * 60_000;
+  if (item.type === "completed") {
+    return item.at <= graceCutoff
+      ? { status: "on-time", label: "On time" }
+      : { status: "late", label: "Completed late" };
+  }
+  if (item.type === "skipped") {
+    if (item.at <= dueAt) {
+      return { status: "neutral", label: "Skipped before due time" };
+    }
+    return item.at <= graceCutoff
+      ? { status: "neutral", label: "Skipped within grace period" }
+      : { status: "missed", label: "Missed due time" };
+  }
+  return { status: "", label: "" };
+}
+
+function formatHistoryDate(value) {
+  const [year, month, day] = String(value || "").split("-").map(Number);
+  if (!year || !month || !day) {
+    return value;
+  }
+  return new Date(year, month - 1, day, 12, 0, 0).toLocaleDateString([], {
+    month: "short",
+    day: "numeric"
+  });
+}
+
+function formatHistoryTime(value) {
+  const [hour, minute] = String(value || "").split(":").map(Number);
+  if (!Number.isInteger(hour) || !Number.isInteger(minute)) {
+    return value;
+  }
+  return new Date(2000, 0, 1, hour, minute, 0).toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit"
+  });
+}
+
 export function createArchivedSeriesRecord(template) {
+  const originId = String(template.seriesOriginId || template.id || "").replace(/(::archived)+$/, "");
   return {
     ...template,
-    id: `${template.id}::archived`,
+    id: `${originId}::archived`,
     templateId: "",
     occurrenceIndex: 0,
     archived: true,
-    seriesOriginId: template.id,
+    seriesOriginId: originId,
     recurrence: { type: "archived-series" }
   };
 }
@@ -132,6 +326,33 @@ export function compareTaskSchedule(left, right) {
   }
 
   return (left.createdAt || 0) - (right.createdAt || 0);
+}
+
+export function computeRecurringNotBeforeAt(recurrenceType, scheduledDate) {
+  if (!scheduledDate || !/^\d{4}-\d{2}-\d{2}$/.test(scheduledDate)) {
+    return 0;
+  }
+
+  const base = new Date(`${scheduledDate}T00:00:00`);
+  if (Number.isNaN(base.getTime())) {
+    return 0;
+  }
+
+  if (recurrenceType === "weekly") {
+    base.setDate(base.getDate() - base.getDay());
+    return base.getTime();
+  }
+
+  if (recurrenceType === "monthly-date" || recurrenceType === "monthly-weekday") {
+    base.setDate(1);
+    return base.getTime();
+  }
+
+  if (recurrenceType === "daily") {
+    return base.getTime();
+  }
+
+  return 0;
 }
 
 export function isTaskEligibleForWidgetCompletion(task, today = toDateString(new Date())) {

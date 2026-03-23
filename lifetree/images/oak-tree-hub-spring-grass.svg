@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Oak tree hub with spring grass</title>
+  <desc id="desc">A stylized oak tree growing from bright spring grass with small flowers.</desc>
+  <defs>
+    <linearGradient id="grass" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#aee27e"/>
+      <stop offset="100%" stop-color="#73bc55"/>
+    </linearGradient>
+    <linearGradient id="trunk" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#8e5b34"/>
+      <stop offset="100%" stop-color="#6b3f23"/>
+    </linearGradient>
+  </defs>
+
+  <g transform="translate(256 276) scale(1.08) translate(-256 -276)">
+    <path d="M88 338c46-26 98-40 168-40s122 14 168 40v104H88z" fill="url(#grass)"/>
+    <path d="M192 354c26-8 50-12 64-12s38 4 64 12v26H192z" fill="#82c86b" opacity="0.45"/>
+
+    <g opacity="0.95">
+      <circle cx="138" cy="374" r="8" fill="#fff3fb"/>
+      <circle cx="138" cy="366" r="4" fill="#ffd96b"/>
+      <circle cx="130" cy="374" r="4.2" fill="#ffd8ef"/>
+      <circle cx="146" cy="374" r="4.2" fill="#ffd8ef"/>
+      <circle cx="138" cy="382" r="4.2" fill="#ffd8ef"/>
+      <circle cx="202" cy="388" r="8" fill="#f2f7ff"/>
+      <circle cx="202" cy="380" r="4" fill="#ffd96b"/>
+      <circle cx="194" cy="388" r="4.2" fill="#d9e8ff"/>
+      <circle cx="210" cy="388" r="4.2" fill="#d9e8ff"/>
+      <circle cx="202" cy="396" r="4.2" fill="#d9e8ff"/>
+      <circle cx="314" cy="380" r="8" fill="#fff7ea"/>
+      <circle cx="314" cy="372" r="4" fill="#ffd96b"/>
+      <circle cx="306" cy="380" r="4.2" fill="#ffe0b7"/>
+      <circle cx="322" cy="380" r="4.2" fill="#ffe0b7"/>
+      <circle cx="314" cy="388" r="4.2" fill="#ffe0b7"/>
+      <circle cx="370" cy="366" r="8" fill="#fff6fd"/>
+      <circle cx="370" cy="358" r="4" fill="#ffd96b"/>
+      <circle cx="362" cy="366" r="4.2" fill="#e6d6ff"/>
+      <circle cx="378" cy="366" r="4.2" fill="#e6d6ff"/>
+      <circle cx="370" cy="374" r="4.2" fill="#e6d6ff"/>
+    </g>
+
+    <path d="M240 342c-8-78-8-140 0-186h32c8 46 8 108 0 186z" fill="url(#trunk)"/>
+    <path d="M228 232c-28-46-48-76-78-110l18-18c34 28 60 60 82 104z" fill="#744828"/>
+    <path d="M284 222c20-40 46-76 82-112l18 18c-32 36-54 66-80 112z" fill="#744828"/>
+    <path d="M248 190c-14-34-34-68-60-98l18-14c28 28 50 62 68 102z" fill="#744828"/>
+
+    <circle cx="202" cy="168" r="58" fill="#4f8d49"/>
+    <circle cx="258" cy="120" r="66" fill="#5aa24f"/>
+    <circle cx="320" cy="170" r="62" fill="#4f944a"/>
+    <circle cx="252" cy="198" r="74" fill="#63a954"/>
+    <circle cx="164" cy="214" r="46" fill="#5aa04a"/>
+    <circle cx="352" cy="220" r="50" fill="#5ca34e"/>
+
+    <circle cx="212" cy="144" r="8" fill="#88c26d"/>
+    <circle cx="292" cy="100" r="8" fill="#92cb73"/>
+    <circle cx="340" cy="188" r="8" fill="#86bf68"/>
+    <circle cx="226" cy="214" r="8" fill="#8bc96d"/>
+  </g>
+</svg>
