@@ -242,7 +242,9 @@ export const energyWidgetDefinition = {
           return;
         }
         const level = Number(taskVoteButton.getAttribute("data-level"));
-        stageEnergyVote(widget, level, "auto", helpers);
+        const tasks = typeof helpers.getStore === "function" ? helpers.getStore().tasks : [];
+        const voteMode = hasActiveReminderTask(tasks, widget.id, Date.now()) ? "auto" : "extra";
+        stageEnergyVote(widget, level, voteMode, helpers);
         return;
       }
 

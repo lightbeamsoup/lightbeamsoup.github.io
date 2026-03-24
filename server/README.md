@@ -9,6 +9,7 @@ This backend enables Google OAuth authorization code flow with refresh tokens fo
 - `GOOGLE_REDIRECT_URI`
 - `TOKEN_SECRET`
 - `DATA_DIR` recommended in production for persistent token storage
+- `REQUEST_BODY_LIMIT` optional, defaults to `10mb`
 
 See `.env.example` for local development defaults.
 
@@ -31,6 +32,7 @@ See `.env.example` for local development defaults.
    - `TOKEN_SECRET` as a long random secret
    - `DATA_DIR=/data`
    - `COOKIE_SECURE=true`
+   - `REQUEST_BODY_LIMIT=10mb`
 4. In Railway, attach the custom domain `www.joshcodes.ai` to this service and point DNS at Railway.
 5. Add these Google OAuth settings:
    - Authorized JavaScript origin: `https://www.joshcodes.ai`

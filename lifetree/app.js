@@ -111,6 +111,7 @@ const appConfig = window.TASK_DECK_CONFIG || {};
 const API_BASE = resolveApiBase(appConfig.apiBase || "");
 const FETCH_CREDENTIALS = API_BASE && API_BASE !== window.location.origin ? "include" : "same-origin";
 const HERO_COLLAPSED_KEY = "lifetree_hero_collapsed";
+const MOBILE_TASK_DESK_MEDIA = "(max-width: 860px)";
 
 const dashboardHero = document.getElementById("dashboardHero");
 const toggleHeroButton = document.getElementById("toggleHero");
@@ -147,6 +148,9 @@ const taskDeskModal = document.getElementById("taskDeskModal");
 const openTaskDeskButton = document.getElementById("openTaskDesk");
 const closeTaskDeskButton = document.getElementById("closeTaskDesk");
 const closeTaskDeskBackdrop = document.getElementById("closeTaskDeskBackdrop");
+const taskDeskTabs = document.getElementById("taskDeskTabs");
+const taskDeskPaneButtons = Array.from(document.querySelectorAll("[data-desk-pane-button]"));
+const taskDeskPanes = Array.from(document.querySelectorAll("[data-desk-pane]"));
 const widgetSlots = Array.from(document.querySelectorAll(".widget-slot"));
 const widgetMenu = document.getElementById("widgetMenu");
 const widgetMenuTitle = document.getElementById("widgetMenuTitle");
@@ -210,6 +214,12 @@ const openCount = document.getElementById("openCount");
 const doneCount = document.getElementById("doneCount");
 const recurringCount = document.getElementById("recurringCount");
 const syncStatus = document.getElementById("syncStatus");
+const syncLocalCard = document.getElementById("syncLocalCard");
+const syncLocalValue = document.getElementById("syncLocalValue");
+const syncDriveCard = document.getElementById("syncDriveCard");
+const syncDriveValue = document.getElementById("syncDriveValue");
+const syncAutosaveCard = document.getElementById("syncAutosaveCard");
+const syncAutosaveValue = document.getElementById("syncAutosaveValue");
 const googleSignInButton = document.getElementById("googleSignIn");
 const googleSignOutButton = document.getElementById("googleSignOut");
 const loadDriveButton = document.getElementById("loadDrive");
@@ -256,7 +266,8 @@ const editState = {
 };
 
 const widgetMenuState = {
-  slotIndex: null
+  slotIndex: null,
+  selectedType: ""
 };
 
 const pendingDeleteState = {
@@ -270,6 +281,19 @@ const widgetDetailState = {
 };
 
 let store = loadStore();
+const mobileTaskDeskQuery = window.matchMedia(MOBILE_TASK_DESK_MEDIA);
+let activeTaskDeskPane = "tasks";
+const syncState = {
+  remoteUpdatedAt: 0,
+  remoteFingerprint: "",
+  remoteUserUpdatedAt: 0,
+  remoteUserFingerprint: ""
+};
+const localFingerprintCache = {
+  storeRef: null,
+  updatedAt: Number.NaN,
+  fingerprint: ""
+};
 
 const taskDeskController = createTaskDeskController({
   taskDeskModal,
@@ -294,6 +318,7 @@ const driveSyncController = createDriveSyncController({
   fetchCredentials: FETCH_CREDENTIALS,
   authState,
   getStore: () => store,
+  getKnownRemoteState: () => syncState,
   setStore: (nextStore) => {
     store = nextStore;
   },
@@ -308,7 +333,8 @@ const driveSyncController = createDriveSyncController({
   updateGoogleButtons,
   getReturnToTarget,
   describeMergeResult,
-  computeStoreFingerprint
+  computeStoreFingerprint,
+  computeUserContentFingerprint
 });
 const {
   refreshAuthStatus,
@@ -325,7 +351,19 @@ let autosaveController = createAutosaveController({
   getStore: () => store,
   isAuthenticated: () => authState.authenticated,
   computeStoreFingerprint,
-  saveToDrive
+  saveToDrive: async (options) => {
+    const result = await saveToDrive(options);
+    if (result?.success) {
+      rememberRemoteStoreState({
+        updatedAt: result.remoteUpdatedAt,
+        fingerprint: result.remoteFingerprint,
+        userUpdatedAt: result.remoteUserUpdatedAt,
+        userFingerprint: result.remoteUserFingerprint
+      });
+      renderSyncMeta();
+    }
+    return result;
+  }
 });
 
 updateRecurrenceVisibility();
@@ -335,12 +373,14 @@ taskPointsInput.dataset.auto = "true";
 syncTaskPointsDefault();
 renderTemporalUi();
 window.setInterval(renderTemporalUi, TEMPORAL_REFRESH_MS);
+applyTaskDeskPaneState();
 
 toggleHeroButton.addEventListener("click", toggleHeroCollapsed);
 openSettingsButton.addEventListener("click", openSettings);
-openTaskDeskButton.addEventListener("click", openTaskDesk);
+openTaskDeskButton.addEventListener("click", () => handleOpenTaskDesk("tasks"));
 closeTaskDeskButton.addEventListener("click", closeTaskDesk);
 closeTaskDeskBackdrop.addEventListener("click", closeTaskDesk);
+taskDeskTabs.addEventListener("click", handleTaskDeskTabClick);
 closeWidgetMenuButton.addEventListener("click", closeWidgetMenu);
 widgetMenuOptions.addEventListener("click", handleWidgetMenuSelection);
 canopyColumns.addEventListener("click", handleCanopyAction);
@@ -351,6 +391,7 @@ widgetSlots.forEach((slot) => {
   slot.addEventListener("click", handleWidgetSlotClick);
 });
 document.addEventListener("keydown", handleGlobalKeydown);
+mobileTaskDeskQuery.addEventListener("change", applyTaskDeskPaneState);
 form.addEventListener("submit", handleSubmit);
 clearFormButton.addEventListener("click", resetComposer);
 cancelEditButton.addEventListener("click", clearEditState);
@@ -411,14 +452,53 @@ closeDeveloperBackdrop.addEventListener("click", closeDeveloper);
 
 initializeApp();
 
-async function initializeApp() {
-  const startupResult = await initializeFromDrive({ timeoutMs: 10000 });
+function initializeApp() {
+  setSyncStatus("Using local data while checking Google Drive in the background.", "info");
+  renderSyncMeta();
   finalizeStoreState();
   renderAll();
   autosaveController.refreshSchedule();
-  if (startupResult.loaded && startupResult.synced) {
+  void continueStartup();
+}
+
+async function continueStartup() {
+  const startupResult = await initializeFromDrive({ timeoutMs: 10000 });
+  if (
+    startupResult.remoteUpdatedAt
+    || startupResult.remoteFingerprint
+    || startupResult.remoteUserUpdatedAt
+    || startupResult.remoteUserFingerprint
+  ) {
+    rememberRemoteStoreState({
+      updatedAt: startupResult.remoteUpdatedAt,
+      fingerprint: startupResult.remoteFingerprint,
+      userUpdatedAt: startupResult.remoteUserUpdatedAt,
+      userFingerprint: startupResult.remoteUserFingerprint
+    });
+  }
+
+  if (startupResult.loaded) {
+    finalizeStoreState();
+    renderAll();
+  }
+  const currentFingerprint = getCurrentStoreFingerprint();
+  const startupRemoteFingerprint = startupResult.remoteFingerprint || "";
+  const shouldAutosaveStartupDiff = Boolean(
+    authState.authenticated
+    && normalizeProfile(store.profile).autosaveEnabled
+    && startupRemoteFingerprint
+    && startupRemoteFingerprint !== currentFingerprint
+  );
+
+  if (shouldAutosaveStartupDiff) {
+    const autosaveResult = await autosaveController.attemptAutosave();
+    if (autosaveResult?.success) {
+      autosaveController.markCurrentAsSaved();
+    }
+  } else if (startupResult.loaded && startupResult.synced) {
     autosaveController.markCurrentAsSaved();
   }
+  autosaveController.refreshSchedule();
 
   if (startupResult.timedOut) {
     setSyncStatus("Google Drive did not respond within 10 seconds. Using local data on this device.", "info");
@@ -434,21 +514,40 @@ async function handleGoogleDisconnect() {
   await disconnectGoogle();
   autosaveController.clearSavedBaseline();
   autosaveController.refreshSchedule();
+  renderSyncMeta();
 }
 
 async function handleManualLoadFromDrive() {
   const result = await loadFromDrive();
+  if (result?.found) {
+    rememberRemoteStoreState({
+      updatedAt: result.remoteUpdatedAt,
+      fingerprint: result.remoteFingerprint,
+      userUpdatedAt: result.remoteUserUpdatedAt,
+      userFingerprint: result.remoteUserFingerprint
+    });
+  } else if (result && result.found === false) {
+    clearRemoteStoreState();
+  }
   autosaveController.refreshSchedule();
   if (result?.applied && result.synced) {
     autosaveController.markCurrentAsSaved();
   }
+  renderSyncMeta();
 }
 
 async function handleManualSaveToDrive() {
-  const success = await saveToDrive();
-  if (success) {
+  const result = await saveToDrive();
+  if (result?.success) {
+    rememberRemoteStoreState({
+      updatedAt: result.remoteUpdatedAt,
+      fingerprint: result.remoteFingerprint,
+      userUpdatedAt: result.remoteUserUpdatedAt,
+      userFingerprint: result.remoteUserFingerprint
+    });
     autosaveController.markCurrentAsSaved();
   }
+  renderSyncMeta();
 }
 
 function finalizeStoreState() {
@@ -460,7 +559,7 @@ function finalizeStoreState() {
   ensureWidgetTasks();
   repairTaskStatusFromHistory();
   if (JSON.stringify(store) !== before) {
-    persistStore();
+    persistStore({ touchUserUpdatedAt: false });
   }
 }
 
@@ -580,6 +679,42 @@ function isDeveloperOpen() {
   return !developerModal.classList.contains("hidden");
 }
 
+function applyTaskDeskPaneState() {
+  const mobile = mobileTaskDeskQuery.matches;
+  for (const pane of taskDeskPanes) {
+    const active = pane.dataset.deskPane === activeTaskDeskPane;
+    pane.classList.toggle("is-active", !mobile || active);
+    pane.setAttribute("aria-hidden", mobile && !active ? "true" : "false");
+  }
+  for (const button of taskDeskPaneButtons) {
+    const active = button.dataset.deskPaneButton === activeTaskDeskPane;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+  }
+}
+
+function setActiveTaskDeskPane(pane) {
+  if (!taskDeskPanes.some((entry) => entry.dataset.deskPane === pane)) {
+    activeTaskDeskPane = "tasks";
+  } else {
+    activeTaskDeskPane = pane;
+  }
+  applyTaskDeskPaneState();
+}
+
+function handleTaskDeskTabClick(event) {
+  const button = event.target.closest("[data-desk-pane-button]");
+  if (!button) {
+    return;
+  }
+  setActiveTaskDeskPane(button.getAttribute("data-desk-pane-button") || "tasks");
+}
+
+function handleOpenTaskDesk(preferredPane = "tasks") {
+  setActiveTaskDeskPane(preferredPane);
+  openTaskDesk();
+}
+
 function toggleHeroCollapsed() {
   const nextCollapsed = !dashboardHero.classList.contains("collapsed");
   applyHeroState(nextCollapsed);
@@ -646,6 +781,16 @@ function handleWidgetSlotClick(event) {
     return;
   }
 
+  if (action === "cancel-widget-menu") {
+    closeWidgetMenu();
+    return;
+  }
+
+  if (action === "choose-widget-type") {
+    addWidgetTypeToSelectedSlot(actionTarget.getAttribute("data-widget-type") || "");
+    return;
+  }
+
   const widget = store.widgets.find((item) => item.slotIndex === slotIndex);
   const definition = getWidgetDefinition(widget?.type);
   if (widget && definition?.handleAction?.({
@@ -670,7 +815,7 @@ function handleWidgetSlotClick(event) {
   }
 
   if (action === "open-task-desk") {
-    openTaskDesk();
+    handleOpenTaskDesk("tasks");
     return;
   }
 
@@ -748,7 +893,7 @@ function renderWidgetDetailIfOpen() {
       createId,
       todayString,
       resolveCategorySnapshot,
-      openTaskDesk,
+      openTaskDesk: handleOpenTaskDesk,
       openWidgetDetail,
       closeWidgetDetail,
       setSyncStatus,
@@ -833,15 +978,16 @@ function handleCanopyAction(event) {
 
 function openWidgetMenu(slotIndex) {
   widgetMenuState.slotIndex = slotIndex;
-  widgetMenu.classList.remove("hidden");
-  widgetMenuTitle.textContent = `Choose a widget for slot ${slotIndex + 1}`;
-  widgetMenuCopy.textContent = "Start small. Widget types cannot be duplicated, and each definition owns its own task rules.";
-  renderWidgetMenuOptions();
+  widgetMenuState.selectedType = "";
+  widgetMenu.classList.add("hidden");
+  renderWidgetOrbit();
 }
 
 function closeWidgetMenu() {
   widgetMenuState.slotIndex = null;
+  widgetMenuState.selectedType = "";
   widgetMenu.classList.add("hidden");
+  renderWidgetOrbit();
 }
 
 function handleWidgetMenuSelection(event) {
@@ -869,7 +1015,8 @@ function renderWidgetMenuOptions() {
 }
 
 function addWidgetTypeToSelectedSlot(type) {
-  if (widgetMenuState.slotIndex === null) {
+  const targetSlotIndex = widgetMenuState.slotIndex;
+  if (targetSlotIndex === null) {
     return;
   }
 
@@ -880,15 +1027,33 @@ function addWidgetTypeToSelectedSlot(type) {
     return;
   }
 
-  if (definition.singleton && store.widgets.some((widget) => widget.type === definition.type)) {
-    setSyncStatus(`${definition.title} is already part of this Lifetree.`, "error");
+  const existingWidget = store.widgets.find((widget) => widget.type === definition.type);
+  if (definition.singleton && existingWidget) {
+    if (existingWidget.slotIndex === widgetMenuState.slotIndex) {
+      closeWidgetMenu();
+      setSyncStatus(`${definition.title} is already in this slot.`, "info");
+      return;
+    }
+
+    if (widgetMenuState.selectedType !== type) {
+      widgetMenuState.selectedType = type;
+      renderWidgetOrbit();
+      setSyncStatus(`${definition.title} is already deployed. Click again to move it here.`, "info");
+      return;
+    }
+
+    existingWidget.slotIndex = targetSlotIndex;
+    existingWidget.updatedAt = Date.now();
+    persistStore();
     closeWidgetMenu();
+    renderAll();
+    setSyncStatus(`Moved ${definition.title} to slot ${targetSlotIndex + 1}.`, "info");
     return;
   }
 
   const retired = getRetiredWidgetByType(definition.type);
   const widget = definition.createWidget({
-    slotIndex: widgetMenuState.slotIndex,
+    slotIndex: targetSlotIndex,
     retiredWidget: retired,
     createId,
     now: Date.now()
@@ -1019,6 +1184,7 @@ function handleSubmit(event) {
   trimTasks();
   persistStore();
   resetComposer();
+  setActiveTaskDeskPane("tasks");
   renderAll();
   setSyncStatus("Saved locally. Use Save to Drive when you want to sync.", "info");
 }
@@ -1163,6 +1329,7 @@ function applyTaskEdit(formData) {
   trimTasks();
   persistStore();
   clearEditState();
+  setActiveTaskDeskPane("tasks");
   renderAll();
   setSyncStatus("Saved locally. Use Save to Drive when you want to sync.", "info");
 }
@@ -1226,13 +1393,13 @@ function regenerateSeries(templateId, { preserveClosed }) {
 function renderAll() {
   if (applyAutoSkipRules()) {
     reconcileRecurringSeries();
-    persistStore();
+    persistStore({ touchUserUpdatedAt: false });
   }
   if (applyCompletedTaskHistoryOnly()) {
-    persistStore();
+    persistStore({ touchUserUpdatedAt: false });
   }
   if (applyAutoArchiving()) {
-    persistStore();
+    persistStore({ touchUserUpdatedAt: false });
   }
   renderCanopy();
   renderTemporalUi();
@@ -1337,6 +1504,7 @@ function renderCanopy() {
 function renderTemporalUi(now = new Date()) {
   renderHeroStatus(now);
   renderTreeSky(now);
+  renderSyncMeta(now);
 }
 
 function renderHeroStatus(now = new Date()) {
@@ -1368,6 +1536,105 @@ function renderTreeSky(now = new Date()) {
   if (treeShellImage.getAttribute("src") !== appearance.treeImageSrc) {
     treeShellImage.setAttribute("src", appearance.treeImageSrc);
   }
+}
+
+function renderSyncMeta(now = new Date()) {
+  const localUpdatedAt = store.userUpdatedAt || 0;
+  const remoteUpdatedAt = syncState.remoteUserUpdatedAt || 0;
+  const remoteFingerprint = syncState.remoteUserFingerprint || "";
+  const localFingerprint = remoteFingerprint ? getCurrentUserFingerprint() : "";
+  const profile = normalizeProfile(store.profile);
+  const autosaveStatus = autosaveController.getStatus();
+
+  let localState = "neutral";
+  let driveState = "neutral";
+
+  if (remoteUpdatedAt > 0 || remoteFingerprint) {
+    if (remoteFingerprint && localFingerprint && remoteFingerprint === localFingerprint) {
+      localState = "success";
+      driveState = "success";
+    } else if (localUpdatedAt > remoteUpdatedAt) {
+      localState = "success";
+      driveState = "error";
+    } else if (remoteUpdatedAt > localUpdatedAt) {
+      localState = "error";
+      driveState = "success";
+    } else {
+      localState = "error";
+      driveState = "error";
+    }
+  }
+
+  syncLocalCard.dataset.state = localState;
+  syncDriveCard.dataset.state = driveState;
+  syncLocalValue.textContent = localUpdatedAt ? formatDateTime(localUpdatedAt) : "No local edits yet";
+  syncDriveValue.textContent = remoteUpdatedAt ? formatDateTime(remoteUpdatedAt) : "No Drive save yet";
+
+  let autosaveState = "neutral";
+  let autosaveText = "Autosave off";
+  if (!authState.authenticated) {
+    autosaveText = profile.autosaveEnabled ? "Connect Google" : "Autosave off";
+  } else if (!profile.autosaveEnabled) {
+    autosaveText = "Autosave off";
+  } else if (autosaveStatus.inFlight) {
+    autosaveState = "info";
+    autosaveText = "Saving now…";
+  } else if (autosaveStatus.nextRunAt > 0) {
+    autosaveState = "info";
+    autosaveText = formatAutosaveCountdown(Math.max(0, autosaveStatus.nextRunAt - now.getTime()));
+  } else {
+    autosaveText = `Every ${profile.autosaveIntervalMinutes} min`;
+  }
+
+  syncAutosaveCard.dataset.state = autosaveState;
+  syncAutosaveValue.textContent = autosaveText;
+}
+
+function getCurrentStoreFingerprint() {
+  if (localFingerprintCache.storeRef !== store || localFingerprintCache.updatedAt !== (store.updatedAt || 0)) {
+    localFingerprintCache.storeRef = store;
+    localFingerprintCache.updatedAt = store.updatedAt || 0;
+    localFingerprintCache.fingerprint = computeStoreFingerprint(store);
+  }
+  return localFingerprintCache.fingerprint;
+}
+
+function getCurrentUserFingerprint() {
+  return typeof store.userFingerprint === "string" && store.userFingerprint
+    ? store.userFingerprint
+    : computeUserContentFingerprint(store);
+}
+
+function rememberRemoteStoreState({
+  updatedAt = 0,
+  fingerprint = "",
+  userUpdatedAt = 0,
+  userFingerprint = ""
+} = {}) {
+  syncState.remoteUpdatedAt = updatedAt || 0;
+  syncState.remoteFingerprint = fingerprint || "";
+  syncState.remoteUserUpdatedAt = userUpdatedAt || 0;
+  syncState.remoteUserFingerprint = userFingerprint || "";
+}
+
+function clearRemoteStoreState() {
+  syncState.remoteUpdatedAt = 0;
+  syncState.remoteFingerprint = "";
+  syncState.remoteUserUpdatedAt = 0;
+  syncState.remoteUserFingerprint = "";
+}
+
+function formatAutosaveCountdown(ms) {
+  if (ms <= 15_000) {
+    return "Due shortly";
+  }
+  const totalMinutes = Math.max(1, Math.ceil(ms / 60_000));
+  if (totalMinutes < 60) {
+    return `${totalMinutes} min`;
+  }
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return minutes === 0 ? `${hours} hr` : `${hours} hr ${minutes} min`;
 }
 
 function renderTreeCore() {
@@ -1770,15 +2037,56 @@ function renderWidgetOrbit() {
   for (const slot of widgetSlots) {
     const slotIndex = Number(slot.getAttribute("data-slot-index"));
     const widget = store.widgets.find((item) => item.slotIndex === slotIndex);
-    slot.classList.remove("empty", "filled");
+    slot.classList.remove("empty", "filled", "widget-slot-chooser");
 
     if (!widget) {
+      const chooserOpen = widgetMenuState.slotIndex === slotIndex;
       slot.classList.add("empty");
+      if (!chooserOpen) {
+        slot.innerHTML = `
+          <div class="plus">+</div>
+          <strong>Empty slot</strong>
+          <p>Add a Lifetree widget here.</p>
+          <button type="button" class="ghost-button" data-widget-action="add-widget">Choose widget</button>
+        `;
+        continue;
+      }
+
+      slot.classList.add("widget-slot-chooser");
       slot.innerHTML = `
-        <div class="plus">+</div>
-        <strong>Empty slot</strong>
-        <p>Add a Lifetree widget here.</p>
-        <button type="button" class="ghost-button" data-widget-action="add-widget">Choose widget</button>
+        <div class="widget-slot-header">
+          <div>
+            <h3>Choose widget</h3>
+            <p>Pick an available widget, or move an existing one here.</p>
+          </div>
+          <span class="widget-badge">Slot ${slotIndex + 1}</span>
+        </div>
+        <div class="widget-slot-picker">
+          ${listWidgetDefinitions().map((definition) => {
+            const deployedWidget = store.widgets.find((item) => item.type === definition.type);
+            const deployed = Boolean(definition.singleton && deployedWidget);
+            const moveConfirm = deployed && widgetMenuState.selectedType === definition.type;
+            return `
+              <button
+                type="button"
+                class="widget-slot-choice ${deployed ? "deployed" : "available"} ${moveConfirm ? "confirm" : ""}"
+                data-widget-action="choose-widget-type"
+                data-widget-type="${definition.type}"
+                data-deployed="${deployed ? "true" : "false"}"
+              >
+                <strong>${escapeHtml(moveConfirm ? "Move here?" : definition.title)}</strong>
+                <span>${escapeHtml(
+                  moveConfirm
+                    ? "Tap again to move the deployed widget into this slot."
+                    : (deployed ? "Already deployed elsewhere." : (definition.menuDescription || "Add this widget to Lifetree."))
+                )}</span>
+              </button>
+            `;
+          }).join("")}
+        </div>
+        <div class="widget-actions">
+          <button type="button" class="ghost-button" data-widget-action="cancel-widget-menu">Cancel</button>
+        </div>
       `;
       continue;
     }
@@ -2617,6 +2925,7 @@ function populateComposerFromHistory(task) {
   clearPendingDelete();
   editState.taskId = "";
   editState.scope = "single";
+  setActiveTaskDeskPane("composer");
   form.reset();
   taskNameInput.value = task.name;
   taskDetailsInput.value = task.details || "";
@@ -2719,6 +3028,7 @@ function beginEdit(task, scope) {
     return;
   }
 
+  setActiveTaskDeskPane("composer");
   editState.taskId = task.id;
   editState.scope = scope;
   editScope.value = scope;
@@ -3132,22 +3442,37 @@ function loadLegacyCookieStore() {
 
 function normalizeStore(input) {
   const tasks = Array.isArray(input.tasks) ? input.tasks.map(normalizeTask).slice(0, MAX_TASKS) : [];
-  return {
-    version: 12,
+  const categories = normalizeCategoryDefinitions(input.categories);
+  const widgets = normalizeWidgets(input.widgets);
+  const retiredWidgets = normalizeWidgets(input.retiredWidgets);
+  const resolveStoredCategorySnapshot = createCategorySnapshotResolver(categories, widgets);
+  const normalized = {
+    version: 13,
     updatedAt: typeof input.updatedAt === "number" ? input.updatedAt : Date.now(),
     driveFileId: typeof input.driveFileId === "string" ? input.driveFileId : "",
     profile: normalizeProfile(input.profile),
     tasks,
-    pointLedger: normalizePointLedger(input.pointLedger),
+    pointLedger: normalizePointLedgerBase(input.pointLedger, {
+      defaultCategoryKey: DEFAULT_CATEGORY_KEY,
+      normalizeCategoryColor,
+      resolveCategorySnapshot: resolveStoredCategorySnapshot
+    }),
     treeState: normalizeTreeState(input.treeState),
     devSettings: normalizeDevSettings(input.devSettings),
-    categories: normalizeCategoryDefinitions(input.categories),
-    widgets: normalizeWidgets(input.widgets),
-    retiredWidgets: normalizeWidgets(input.retiredWidgets),
+    categories,
+    widgets,
+    retiredWidgets,
     deletedTaskIds: normalizeDeletedIds(input.deletedTaskIds),
     deletedTaskKeys: normalizeDeletedIds(input.deletedTaskKeys),
     deletedSeriesIds: normalizeDeletedIds(input.deletedSeriesIds)
   };
+  normalized.userUpdatedAt = typeof input.userUpdatedAt === "number"
+    ? input.userUpdatedAt
+    : normalized.updatedAt;
+  normalized.userFingerprint = typeof input.userFingerprint === "string" && input.userFingerprint
+    ? input.userFingerprint
+    : computeUserContentFingerprintFromNormalized(normalized);
+  return normalized;
 }
 
 function normalizeTask(task) {
@@ -3346,6 +3671,47 @@ function resolveCategorySnapshot(categoryKey, originalTask = null) {
   };
 }
 
+function createCategorySnapshotResolver(categories = [], widgets = []) {
+  const mergedByKey = new Map();
+
+  for (const category of normalizeCategoryDefinitions(categories)) {
+    mergedByKey.set(category.key, category);
+  }
+  for (const category of listWidgetCategories(widgets)) {
+    const normalized = createCategoryDefinition(category);
+    if (normalized && !mergedByKey.has(normalized.key)) {
+      mergedByKey.set(normalized.key, normalized);
+    }
+  }
+
+  return (categoryKey, originalTask = null) => {
+    const selectedKey = slugifyCategoryKey(categoryKey || originalTask?.categoryKey || DEFAULT_CATEGORY_KEY);
+    const currentCategory = mergedByKey.get(selectedKey);
+    if (currentCategory) {
+      return {
+        key: currentCategory.key,
+        label: currentCategory.label,
+        color: currentCategory.color
+      };
+    }
+
+    if (originalTask?.categoryKey) {
+      return {
+        key: originalTask.categoryKey,
+        label: originalTask.categoryLabel || "Category",
+        color: normalizeCategoryColor(originalTask.categoryColor)
+      };
+    }
+
+    const fallback = BASE_CATEGORIES.find((category) => category.key === DEFAULT_CATEGORY_KEY) || BASE_CATEGORIES[0];
+    return {
+      key: fallback.key,
+      label: fallback.label,
+      color: fallback.color
+    };
+  };
+}
+
 function normalizeCategoryColor(value) {
   return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value) ? value : DEFAULT_CATEGORY_COLOR;
 }
@@ -3363,9 +3729,14 @@ function normalizeImportance(value) {
   return value === "low" || value === "high" ? value : DEFAULT_IMPORTANCE;
 }
 
-function persistStore({ touchUpdatedAt = true } = {}) {
+function persistStore({ touchUpdatedAt = true, touchUserUpdatedAt = touchUpdatedAt } = {}) {
+  const now = Date.now();
   if (touchUpdatedAt) {
-    store.updatedAt = Date.now();
+    store.updatedAt = now;
+  }
+  if (touchUserUpdatedAt) {
+    store.userUpdatedAt = now;
+    store.userFingerprint = computeUserContentFingerprint(store);
   }
   persistLocalStore(store);
 }
@@ -3375,9 +3746,11 @@ function persistLocalStore(nextStore) {
 }
 
 function createEmptyStore() {
-  return {
-    version: 12,
-    updatedAt: Date.now(),
+  const now = Date.now();
+  const emptyStore = {
+    version: 13,
+    updatedAt: now,
+    userUpdatedAt: now,
     driveFileId: "",
     profile: normalizeProfile({}),
     tasks: [],
@@ -3391,6 +3764,8 @@ function createEmptyStore() {
     deletedTaskKeys: [],
     deletedSeriesIds: []
   };
+  emptyStore.userFingerprint = computeUserContentFingerprintFromNormalized(emptyStore);
+  return emptyStore;
 }
 
 function trimTasks() {
@@ -3409,6 +3784,7 @@ function mergeStores(localStore, remoteStore) {
   const deletedSeriesIds = unionIds(localStore.deletedSeriesIds, remoteStore.deletedSeriesIds);
   const mergedCategories = mergeCategoryDefinitions(localStore.categories, remoteStore.categories);
   const mergedWidgets = mergeWidgetLists(localStore.widgets, remoteStore.widgets, widgetRegistryHelpers(), MAX_WIDGETS);
+  const preferredUserState = choosePreferredUserSyncState(localStore, remoteStore);
   const mergedById = new Map();
   for (const task of filterDeletedTasks(remoteStore.tasks, deletedTaskIds, deletedTaskKeys, deletedSeriesIds)) {
     mergedById.set(task.id, task);
@@ -3422,8 +3798,10 @@ function mergeStores(localStore, remoteStore) {
     mergedById.set(task.id, choosePreferredTask(task, existing, localStore.updatedAt, remoteStore.updatedAt));
   }
   return {
-    version: 12,
+    version: 13,
     updatedAt: Math.max(localStore.updatedAt || 0, remoteStore.updatedAt || 0),
+    userUpdatedAt: preferredUserState.userUpdatedAt,
+    userFingerprint: preferredUserState.userFingerprint,
     driveFileId: remoteStore.driveFileId || localStore.driveFileId || "",
     profile: choosePreferredProfile(localStore.profile, remoteStore.profile),
     tasks: Array.from(mergedById.values()).sort((a, b) => b.createdAt - a.createdAt).slice(0, MAX_TASKS),
@@ -3443,6 +3821,19 @@ function mergeStores(localStore, remoteStore) {
 
 function computeStoreFingerprint(sourceStore) {
   const normalized = normalizeStore(sourceStore || createEmptyStore());
+  return JSON.stringify(sortObjectKeys(buildComparableStore(normalized)));
+}
+
+function computeUserContentFingerprint(sourceStore) {
+  const normalized = normalizeStore(sourceStore || createEmptyStore());
+  return computeUserContentFingerprintFromNormalized(normalized);
+}
+
+function computeUserContentFingerprintFromNormalized(normalized) {
+  return JSON.stringify(sortObjectKeys(buildComparableStore(normalized)));
+}
+
+function buildComparableStore(normalized) {
   const comparable = {
     profile: {
       displayName: normalizeProfile(normalized.profile).displayName,
@@ -3498,12 +3889,12 @@ function computeStoreFingerprint(sourceStore) {
           })
       }))
       .sort((left, right) => left.id.localeCompare(right.id)),
-    pointLedger: normalizePointLedger(normalized.pointLedger)
+    pointLedger: (Array.isArray(normalized.pointLedger) ? normalized.pointLedger : [])
       .map((entry) => sortObjectKeys(entry))
       .sort((left, right) => left.id.localeCompare(right.id)),
-    treeState: sortObjectKeys(normalizeTreeState(normalized.treeState)),
+    treeState: sortObjectKeys(normalized.treeState || {}),
     devSettings: sortObjectKeys(normalizeDevSettings(normalized.devSettings)),
-    categories: normalizeCategoryDefinitions(normalized.categories)
+    categories: (Array.isArray(normalized.categories) ? normalized.categories : [])
       .map((category) => ({
         active: category.active !== false,
         builtin: category.builtin === true,
@@ -3512,18 +3903,46 @@ function computeStoreFingerprint(sourceStore) {
         label: category.label
       }))
       .sort((left, right) => left.key.localeCompare(right.key)),
-    widgets: normalizeWidgets(normalized.widgets)
+    widgets: (Array.isArray(normalized.widgets) ? normalized.widgets : [])
       .map((widget) => sortObjectKeys(widget))
       .sort(compareWidgetFingerprints),
-    retiredWidgets: normalizeWidgets(normalized.retiredWidgets)
+    retiredWidgets: (Array.isArray(normalized.retiredWidgets) ? normalized.retiredWidgets : [])
       .map((widget) => sortObjectKeys(widget))
       .sort(compareWidgetFingerprints),
     deletedTaskIds: [...normalized.deletedTaskIds].sort(),
     deletedTaskKeys: [...normalized.deletedTaskKeys].sort(),
     deletedSeriesIds: [...normalized.deletedSeriesIds].sort()
   };
+  return comparable;
+}
 
-  return JSON.stringify(sortObjectKeys(comparable));
+function choosePreferredUserSyncState(localStore, remoteStore) {
+  const localUserUpdatedAt = localStore.userUpdatedAt || localStore.updatedAt || 0;
+  const remoteUserUpdatedAt = remoteStore.userUpdatedAt || remoteStore.updatedAt || 0;
+  const localUserFingerprint = localStore.userFingerprint || computeUserContentFingerprint(localStore);
+  const remoteUserFingerprint = remoteStore.userFingerprint || computeUserContentFingerprint(remoteStore);
+
+  if (localUserUpdatedAt > remoteUserUpdatedAt) {
+    return {
+      userUpdatedAt: localUserUpdatedAt,
+      userFingerprint: localUserFingerprint
+    };
+  }
+  if (remoteUserUpdatedAt > localUserUpdatedAt) {
+    return {
+      userUpdatedAt: remoteUserUpdatedAt,
+      userFingerprint: remoteUserFingerprint
+    };
+  }
+  return (localStore.updatedAt || 0) >= (remoteStore.updatedAt || 0)
+    ? {
+        userUpdatedAt: localUserUpdatedAt,
+        userFingerprint: localUserFingerprint
+      }
+    : {
+        userUpdatedAt: remoteUserUpdatedAt,
+        userFingerprint: remoteUserFingerprint
+      };
 }
 
 function choosePreferredTask(localTask, remoteTask, localUpdatedAt, remoteUpdatedAt) {
@@ -3563,10 +3982,10 @@ function choosePreferredTask(localTask, remoteTask, localUpdatedAt, remoteUpdate
 }
 
 function describeMergeResult(localStore, remoteStore) {
-  if ((remoteStore.updatedAt || 0) > (localStore.updatedAt || 0)) {
+  if ((remoteStore.userUpdatedAt || remoteStore.updatedAt || 0) > (localStore.userUpdatedAt || localStore.updatedAt || 0)) {
     return "Loaded and merged newer changes from Google Drive into the local Lifetree data.";
   }
-  if ((remoteStore.updatedAt || 0) < (localStore.updatedAt || 0)) {
+  if ((remoteStore.userUpdatedAt || remoteStore.updatedAt || 0) < (localStore.userUpdatedAt || localStore.updatedAt || 0)) {
     return "Loaded Google Drive data and preserved newer local changes during merge.";
   }
   return "Loaded and merged Google Drive data.";
@@ -3580,6 +3999,7 @@ function updateGoogleButtons() {
   clearDriveDataButton.disabled = !isDeveloperUser();
   clearWidgetDriveDataButton.disabled = !isDeveloperUser();
   renderDeveloperPanel();
+  renderSyncMeta();
 }
 
 function setSyncStatus(message, tone) {
@@ -4343,6 +4763,9 @@ async function clearDriveData() {
     }
     store.driveFileId = "";
     persistStore({ touchUpdatedAt: false });
+    clearRemoteStoreState();
+    autosaveController.clearSavedBaseline();
+    renderSyncMeta();
     setSyncStatus(payload.cleared ? "Cleared the Lifetree Google Drive data. Local tasks are unchanged." : "No Google Drive Lifetree data was stored for this account.", "success");
   } catch (error) {
     setSyncStatus(`Drive reset failed: ${error.message}`, "error");

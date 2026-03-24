@@ -10,12 +10,14 @@ export function createAutosaveController({
   let timerId = 0;
   let inFlight = false;
   let lastSavedFingerprint = "";
+  let nextRunAt = 0;
 
   function clearSchedule() {
     if (timerId) {
       window.clearTimeout(timerId);
       timerId = 0;
     }
+    nextRunAt = 0;
   }
 
   function markCurrentAsSaved() {
@@ -38,15 +40,17 @@ export function createAutosaveController({
     }
 
     inFlight = true;
+    nextRunAt = 0;
     try {
-      const success = await saveToDrive({
+      const result = await saveToDrive({
         suppressAuthError: true,
         quiet: true
       });
+      const success = typeof result === "object" ? Boolean(result?.success) : Boolean(result);
       if (success) {
         lastSavedFingerprint = computeStoreFingerprint(getStore());
       }
-      return success;
+      return typeof result === "object" ? result : { success };
     } finally {
       inFlight = false;
     }
@@ -58,11 +62,13 @@ export function createAutosaveController({
     if (!profile.autosaveEnabled) {
       return;
     }
+    nextRunAt = Date.now() + (profile.autosaveIntervalMinutes * 60_000);
     timerId = window.setTimeout(runCycle, profile.autosaveIntervalMinutes * 60_000);
   }
 
   async function runCycle() {
     timerId = 0;
+    nextRunAt = 0;
     try {
       await attemptAutosave();
     } finally {
@@ -74,11 +80,24 @@ export function createAutosaveController({
     clearSchedule();
   }
 
+  function getStatus() {
+    const profile = normalizeProfile(getProfile());
+    return {
+      enabled: profile.autosaveEnabled,
+      intervalMinutes: profile.autosaveIntervalMinutes,
+      nextRunAt,
+      inFlight,
+      authenticated: isAuthenticated(),
+      hasSavedBaseline: Boolean(lastSavedFingerprint)
+    };
+  }
+
   return {
     refreshSchedule,
     attemptAutosave,
     markCurrentAsSaved,
     clearSavedBaseline,
+    getStatus,
     dispose
   };
 }

@@ -13,6 +13,7 @@ const dataDir = resolveDataDir(process.env.DATA_DIR, defaultDataDir);
 const storePath = path.join(dataDir, "auth-store.json");
 
 const PORT = Number(process.env.PORT || 3000);
+const REQUEST_BODY_LIMIT = process.env.REQUEST_BODY_LIMIT || "10mb";
 const SESSION_COOKIE = "lifetree_session";
 const DRIVE_FILE_NAME = "task-deck-store.json";
 const DEV_EMAIL = "jbkallman@gmail.com";
@@ -25,8 +26,8 @@ const OAUTH_SCOPES = [
 
 const app = express();
 app.set("trust proxy", 1);
-app.use(express.json({ limit: "1mb" }));
-app.use(express.urlencoded({ extended: false }));
+app.use(express.json({ limit: REQUEST_BODY_LIMIT }));
+app.use(express.urlencoded({ extended: false, limit: REQUEST_BODY_LIMIT }));
 
 app.use((req, res, next) => {
   const origin = String(req.headers.origin || "");
@@ -192,12 +193,13 @@ app.post("/api/lifetree/save", async (req, res) => {
     const user = requireUser(req);
     const accessToken = await refreshAccessToken(user);
     const payload = req.body?.payload;
+    const fileId = typeof req.body?.fileId === "string" ? req.body.fileId : "";
     if (!payload || typeof payload !== "object") {
       res.status(400).json({ error: "Missing payload" });
       return;
     }
 
-    const file = await upsertDriveFile(accessToken, payload);
+    const file = await upsertDriveFile(accessToken, payload, fileId);
     res.json({ ok: true, fileId: file.id });
   } catch (error) {
     res.status(401).json({ error: error.message });
@@ -224,6 +226,16 @@ app.post("/api/lifetree/reset", async (req, res) => {
   } catch (error) {
     res.status(401).json({ error: error.message });
   }
+});
+
+app.use((error, _req, res, next) => {
+  if (error?.type === "entity.too.large") {
+    res.status(413).json({
+      error: `Lifetree data is too large for the current request limit (${REQUEST_BODY_LIMIT}).`
+    });
+    return;
+  }
+  next(error);
 });
 
 app.use(express.static(rootDir, { extensions: ["html"] }));
@@ -377,8 +389,8 @@ async function findDriveFile(accessToken) {
   return Array.isArray(payload.files) && payload.files.length > 0 ? payload.files[0] : null;
 }
 
-async function upsertDriveFile(accessToken, payload) {
-  const existing = await findDriveFile(accessToken);
+async function upsertDriveFile(accessToken, payload, preferredFileId = "") {
+  const existing = preferredFileId ? { id: preferredFileId } : await findDriveFile(accessToken);
   const metadata = existing
     ? { name: DRIVE_FILE_NAME, mimeType: "application/json" }
     : { name: DRIVE_FILE_NAME, mimeType: "application/json", parents: ["appDataFolder"] };
@@ -405,6 +417,14 @@ async function upsertDriveFile(accessToken, payload) {
       body
     }
   );
+
+  if (response.status === 404 && preferredFileId) {
+    const fallbackExisting = await findDriveFile(accessToken);
+    if (!fallbackExisting || fallbackExisting.id === preferredFileId) {
+      throw new Error(await formatGoogleError(response, "Drive upload failed"));
+    }
+    return upsertDriveFile(accessToken, payload, fallbackExisting.id);
+  }
 
   if (!response.ok) {
     throw new Error(await formatGoogleError(response, "Drive upload failed"));

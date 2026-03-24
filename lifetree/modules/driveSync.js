@@ -33,6 +33,7 @@ export function createDriveSyncController({
   fetchCredentials,
   authState,
   getStore,
+  getKnownRemoteState,
   setStore,
   normalizeStore,
   mergeStores,
@@ -45,7 +46,8 @@ export function createDriveSyncController({
   updateGoogleButtons,
   getReturnToTarget,
   describeMergeResult,
-  computeStoreFingerprint
+  computeStoreFingerprint,
+  computeUserContentFingerprint
 }) {
   async function refreshAuthStatus({ suppressUnavailableError = false, signal } = {}) {
     try {
@@ -86,12 +88,18 @@ export function createDriveSyncController({
     setSyncStatus("Disconnected. Local cache remains on this device.", "info");
   }
 
-  async function loadFromDrive({ suppressAuthError = false, quietIfMissing = false, deferFinalize = false, signal } = {}) {
+  async function loadFromDrive({
+    suppressAuthError = false,
+    quietIfMissing = false,
+    deferFinalize = false,
+    signal,
+    conflictStrategy = "prompt"
+  } = {}) {
     if (!authState.authenticated) {
       if (!suppressAuthError) {
         setSyncStatus("Connect Google first to load from Drive.", "error");
       }
-      return { applied: false, found: false, keptLocalChanges: false, synced: false };
+      return { applied: false, found: false, keptLocalChanges: false, synced: false, remoteUpdatedAt: 0, remoteFingerprint: "" };
     }
     try {
       const response = await fetch(`${apiBase}/api/lifetree/load`, { credentials: fetchCredentials, signal });
@@ -103,7 +111,16 @@ export function createDriveSyncController({
         if (!quietIfMissing) {
           setSyncStatus("No Drive task file found yet. Save to Drive to create it.", "info");
         }
-        return { applied: false, found: false, keptLocalChanges: false, synced: false };
+        return {
+          applied: false,
+          found: false,
+          keptLocalChanges: false,
+          synced: false,
+          remoteUpdatedAt: 0,
+          remoteFingerprint: "",
+          remoteUserUpdatedAt: 0,
+          remoteUserFingerprint: ""
+        };
       }
 
       const remoteStore = normalizeStore(payload.payload);
@@ -111,27 +128,53 @@ export function createDriveSyncController({
       const previousLocalStore = getStore();
       const localFingerprint = computeStoreFingerprint(previousLocalStore);
       const remoteFingerprint = computeStoreFingerprint(remoteStore);
+      const localUserFingerprint = previousLocalStore.userFingerprint || computeUserContentFingerprint(previousLocalStore);
+      const remoteUserFingerprint = remoteStore.userFingerprint || computeUserContentFingerprint(remoteStore);
+      const localUserUpdatedAt = previousLocalStore.userUpdatedAt || previousLocalStore.updatedAt || 0;
+      const remoteUserUpdatedAt = remoteStore.userUpdatedAt || remoteStore.updatedAt || 0;
 
-      if (localFingerprint !== remoteFingerprint && (previousLocalStore.updatedAt || 0) > (remoteStore.updatedAt || 0)) {
-        const keepLocalChanges = window.confirm(
-          "This browser has newer local changes than Google Drive. Press OK to keep and merge your newer local changes, or Cancel to discard them and load Google Drive exactly as stored."
-        );
+      if (localUserFingerprint !== remoteUserFingerprint && localUserUpdatedAt > remoteUserUpdatedAt) {
+        const keepLocalChanges = conflictStrategy === "keep-local"
+          ? true
+          : conflictStrategy === "remote"
+            ? false
+            : window.confirm(
+              "This browser has newer local changes than Google Drive. Press OK to keep and merge your newer local changes, or Cancel to discard them and load Google Drive exactly as stored."
+            );
 
         if (keepLocalChanges) {
           const mergedStore = mergeStores(previousLocalStore, remoteStore);
           applyStore(mergedStore, { finalize: !deferFinalize });
-          setSyncStatus("Loaded Google Drive data and kept newer local changes during merge.", "success");
+          setSyncStatus(
+            conflictStrategy === "prompt"
+              ? "Loaded Google Drive data and kept newer local changes during merge."
+              : "Loaded Google Drive data and kept newer local changes from this device.",
+            "success"
+          );
           return {
             applied: true,
             found: true,
             keptLocalChanges: true,
-            synced: computeStoreFingerprint(mergedStore) === remoteFingerprint
+            synced: computeStoreFingerprint(mergedStore) === remoteFingerprint,
+            remoteUpdatedAt: remoteStore.updatedAt || 0,
+            remoteFingerprint,
+            remoteUserUpdatedAt,
+            remoteUserFingerprint
           };
         }
 
         applyStore(remoteStore, { finalize: !deferFinalize });
         setSyncStatus("Discarded newer local changes and loaded the Google Drive version.", "success");
-        return { applied: true, found: true, keptLocalChanges: false, synced: true };
+        return {
+          applied: true,
+          found: true,
+          keptLocalChanges: false,
+          synced: true,
+          remoteUpdatedAt: remoteStore.updatedAt || 0,
+          remoteFingerprint,
+          remoteUserUpdatedAt,
+          remoteUserFingerprint
+        };
       }
 
       const mergedStore = mergeStores(previousLocalStore, remoteStore);
@@ -141,14 +184,37 @@ export function createDriveSyncController({
         applied: true,
         found: true,
         keptLocalChanges: false,
-        synced: computeStoreFingerprint(mergedStore) === remoteFingerprint
+        synced: computeStoreFingerprint(mergedStore) === remoteFingerprint,
+        remoteUpdatedAt: remoteStore.updatedAt || 0,
+        remoteFingerprint,
+        remoteUserUpdatedAt,
+        remoteUserFingerprint
       };
     } catch (error) {
       if (error?.name === "AbortError") {
-        return { applied: false, found: false, keptLocalChanges: false, synced: false, timedOut: true };
+        return {
+          applied: false,
+          found: false,
+          keptLocalChanges: false,
+          synced: false,
+          timedOut: true,
+          remoteUpdatedAt: 0,
+          remoteFingerprint: "",
+          remoteUserUpdatedAt: 0,
+          remoteUserFingerprint: ""
+        };
       }
       setSyncStatus(`Load failed: ${error.message}`, "error");
-      return { applied: false, found: false, keptLocalChanges: false, synced: false };
+      return {
+        applied: false,
+        found: false,
+        keptLocalChanges: false,
+        synced: false,
+        remoteUpdatedAt: 0,
+        remoteFingerprint: "",
+        remoteUserUpdatedAt: 0,
+        remoteUserFingerprint: ""
+      };
     }
   }
 
@@ -157,9 +223,31 @@ export function createDriveSyncController({
       if (!suppressAuthError) {
         setSyncStatus("Connect Google first to save to Drive.", "error");
       }
-      return false;
+      return { success: false, remoteUpdatedAt: 0, remoteFingerprint: "" };
     }
     try {
+      const currentStore = getStore();
+      const currentFingerprint = computeStoreFingerprint(currentStore);
+      const knownRemoteState = typeof getKnownRemoteState === "function" ? getKnownRemoteState() : {};
+      const knownRemoteFingerprint = knownRemoteState?.remoteFingerprint || "";
+      const knownRemoteUpdatedAt = knownRemoteState?.remoteUpdatedAt || 0;
+      const knownRemoteUserUpdatedAt = knownRemoteState?.remoteUserUpdatedAt || 0;
+      const knownRemoteUserFingerprint = knownRemoteState?.remoteUserFingerprint || "";
+
+      if (knownRemoteFingerprint && currentFingerprint === knownRemoteFingerprint) {
+        if (!quiet) {
+          setSyncStatus("Google Drive is already up to date.", "info");
+        }
+        return {
+          success: true,
+          skipped: true,
+          remoteUpdatedAt: knownRemoteUpdatedAt || currentStore.updatedAt || 0,
+          remoteFingerprint: knownRemoteFingerprint,
+          remoteUserUpdatedAt: knownRemoteUserUpdatedAt || currentStore.userUpdatedAt || currentStore.updatedAt || 0,
+          remoteUserFingerprint: knownRemoteUserFingerprint || currentStore.userFingerprint || computeUserContentFingerprint(currentStore)
+        };
+      }
+
       const remoteResponse = await fetch(`${apiBase}/api/lifetree/load`, { credentials: fetchCredentials, signal });
       const remotePayload = await remoteResponse.json();
       if (remoteResponse.ok && remotePayload.found) {
@@ -173,7 +261,10 @@ export function createDriveSyncController({
         headers: { "Content-Type": "application/json" },
         credentials: fetchCredentials,
         signal,
-        body: JSON.stringify({ payload: getStore() })
+        body: JSON.stringify({
+          fileId: getStore().driveFileId || "",
+          payload: getStore()
+        })
       });
       const savePayload = await saveResponse.json();
       if (!saveResponse.ok) {
@@ -183,21 +274,27 @@ export function createDriveSyncController({
       if (savePayload.fileId) {
         const nextStore = getStore();
         nextStore.driveFileId = savePayload.fileId;
-        persistStore({ touchUpdatedAt: false });
+        persistStore({ touchUpdatedAt: false, touchUserUpdatedAt: false });
       }
+
+      const savedStore = getStore();
+      const remoteUpdatedAt = savedStore.updatedAt || 0;
+      const remoteFingerprint = computeStoreFingerprint(savedStore);
+      const remoteUserUpdatedAt = savedStore.userUpdatedAt || savedStore.updatedAt || 0;
+      const remoteUserFingerprint = savedStore.userFingerprint || computeUserContentFingerprint(savedStore);
 
       if (!quiet) {
         setSyncStatus("Merged local and remote changes, then saved the Lifetree data to Google Drive app data.", "success");
       }
-      return true;
+      return { success: true, remoteUpdatedAt, remoteFingerprint, remoteUserUpdatedAt, remoteUserFingerprint };
     } catch (error) {
       if (error?.name === "AbortError") {
-        return false;
+        return { success: false, remoteUpdatedAt: 0, remoteFingerprint: "", remoteUserUpdatedAt: 0, remoteUserFingerprint: "" };
       }
       if (!quiet) {
         setSyncStatus(`Save failed: ${error.message}`, "error");
       }
-      return false;
+      return { success: false, remoteUpdatedAt: 0, remoteFingerprint: "", remoteUserUpdatedAt: 0, remoteUserFingerprint: "" };
     }
   }
 
@@ -219,20 +316,43 @@ export function createDriveSyncController({
         suppressAuthError: true,
         quietIfMissing: true,
         deferFinalize: true,
-        signal: controller.signal
+        signal: controller.signal,
+        conflictStrategy: "keep-local"
       });
       if (controller.signal.aborted || result.timedOut) {
-        return { loaded: false, timedOut: true, keptLocalChanges: false, synced: false };
+        return {
+          loaded: false,
+          timedOut: true,
+          keptLocalChanges: false,
+          synced: false,
+          remoteUpdatedAt: 0,
+          remoteFingerprint: "",
+          remoteUserUpdatedAt: 0,
+          remoteUserFingerprint: ""
+        };
       }
       return {
         loaded: result.applied,
         timedOut: false,
         keptLocalChanges: result.keptLocalChanges,
-        synced: result.synced
+        synced: result.synced,
+        remoteUpdatedAt: result.remoteUpdatedAt || 0,
+        remoteFingerprint: result.remoteFingerprint || "",
+        remoteUserUpdatedAt: result.remoteUserUpdatedAt || 0,
+        remoteUserFingerprint: result.remoteUserFingerprint || ""
       };
     } catch (error) {
       if (error?.name === "AbortError") {
-        return { loaded: false, timedOut: true, keptLocalChanges: false, synced: false };
+        return {
+          loaded: false,
+          timedOut: true,
+          keptLocalChanges: false,
+          synced: false,
+          remoteUpdatedAt: 0,
+          remoteFingerprint: "",
+          remoteUserUpdatedAt: 0,
+          remoteUserFingerprint: ""
+        };
       }
       throw error;
     } finally {
@@ -245,12 +365,24 @@ export function createDriveSyncController({
       return;
     }
 
+    const currentStore = getStore();
+    const currentFingerprint = computeStoreFingerprint(currentStore);
+    const knownRemoteFingerprint = typeof getKnownRemoteState === "function"
+      ? (getKnownRemoteState()?.remoteFingerprint || "")
+      : "";
+    if (knownRemoteFingerprint && knownRemoteFingerprint === currentFingerprint) {
+      return;
+    }
+
     fetch(`${apiBase}/api/lifetree/save`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: fetchCredentials,
       keepalive: true,
-      body: JSON.stringify({ payload: getStore() })
+      body: JSON.stringify({
+        fileId: currentStore.driveFileId || "",
+        payload: currentStore
+      })
     }).catch(() => {});
   }
 
@@ -262,7 +394,7 @@ export function createDriveSyncController({
     ensureWidgetIntegrity();
     ensureWidgetTasks();
     reconcileRecurringSeries();
-    persistStore();
+    persistStore({ touchUserUpdatedAt: false });
     renderAll();
   }
 

@@ -104,7 +104,21 @@
     <section class="sync-panel">
       <div>
         <h2>Google Drive sync</h2>
-        <p id="syncStatus" class="sync-status">Checking Google Drive before using local data.</p>
+        <p id="syncStatus" class="sync-status">Using local data.</p>
+        <div class="sync-meta-grid" id="syncMetaGrid">
+          <article class="sync-meta-card" id="syncLocalCard" data-state="neutral">
+            <span class="sync-meta-label">Local data</span>
+            <strong class="sync-meta-value" id="syncLocalValue">No local edits yet</strong>
+          </article>
+          <article class="sync-meta-card" id="syncDriveCard" data-state="neutral">
+            <span class="sync-meta-label">Last Drive save</span>
+            <strong class="sync-meta-value" id="syncDriveValue">Not checked yet</strong>
+          </article>
+          <article class="sync-meta-card" id="syncAutosaveCard" data-state="neutral">
+            <span class="sync-meta-label">Next Drive sync</span>
+            <strong class="sync-meta-value" id="syncAutosaveValue">Autosave off</strong>
+          </article>
+        </div>
       </div>
       <div class="sync-actions">
         <button type="button" class="ghost-button" id="googleSignIn">Connect Google</button>
@@ -132,8 +146,14 @@
         <button type="button" class="ghost-button" id="closeTaskDesk">Close</button>
       </div>
 
+      <nav class="task-desk-tabs" id="taskDeskTabs" aria-label="Task Desk sections">
+        <button type="button" class="task-desk-tab is-active" data-desk-pane-button="tasks" aria-pressed="true">Tasks</button>
+        <button type="button" class="task-desk-tab" data-desk-pane-button="composer" aria-pressed="false">New task</button>
+        <button type="button" class="task-desk-tab" data-desk-pane-button="history" aria-pressed="false">History</button>
+      </nav>
+
       <section class="workspace">
-        <aside class="composer desk-pane">
+        <aside class="composer desk-pane" data-desk-pane="composer">
           <h2>Create task</h2>
           <div id="editPanel" class="edit-panel hidden">
             <strong id="editTitle">Editing task</strong>
@@ -342,7 +362,7 @@
           </form>
         </aside>
 
-        <section class="board desk-pane">
+        <section class="board desk-pane" data-desk-pane="tasks">
           <div class="toolbar">
             <div class="toolbar-group">
               <label>
@@ -411,7 +431,7 @@
           </section>
         </section>
 
-        <aside class="history-column desk-pane">
+        <aside class="history-column desk-pane" data-desk-pane="history">
           <section class="history-panel-board">
             <div class="history-panel-header">
               <div>
