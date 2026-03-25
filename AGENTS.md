@@ -4,6 +4,7 @@
 - `lifetree/` is the main app.
 - The app is a browser-first ES module app with local persistence plus optional Google Drive sync through the backend.
 - `lifetree/app.js` is still the main orchestrator, but a growing amount of feature logic has been split into modules.
+- [`TODO.md`](/home/jbk/lightbeamsoup.github.io/TODO.md) tracks queued product and technical follow-up work.
 
 ## Primary entry points
 - [`lifetree/index.html`](/home/jbk/lightbeamsoup.github.io/lifetree/index.html): page structure, modals, tree shell, Task Desk layout.

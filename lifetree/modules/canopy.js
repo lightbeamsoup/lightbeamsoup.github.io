@@ -3,7 +3,8 @@ export function renderCanopyColumns(container, {
   today,
   escapeHtml,
   formatDate,
-  getPendingActionForTask
+  getPendingActionForTask,
+  renderPriorityIndicator
 }) {
   const groups = groupCanopyCards(cards, today);
 
@@ -15,7 +16,7 @@ export function renderCanopyColumns(container, {
       </div>
       <div class="canopy-list">
         ${group.items.length > 0 ? group.items.map((item) => `
-          ${renderCanopyTask(item, formatDate, escapeHtml, getPendingActionForTask)}
+          ${renderCanopyTask(item, formatDate, escapeHtml, getPendingActionForTask, renderPriorityIndicator)}
         `).join("") : '<p class="canopy-empty">No tasks queued.</p>'}
         ${group.moreCount > 0 ? `<p class="canopy-more">+${group.moreCount} more in Task Desk</p>` : ""}
       </div>
@@ -23,7 +24,7 @@ export function renderCanopyColumns(container, {
   `).join("");
 }
 
-function renderCanopyTask(item, formatDate, escapeHtml, getPendingActionForTask) {
+function renderCanopyTask(item, formatDate, escapeHtml, getPendingActionForTask, renderPriorityIndicator) {
   const taskColor = escapeHtml(item.task.categoryColor || "#7dbf74");
   const pendingAction = getPendingActionForTask(item.task.id);
   if (pendingAction) {
@@ -32,7 +33,7 @@ function renderCanopyTask(item, formatDate, escapeHtml, getPendingActionForTask)
         <div class="canopy-task-main">
           <strong>${escapeHtml(item.displayName)}</strong>
           <span>${escapeHtml(describeTaskDate(item.task, formatDate))}</span>
-          ${renderCanopyMeta(item.task, escapeHtml)}
+          ${renderCanopyMeta(item.task, escapeHtml, renderPriorityIndicator)}
           <span class="canopy-complete-hint">${escapeHtml(pendingAction.description || "Pending action")}</span>
         </div>
         <button type="button" class="canopy-task-skip" data-canopy-action="undo" data-task-id="${item.task.id}" data-pending-key="${pendingAction.key}">
@@ -47,12 +48,17 @@ function renderCanopyTask(item, formatDate, escapeHtml, getPendingActionForTask)
       <button type="button" class="canopy-task-main" data-canopy-action="complete" data-task-id="${item.task.id}" ${item.blocked ? "disabled" : ""}>
         <strong>${escapeHtml(item.displayName)}</strong>
         <span>${escapeHtml(describeTaskDate(item.task, formatDate))}</span>
-        ${renderCanopyMeta(item.task, escapeHtml)}
+        ${renderCanopyMeta(item.task, escapeHtml, renderPriorityIndicator)}
         ${!item.blocked ? '<span class="canopy-complete-hint">Click to mark complete</span>' : ""}
       </button>
-      <button type="button" class="canopy-task-skip" data-canopy-action="skip" data-task-id="${item.task.id}">
-        Skip
-      </button>
+      <div class="canopy-task-actions">
+        <button type="button" class="canopy-task-skip" data-canopy-action="skip" data-task-id="${item.task.id}">
+          Skip
+        </button>
+        <button type="button" class="canopy-task-edit" data-canopy-action="edit" data-task-id="${item.task.id}">
+          Edit
+        </button>
+      </div>
       ${item.blocked ? `<span class="canopy-note">${escapeHtml(item.blockedNote || "Blocked")}</span>` : ""}
     </article>
   `;
@@ -115,17 +121,16 @@ function describeTaskDate(task, formatDate) {
   return "No due date";
 }
 
-function renderCanopyMeta(task, escapeHtml) {
+function renderCanopyMeta(task, escapeHtml, renderPriorityIndicator) {
   const categoryColor = escapeHtml(task.categoryColor || "#7dbf74");
   const category = task.categoryLabel || "Uncategorized";
-  const importance = task.importance ? capitalize(task.importance) : "Medium";
   const points = formatPointsLabel(task.pointsValue);
 
   return `
     <div class="canopy-task-tags">
       <span class="canopy-chip" style="--canopy-chip-color: ${categoryColor}">${escapeHtml(category)}</span>
       <span class="canopy-chip points" style="--canopy-chip-color: ${categoryColor}">${escapeHtml(points)}</span>
-      <span class="canopy-importance">${escapeHtml(importance)}</span>
+      ${renderPriorityIndicator(task.importance || "medium", "canopy")}
     </div>
   `;
 }
@@ -133,16 +138,6 @@ function renderCanopyMeta(task, escapeHtml) {
 function formatPointsLabel(value) {
   const points = Number.isFinite(Number(value)) ? Math.max(0, Math.round(Number(value))) : 0;
   return `${points} ${points === 1 ? "pt" : "pts"}`;
-}
-
-function describeTaskTags(task) {
-  const category = task.categoryLabel || "Uncategorized";
-  const importance = task.importance ? capitalize(task.importance) : "Medium";
-  return `${category} · ${importance}`;
-}
-
-function capitalize(value) {
-  return value ? value[0].toUpperCase() + value.slice(1) : "";
 }
 
 function addDays(value, days) {

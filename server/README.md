@@ -13,6 +13,8 @@ This backend enables Google OAuth authorization code flow with refresh tokens fo
 
 See `.env.example` for local development defaults.
 
+Project follow-up items live in [`TODO.md`](/home/jbk/lightbeamsoup.github.io/TODO.md).
+
 ## Local run
 
 1. `cp .env.example .env`

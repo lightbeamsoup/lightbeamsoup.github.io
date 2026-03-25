@@ -30,7 +30,9 @@ import {
   renderDeveloperPointsSummary as renderDeveloperPointsSummaryBase
 } from "./modules/points.js";
 import {
+  isDarkModeActive,
   choosePreferredProfile,
+  normalizeThemeTime,
   normalizeAutosaveIntervalMinutes,
   normalizeProfile
 } from "./modules/profile.js";
@@ -64,7 +66,7 @@ import {
 const LOCAL_STORE_KEY = "task_deck_store_v2";
 const LEGACY_COOKIE_NAME = "task_deck_store";
 const MAX_TASKS = 3000;
-const MAX_ROLLING_SERIES_INSTANCES = 100;
+const MAX_ROLLING_SERIES_INSTANCES = 7;
 const MAX_WIDGETS = 5;
 const MAX_VISIBLE_HISTORY_ENTRIES = 25;
 const COMPLETED_ONE_OFF_DISMISS_MS = 5000;
@@ -85,9 +87,9 @@ const BASE_CATEGORIES = [
 ];
 
 const IMPORTANCE_DEFINITIONS = {
-  low: { label: "Low", color: "#d8e6f3" },
-  medium: { label: "Medium", color: "#ffe2b8" },
-  high: { label: "High", color: "#f6b6b6" }
+  low: { label: "Low priority", color: "#d8e6f3", icon: "↓" },
+  medium: { label: "Medium priority", color: "#ffe2b8", icon: "" },
+  high: { label: "High priority", color: "#f6b6b6", icon: "!" }
 };
 
 const LENGTH_ORDER = {
@@ -120,6 +122,18 @@ const heroClock = document.getElementById("heroClock");
 const heroClockMeta = document.getElementById("heroClockMeta");
 const openSettingsButton = document.getElementById("openSettings");
 const canopyColumns = document.getElementById("canopyColumns");
+const openQuickAddButton = document.getElementById("openQuickAdd");
+const quickAddModal = document.getElementById("quickAddModal");
+const closeQuickAddButton = document.getElementById("closeQuickAdd");
+const closeQuickAddBackdrop = document.getElementById("closeQuickAddBackdrop");
+const cancelQuickAddButton = document.getElementById("cancelQuickAdd");
+const quickAddForm = document.getElementById("quickAddForm");
+const quickTaskNameInput = document.getElementById("quickTaskName");
+const quickTaskDueDateInput = document.getElementById("quickTaskDueDate");
+const quickTaskTimeOfDayInput = document.getElementById("quickTaskTimeOfDay");
+const quickTaskCategoryInput = document.getElementById("quickTaskCategory");
+const quickTaskLengthInput = document.getElementById("quickTaskLength");
+const quickTaskImportanceInput = document.getElementById("quickTaskImportance");
 const treeHarvestButton = document.getElementById("treeHarvestButton");
 const treeSkyLayer = document.getElementById("treeSkyLayer");
 const treeSun = document.getElementById("treeSun");
@@ -144,6 +158,10 @@ const settingsForm = document.getElementById("settingsForm");
 const settingsDisplayNameInput = document.getElementById("settingsDisplayName");
 const settingsAutosaveEnabledInput = document.getElementById("settingsAutosaveEnabled");
 const settingsAutosaveIntervalInput = document.getElementById("settingsAutosaveInterval");
+const settingsDarkModeEnabledInput = document.getElementById("settingsDarkModeEnabled");
+const settingsAutoDarkModeEnabledInput = document.getElementById("settingsAutoDarkModeEnabled");
+const settingsAutoDarkModeStartInput = document.getElementById("settingsAutoDarkModeStart");
+const settingsAutoDarkModeEndInput = document.getElementById("settingsAutoDarkModeEnd");
 const taskDeskModal = document.getElementById("taskDeskModal");
 const openTaskDeskButton = document.getElementById("openTaskDesk");
 const closeTaskDeskButton = document.getElementById("closeTaskDesk");
@@ -243,6 +261,7 @@ const developerTreeSkin = document.getElementById("developerTreeSkin");
 const grantTreeSkinButton = document.getElementById("grantTreeSkin");
 const removeTreeSkinButton = document.getElementById("removeTreeSkin");
 const copyWidgetDiagnosticsButton = document.getElementById("copyWidgetDiagnostics");
+const downloadDriveDataButton = document.getElementById("downloadDriveData");
 const cleanWidgetDataButton = document.getElementById("cleanWidgetData");
 const clearWidgetDriveDataButton = document.getElementById("clearWidgetDriveData");
 const injectPointsButton = document.getElementById("injectPoints");
@@ -377,7 +396,8 @@ applyTaskDeskPaneState();
 
 toggleHeroButton.addEventListener("click", toggleHeroCollapsed);
 openSettingsButton.addEventListener("click", openSettings);
-openTaskDeskButton.addEventListener("click", () => handleOpenTaskDesk("tasks"));
+openQuickAddButton.addEventListener("click", openQuickAdd);
+openTaskDeskButton.addEventListener("click", () => handleOpenTaskDesk("composer"));
 closeTaskDeskButton.addEventListener("click", closeTaskDesk);
 closeTaskDeskBackdrop.addEventListener("click", closeTaskDesk);
 taskDeskTabs.addEventListener("click", handleTaskDeskTabClick);
@@ -393,6 +413,7 @@ widgetSlots.forEach((slot) => {
 document.addEventListener("keydown", handleGlobalKeydown);
 mobileTaskDeskQuery.addEventListener("change", applyTaskDeskPaneState);
 form.addEventListener("submit", handleSubmit);
+quickAddForm.addEventListener("submit", handleQuickAddSubmit);
 clearFormButton.addEventListener("click", resetComposer);
 cancelEditButton.addEventListener("click", clearEditState);
 addCategoryButton.addEventListener("click", handleAddCategory);
@@ -430,6 +451,7 @@ grantTreeSkinButton.addEventListener("click", buySelectedTreeSkin);
 removeTreeSkinButton.addEventListener("click", removeSelectedTreeSkin);
 resetFruitGrowthButton.addEventListener("click", resetDeveloperFruitGrowth);
 copyWidgetDiagnosticsButton.addEventListener("click", copyWidgetDiagnostics);
+downloadDriveDataButton.addEventListener("click", downloadDriveData);
 cleanWidgetDataButton.addEventListener("click", runLocalWidgetCleanup);
 clearWidgetDriveDataButton.addEventListener("click", clearWidgetDriveData);
 clearWidgetHistoryButton.addEventListener("click", clearSelectedHistorySource);
@@ -442,6 +464,8 @@ closeSettingsBackdrop.addEventListener("click", closeSettings);
 cancelSettingsButton.addEventListener("click", closeSettings);
 settingsForm.addEventListener("submit", handleSettingsSubmit);
 settingsAutosaveEnabledInput.addEventListener("change", syncSettingsAutosaveInputs);
+settingsDarkModeEnabledInput.addEventListener("change", handleThemeSettingModeChange);
+settingsAutoDarkModeEnabledInput.addEventListener("change", handleThemeSettingModeChange);
 closeTreeDetailButton.addEventListener("click", closeTreeDetail);
 closeTreeDetailBackdrop.addEventListener("click", closeTreeDetail);
 closeTreeStyleButton.addEventListener("click", closeTreeStyle);
@@ -449,6 +473,9 @@ closeTreeStyleBackdrop.addEventListener("click", closeTreeStyle);
 treeStyleBody.addEventListener("click", handleTreeStyleAction);
 closeDeveloperButton.addEventListener("click", closeDeveloper);
 closeDeveloperBackdrop.addEventListener("click", closeDeveloper);
+closeQuickAddButton.addEventListener("click", closeQuickAdd);
+closeQuickAddBackdrop.addEventListener("click", closeQuickAdd);
+cancelQuickAddButton.addEventListener("click", closeQuickAdd);
 
 initializeApp();
 
@@ -578,6 +605,11 @@ function handleGlobalKeydown(event) {
     return;
   }
 
+  if (isQuickAddOpen()) {
+    closeQuickAdd();
+    return;
+  }
+
   if (isWidgetDetailOpen()) {
     closeWidgetDetail();
     return;
@@ -627,16 +659,39 @@ function openDeveloper() {
   renderDeveloperPanel();
 }
 
+function openQuickAdd() {
+  resetQuickAddForm();
+  quickAddModal.classList.remove("hidden");
+  quickAddModal.setAttribute("aria-hidden", "false");
+  document.body.classList.add("quick-add-open");
+  window.setTimeout(() => quickTaskNameInput.focus(), 0);
+}
+
 function openSettings() {
   const profile = normalizeProfile(store.profile);
   settingsDisplayNameInput.value = profile.displayName;
   settingsAutosaveEnabledInput.checked = profile.autosaveEnabled;
   settingsAutosaveIntervalInput.value = String(profile.autosaveIntervalMinutes);
+  settingsDarkModeEnabledInput.checked = profile.darkModeEnabled;
+  settingsAutoDarkModeEnabledInput.checked = profile.autoDarkModeEnabled;
+  settingsAutoDarkModeStartInput.value = profile.autoDarkModeStart;
+  settingsAutoDarkModeEndInput.value = profile.autoDarkModeEnd;
   syncSettingsAutosaveInputs();
+  syncSettingsThemeInputs();
   settingsModal.classList.remove("hidden");
   settingsModal.setAttribute("aria-hidden", "false");
   document.body.classList.add("settings-open");
   window.setTimeout(() => settingsDisplayNameInput.focus(), 0);
+}
+
+function closeQuickAdd() {
+  quickAddModal.classList.add("hidden");
+  quickAddModal.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("quick-add-open");
+}
+
+function isQuickAddOpen() {
+  return !quickAddModal.classList.contains("hidden");
 }
 
 function closeSettings() {
@@ -711,6 +766,9 @@ function handleTaskDeskTabClick(event) {
 }
 
 function handleOpenTaskDesk(preferredPane = "tasks") {
+  if (isQuickAddOpen()) {
+    closeQuickAdd();
+  }
   setActiveTaskDeskPane(preferredPane);
   openTaskDesk();
 }
@@ -736,10 +794,18 @@ function handleSettingsSubmit(event) {
   const displayName = String(settingsDisplayNameInput.value || "").trim().slice(0, 40);
   const autosaveEnabled = settingsAutosaveEnabledInput.checked;
   const autosaveIntervalMinutes = normalizeAutosaveIntervalMinutes(settingsAutosaveIntervalInput.value);
+  const darkModeEnabled = settingsDarkModeEnabledInput.checked;
+  const autoDarkModeEnabled = settingsAutoDarkModeEnabledInput.checked;
+  const autoDarkModeStart = normalizeThemeTime(settingsAutoDarkModeStartInput.value, currentProfile.autoDarkModeStart);
+  const autoDarkModeEnd = normalizeThemeTime(settingsAutoDarkModeEndInput.value, currentProfile.autoDarkModeEnd);
   const unchanged = (
     displayName === currentProfile.displayName
     && autosaveEnabled === currentProfile.autosaveEnabled
     && autosaveIntervalMinutes === currentProfile.autosaveIntervalMinutes
+    && darkModeEnabled === currentProfile.darkModeEnabled
+    && autoDarkModeEnabled === currentProfile.autoDarkModeEnabled
+    && autoDarkModeStart === currentProfile.autoDarkModeStart
+    && autoDarkModeEnd === currentProfile.autoDarkModeEnd
   );
   if (unchanged) {
     closeSettings();
@@ -750,6 +816,10 @@ function handleSettingsSubmit(event) {
     displayName,
     autosaveEnabled,
     autosaveIntervalMinutes,
+    darkModeEnabled,
+    autoDarkModeEnabled,
+    autoDarkModeStart,
+    autoDarkModeEnd,
     updatedAt: Date.now()
   });
   persistStore();
@@ -761,6 +831,22 @@ function handleSettingsSubmit(event) {
 
 function syncSettingsAutosaveInputs() {
   settingsAutosaveIntervalInput.disabled = !settingsAutosaveEnabledInput.checked;
+}
+
+function syncSettingsThemeInputs() {
+  const enabled = settingsAutoDarkModeEnabledInput.checked;
+  settingsAutoDarkModeStartInput.disabled = !enabled;
+  settingsAutoDarkModeEndInput.disabled = !enabled;
+}
+
+function handleThemeSettingModeChange(event) {
+  if (event.currentTarget === settingsDarkModeEnabledInput && settingsDarkModeEnabledInput.checked) {
+    settingsAutoDarkModeEnabledInput.checked = false;
+  }
+  if (event.currentTarget === settingsAutoDarkModeEnabledInput && settingsAutoDarkModeEnabledInput.checked) {
+    settingsDarkModeEnabledInput.checked = false;
+  }
+  syncSettingsThemeInputs();
 }
 
 function handleWidgetSlotClick(event) {
@@ -956,6 +1042,13 @@ function handleCanopyAction(event) {
         return { message: `Completed ${nextTask.name} from the canopy.`, tone: "info" };
       }
     });
+    return;
+  }
+
+  if (action === "edit") {
+    beginEdit(task, "single");
+    handleOpenTaskDesk("composer");
+    setSyncStatus(`Editing ${task.name} in Task Desk.`, "info");
     return;
   }
 
@@ -1189,45 +1282,112 @@ function handleSubmit(event) {
   setSyncStatus("Saved locally. Use Save to Drive when you want to sync.", "info");
 }
 
+function handleQuickAddSubmit(event) {
+  event.preventDefault();
+  const title = quickTaskNameInput.value.trim();
+  if (!title) {
+    quickTaskNameInput.focus();
+    return;
+  }
+
+  const task = buildTaskFromValues({
+    name: title,
+    details: "",
+    startDate: "",
+    dueDate: quickTaskDueDateInput.value || "",
+    timeOfDay: quickTaskTimeOfDayInput.value || "",
+    lateGraceMinutes: DEFAULT_LATE_GRACE_MINUTES,
+    points: defaultPointsForLength(quickTaskLengthInput.value || "medium"),
+    length: quickTaskLengthInput.value || "medium",
+    category: quickTaskCategoryInput.value || DEFAULT_CATEGORY_KEY,
+    importance: quickTaskImportanceInput.value || DEFAULT_IMPORTANCE,
+    skipRule: { type: "none" },
+    dependencies: [],
+    recurrence: { type: "none" }
+  });
+
+  store.tasks.unshift(task);
+  trimTasks();
+  persistStore();
+  resetQuickAddForm();
+  closeQuickAdd();
+  renderAll();
+  setSyncStatus("Quick-added locally. Open Task Desk if you want to add more detail.", "info");
+}
+
 function buildTaskFromForm(formData, originalTask = null) {
   const skipRule = originalTask?.skipRule?.type === "widget-lockout"
     ? normalizeSkipRule(originalTask.skipRule)
     : buildSkipRule(formData, originalTask?.skipRule);
   const categorySnapshot = resolveCategorySnapshot(String(formData.get("category") || ""), originalTask);
   const recurrence = buildRecurrence(formData, originalTask?.recurrence);
-
-  return {
-    id: originalTask?.id || createId(),
-    templateId: originalTask?.templateId || "",
-    occurrenceIndex: originalTask?.occurrenceIndex || 0,
+  return buildTaskFromValues({
     name: String(formData.get("name") || "").trim(),
     details: String(formData.get("details") || "").trim(),
     startDate: String(formData.get("startDate") || ""),
     dueDate: String(formData.get("dueDate") || ""),
     timeOfDay: String(formData.get("timeOfDay") || ""),
     lateGraceMinutes: parsePositiveOrZeroNumber(formData.get("lateGraceMinutes")) ?? originalTask?.lateGraceMinutes ?? DEFAULT_LATE_GRACE_MINUTES,
-    notBeforeAt: deriveTaskNotBeforeAt({
-      recurrence,
-      startDate: String(formData.get("startDate") || ""),
-      dueDate: String(formData.get("dueDate") || ""),
-      originalTask
-    }),
-    pointsValue: normalizeTaskPoints(formData.get("points"), originalTask?.pointsValue, getMaxTaskPoints()),
-    pointsEntryId: originalTask?.pointsEntryId || "",
+    points: formData.get("points"),
     length: String(formData.get("length") || "medium"),
-    categoryKey: categorySnapshot.key,
-    categoryLabel: categorySnapshot.label,
-    categoryColor: categorySnapshot.color,
-    importance: normalizeImportance(String(formData.get("importance") || originalTask?.importance || DEFAULT_IMPORTANCE)),
+    category: categorySnapshot.key,
+    importance: String(formData.get("importance") || originalTask?.importance || DEFAULT_IMPORTANCE),
+    skipRule,
+    dependencies: Array.from(dependenciesSelect.selectedOptions).map((option) => option.value),
+    recurrence
+  }, originalTask, categorySnapshot);
+}
+
+function buildTaskFromValues(values, originalTask = null, categorySnapshot = null) {
+  const normalizedName = String(values?.name || "").trim();
+  const normalizedDetails = String(values?.details || "").trim();
+  const rawStartDate = String(values?.startDate || "").trim();
+  const startDateWasImplicit = !rawStartDate;
+  const normalizedStartDate = rawStartDate || originalTask?.startDate || todayString();
+  const normalizedDueDate = String(values?.dueDate || "").trim();
+  const rawTimeOfDay = String(values?.timeOfDay || "").trim();
+  const normalizedTimeOfDay = rawTimeOfDay || (normalizedDueDate ? "23:59" : "");
+  const normalizedLength = LENGTH_ORDER[String(values?.length || "")] ? String(values.length) : "medium";
+  const resolvedCategory = categorySnapshot || resolveCategorySnapshot(String(values?.category || ""), originalTask);
+  const normalizedRecurrence = normalizeRecurrence(values?.recurrence);
+  const normalizedDependencies = Array.isArray(values?.dependencies)
+    ? values.dependencies.filter((dependencyId) => typeof dependencyId === "string" && dependencyId)
+    : [];
+  const lateGraceMinutes = parsePositiveOrZeroNumber(values?.lateGraceMinutes) ?? originalTask?.lateGraceMinutes ?? DEFAULT_LATE_GRACE_MINUTES;
+
+  return {
+    id: originalTask?.id || createId(),
+    templateId: originalTask?.templateId || "",
+    occurrenceIndex: originalTask?.occurrenceIndex || 0,
+    name: normalizedName,
+    details: normalizedDetails,
+    startDate: normalizedStartDate,
+    dueDate: normalizedDueDate,
+    timeOfDay: normalizedTimeOfDay,
+    lateGraceMinutes,
+    notBeforeAt: deriveTaskNotBeforeAt({
+      recurrence: normalizedRecurrence,
+      startDate: normalizedStartDate,
+      dueDate: normalizedDueDate,
+      originalTask,
+      startDateWasImplicit
+    }),
+    pointsValue: normalizeTaskPoints(values?.points, originalTask?.pointsValue, getMaxTaskPoints()),
+    pointsEntryId: originalTask?.pointsEntryId || "",
+    length: normalizedLength,
+    categoryKey: resolvedCategory.key,
+    categoryLabel: resolvedCategory.label,
+    categoryColor: resolvedCategory.color,
+    importance: normalizeImportance(String(values?.importance || originalTask?.importance || DEFAULT_IMPORTANCE)),
     status: originalTask?.status || "open",
     createdAt: originalTask?.createdAt || Date.now(),
     ownerWidgetId: originalTask?.ownerWidgetId || "",
     ownerWidgetType: originalTask?.ownerWidgetType || "",
     ownerTaskKey: originalTask?.ownerTaskKey || "",
     widgetCompletion: normalizeWidgetCompletion(originalTask?.widgetCompletion),
-    skipRule,
-    dependencies: Array.from(dependenciesSelect.selectedOptions).map((option) => option.value),
-    recurrence,
+    skipRule: normalizeSkipRule(values?.skipRule),
+    dependencies: normalizedDependencies,
+    recurrence: normalizedRecurrence,
     history: Array.isArray(originalTask?.history) ? originalTask.history : []
   };
 }
@@ -1497,14 +1657,20 @@ function renderCanopy() {
     today: todayString(),
     escapeHtml,
     formatDate,
-    getPendingActionForTask
+    getPendingActionForTask,
+    renderPriorityIndicator
   });
 }
 
 function renderTemporalUi(now = new Date()) {
+  applyTheme(now);
   renderHeroStatus(now);
   renderTreeSky(now);
   renderSyncMeta(now);
+}
+
+function applyTheme(now = new Date()) {
+  document.body.dataset.theme = isDarkModeActive(store.profile, now) ? "dark" : "light";
 }
 
 function renderHeroStatus(now = new Date()) {
@@ -1921,24 +2087,39 @@ function harvestRipeFruit() {
 }
 
 function renderCategoryOptions() {
-  const currentValue = taskCategoryInput.value || "";
   const categories = getSelectableCategories();
-  taskCategoryInput.innerHTML = categories.map((category) => `
+  syncCategorySelect(taskCategoryInput, categories, {
+    currentValue: taskCategoryInput.value || "",
+    allowInactiveTaskCategory: editState.taskId
+      ? store.tasks.find((task) => task.id === editState.taskId)
+      : null,
+    fallbackValue: categories[0]?.key || ""
+  });
+  syncCategorySelect(quickTaskCategoryInput, categories, {
+    currentValue: quickTaskCategoryInput.value || "",
+    fallbackValue: DEFAULT_CATEGORY_KEY
+  });
+}
+
+function syncCategorySelect(select, categories, { currentValue = "", allowInactiveTaskCategory = null, fallbackValue = "" } = {}) {
+  if (!select) {
+    return;
+  }
+
+  select.innerHTML = categories.map((category) => `
     <option value="${category.key}">${escapeHtml(category.label)}</option>
   `).join("");
 
-  if (editState.taskId) {
-    const editingTask = store.tasks.find((task) => task.id === editState.taskId);
-    if (editingTask?.categoryKey && !categories.some((category) => category.key === editingTask.categoryKey)) {
-      const option = document.createElement("option");
-      option.value = editingTask.categoryKey;
-      option.textContent = `${editingTask.categoryLabel} (inactive)`;
-      taskCategoryInput.appendChild(option);
-    }
+  if (allowInactiveTaskCategory?.categoryKey && !categories.some((category) => category.key === allowInactiveTaskCategory.categoryKey)) {
+    const option = document.createElement("option");
+    option.value = allowInactiveTaskCategory.categoryKey;
+    option.textContent = `${allowInactiveTaskCategory.categoryLabel} (inactive)`;
+    select.appendChild(option);
   }
 
-  const hasCurrent = Array.from(taskCategoryInput.options).some((option) => option.value === currentValue);
-  taskCategoryInput.value = hasCurrent ? currentValue : (categories[0]?.key || "");
+  const preferredValue = currentValue || fallbackValue;
+  const hasPreferred = Array.from(select.options).some((option) => option.value === preferredValue);
+  select.value = hasPreferred ? preferredValue : (categories[0]?.key || "");
 }
 
 function renderCategoryManager() {
@@ -2300,7 +2481,7 @@ function renderTaskGrid() {
         <span class="task-chip">${escapeHtml(statusLabel(cardData.task.archived ? "archived" : cardData.status))}</span>
         <span class="task-chip category-chip" style="--chip-color: ${escapeHtml(cardData.task.categoryColor || DEFAULT_CATEGORY_COLOR)}">${escapeHtml(cardData.task.categoryLabel || "Uncategorized")}</span>
         <span class="task-chip points-chip" style="--chip-color: ${escapeHtml(cardData.task.categoryColor || DEFAULT_CATEGORY_COLOR)}">${escapeHtml(formatPointsLabel(cardData.task.pointsValue))}</span>
-        <span class="task-chip importance-${escapeHtml(cardData.task.importance || DEFAULT_IMPORTANCE)}">${escapeHtml(IMPORTANCE_DEFINITIONS[cardData.task.importance || DEFAULT_IMPORTANCE]?.label || "Medium")}</span>
+        ${renderPriorityIndicator(cardData.task.importance || DEFAULT_IMPORTANCE, "task")}
         ${cardData.task.ownerWidgetType ? `<span class="task-chip">${escapeHtml(ownerWidgetLabel(cardData.task))}</span>` : ""}
         ${cardData.kind === "series" ? `<span class="task-chip">${escapeHtml(describeRecurrence(cardData.template.recurrence))}</span>` : ""}
       </div>
@@ -2321,6 +2502,18 @@ function renderTaskGrid() {
   taskGrid.querySelectorAll("[data-action]").forEach((button) => {
     button.addEventListener("click", handleTaskAction);
   });
+}
+
+function renderPriorityIndicator(importance, variant = "task") {
+  const normalized = normalizeImportance(importance || DEFAULT_IMPORTANCE);
+  const definition = IMPORTANCE_DEFINITIONS[normalized];
+  if (!definition?.icon) {
+    return "";
+  }
+  const className = variant === "canopy"
+    ? `canopy-priority-indicator priority-${normalized}`
+    : `task-chip task-priority-indicator priority-${normalized}`;
+  return `<span class="${className}" title="${escapeHtml(definition.label)}" aria-label="${escapeHtml(definition.label)}">${escapeHtml(definition.icon)}</span>`;
 }
 
 function renderHistoryPanel() {
@@ -3115,6 +3308,16 @@ function resetComposer() {
   submitButton.textContent = "Add task";
 }
 
+function resetQuickAddForm() {
+  if (!quickAddForm) {
+    return;
+  }
+  quickAddForm.reset();
+  quickTaskCategoryInput.value = DEFAULT_CATEGORY_KEY;
+  quickTaskLengthInput.value = "medium";
+  quickTaskImportanceInput.value = DEFAULT_IMPORTANCE;
+}
+
 function getSeriesTemplate(task) {
   if (!task) {
     return null;
@@ -3447,7 +3650,7 @@ function normalizeStore(input) {
   const retiredWidgets = normalizeWidgets(input.retiredWidgets);
   const resolveStoredCategorySnapshot = createCategorySnapshotResolver(categories, widgets);
   const normalized = {
-    version: 13,
+    version: 14,
     updatedAt: typeof input.updatedAt === "number" ? input.updatedAt : Date.now(),
     driveFileId: typeof input.driveFileId === "string" ? input.driveFileId : "",
     profile: normalizeProfile(input.profile),
@@ -3461,17 +3664,12 @@ function normalizeStore(input) {
     devSettings: normalizeDevSettings(input.devSettings),
     categories,
     widgets,
-    retiredWidgets,
-    deletedTaskIds: normalizeDeletedIds(input.deletedTaskIds),
-    deletedTaskKeys: normalizeDeletedIds(input.deletedTaskKeys),
-    deletedSeriesIds: normalizeDeletedIds(input.deletedSeriesIds)
+    retiredWidgets
   };
   normalized.userUpdatedAt = typeof input.userUpdatedAt === "number"
     ? input.userUpdatedAt
     : normalized.updatedAt;
-  normalized.userFingerprint = typeof input.userFingerprint === "string" && input.userFingerprint
-    ? input.userFingerprint
-    : computeUserContentFingerprintFromNormalized(normalized);
+  normalized.userFingerprint = computeUserContentFingerprintFromNormalized(normalized);
   return normalized;
 }
 
@@ -3748,7 +3946,7 @@ function persistLocalStore(nextStore) {
 function createEmptyStore() {
   const now = Date.now();
   const emptyStore = {
-    version: 13,
+    version: 14,
     updatedAt: now,
     userUpdatedAt: now,
     driveFileId: "",
@@ -3759,10 +3957,7 @@ function createEmptyStore() {
     devSettings: normalizeDevSettings({}),
     categories: normalizeCategoryDefinitions([]),
     widgets: [],
-    retiredWidgets: [],
-    deletedTaskIds: [],
-    deletedTaskKeys: [],
-    deletedSeriesIds: []
+    retiredWidgets: []
   };
   emptyStore.userFingerprint = computeUserContentFingerprintFromNormalized(emptyStore);
   return emptyStore;
@@ -3779,26 +3974,32 @@ function clearLegacyCookie() {
 }
 
 function mergeStores(localStore, remoteStore) {
-  const deletedTaskIds = unionIds(localStore.deletedTaskIds, remoteStore.deletedTaskIds);
-  const deletedTaskKeys = unionIds(localStore.deletedTaskKeys, remoteStore.deletedTaskKeys);
-  const deletedSeriesIds = unionIds(localStore.deletedSeriesIds, remoteStore.deletedSeriesIds);
   const mergedCategories = mergeCategoryDefinitions(localStore.categories, remoteStore.categories);
   const mergedWidgets = mergeWidgetLists(localStore.widgets, remoteStore.widgets, widgetRegistryHelpers(), MAX_WIDGETS);
   const preferredUserState = choosePreferredUserSyncState(localStore, remoteStore);
   const mergedById = new Map();
-  for (const task of filterDeletedTasks(remoteStore.tasks, deletedTaskIds, deletedTaskKeys, deletedSeriesIds)) {
-    mergedById.set(task.id, task);
-  }
-  for (const task of filterDeletedTasks(localStore.tasks, deletedTaskIds, deletedTaskKeys, deletedSeriesIds)) {
-    const existing = mergedById.get(task.id);
-    if (!existing) {
-      mergedById.set(task.id, task);
+  const localById = new Map(localStore.tasks.map((task) => [task.id, task]));
+  const remoteById = new Map(remoteStore.tasks.map((task) => [task.id, task]));
+  const allIds = new Set([...localById.keys(), ...remoteById.keys()]);
+
+  for (const taskId of allIds) {
+    const localTask = localById.get(taskId) || null;
+    const remoteTask = remoteById.get(taskId) || null;
+    if (localTask && remoteTask) {
+      mergedById.set(taskId, choosePreferredTask(localTask, remoteTask, localStore.updatedAt, remoteStore.updatedAt));
       continue;
     }
-    mergedById.set(task.id, choosePreferredTask(task, existing, localStore.updatedAt, remoteStore.updatedAt));
+    if (localTask && shouldKeepUnpairedTask(localTask, remoteStore.updatedAt || 0)) {
+      mergedById.set(taskId, localTask);
+      continue;
+    }
+    if (remoteTask && shouldKeepUnpairedTask(remoteTask, localStore.updatedAt || 0)) {
+      mergedById.set(taskId, remoteTask);
+    }
   }
+
   return {
-    version: 13,
+    version: 14,
     updatedAt: Math.max(localStore.updatedAt || 0, remoteStore.updatedAt || 0),
     userUpdatedAt: preferredUserState.userUpdatedAt,
     userFingerprint: preferredUserState.userFingerprint,
@@ -3812,16 +4013,13 @@ function mergeStores(localStore, remoteStore) {
       : normalizeDevSettings(remoteStore.devSettings),
     categories: mergedCategories,
     widgets: mergedWidgets,
-    retiredWidgets: mergeRetiredWidgets(localStore.retiredWidgets, remoteStore.retiredWidgets, mergedWidgets),
-    deletedTaskIds,
-    deletedTaskKeys,
-    deletedSeriesIds
+    retiredWidgets: mergeRetiredWidgets(localStore.retiredWidgets, remoteStore.retiredWidgets, mergedWidgets)
   };
 }
 
 function computeStoreFingerprint(sourceStore) {
   const normalized = normalizeStore(sourceStore || createEmptyStore());
-  return JSON.stringify(sortObjectKeys(buildComparableStore(normalized)));
+  return hashComparableStore(buildComparableStore(normalized));
 }
 
 function computeUserContentFingerprint(sourceStore) {
@@ -3830,7 +4028,22 @@ function computeUserContentFingerprint(sourceStore) {
 }
 
 function computeUserContentFingerprintFromNormalized(normalized) {
-  return JSON.stringify(sortObjectKeys(buildComparableStore(normalized)));
+  return hashComparableStore(buildComparableStore(normalized));
+}
+
+function hashComparableStore(comparableStore) {
+  return `fnv1a64:${hashStringFNV1a64(JSON.stringify(sortObjectKeys(comparableStore)))}`;
+}
+
+function hashStringFNV1a64(value) {
+  let hash = 0xcbf29ce484222325n;
+  const prime = 0x100000001b3n;
+  const mask = 0xffffffffffffffffn;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= BigInt(value.charCodeAt(index));
+    hash = (hash * prime) & mask;
+  }
+  return hash.toString(16).padStart(16, "0");
 }
 
 function buildComparableStore(normalized) {
@@ -3838,7 +4051,11 @@ function buildComparableStore(normalized) {
     profile: {
       displayName: normalizeProfile(normalized.profile).displayName,
       autosaveEnabled: normalizeProfile(normalized.profile).autosaveEnabled,
-      autosaveIntervalMinutes: normalizeProfile(normalized.profile).autosaveIntervalMinutes
+      autosaveIntervalMinutes: normalizeProfile(normalized.profile).autosaveIntervalMinutes,
+      darkModeEnabled: normalizeProfile(normalized.profile).darkModeEnabled,
+      autoDarkModeEnabled: normalizeProfile(normalized.profile).autoDarkModeEnabled,
+      autoDarkModeStart: normalizeProfile(normalized.profile).autoDarkModeStart,
+      autoDarkModeEnd: normalizeProfile(normalized.profile).autoDarkModeEnd
     },
     tasks: normalized.tasks
       .map((task) => ({
@@ -3908,10 +4125,7 @@ function buildComparableStore(normalized) {
       .sort(compareWidgetFingerprints),
     retiredWidgets: (Array.isArray(normalized.retiredWidgets) ? normalized.retiredWidgets : [])
       .map((widget) => sortObjectKeys(widget))
-      .sort(compareWidgetFingerprints),
-    deletedTaskIds: [...normalized.deletedTaskIds].sort(),
-    deletedTaskKeys: [...normalized.deletedTaskKeys].sort(),
-    deletedSeriesIds: [...normalized.deletedSeriesIds].sort()
+      .sort(compareWidgetFingerprints)
   };
   return comparable;
 }
@@ -3943,6 +4157,26 @@ function choosePreferredUserSyncState(localStore, remoteStore) {
         userUpdatedAt: remoteUserUpdatedAt,
         userFingerprint: remoteUserFingerprint
       };
+}
+
+function shouldKeepUnpairedTask(task, otherStoreUpdatedAt = 0) {
+  if (!task) {
+    return false;
+  }
+  if (!otherStoreUpdatedAt) {
+    return true;
+  }
+  return latestTaskTimestampForMerge(task) >= otherStoreUpdatedAt;
+}
+
+function latestTaskTimestampForMerge(task) {
+  let latest = Math.max(0, task?.createdAt || 0, task?.hideAfterAt || 0);
+  if (Array.isArray(task?.history)) {
+    for (const item of task.history) {
+      latest = Math.max(latest, item?.at || 0);
+    }
+  }
+  return latest;
 }
 
 function choosePreferredTask(localTask, remoteTask, localUpdatedAt, remoteUpdatedAt) {
@@ -3998,6 +4232,7 @@ function updateGoogleButtons() {
   saveDriveButton.disabled = !authState.authenticated;
   clearDriveDataButton.disabled = !isDeveloperUser();
   clearWidgetDriveDataButton.disabled = !isDeveloperUser();
+  downloadDriveDataButton.disabled = !isDeveloperUser();
   renderDeveloperPanel();
   renderSyncMeta();
 }
@@ -4372,16 +4607,23 @@ function syncTaskPointAward(task) {
   ].sort((left, right) => left.at - right.at);
 }
 
-function deriveTaskNotBeforeAt({ recurrence, startDate, dueDate, originalTask = null }) {
-  if (typeof originalTask?.notBeforeAt === "number" && originalTask.notBeforeAt > 0 && recurrence?.type === "none") {
-    return originalTask.notBeforeAt;
-  }
-
+function deriveTaskNotBeforeAt({ recurrence, startDate, dueDate, originalTask = null, startDateWasImplicit = false }) {
   const recurrenceType = recurrence?.type === "generated"
     ? recurrence?.sourceType || ""
     : recurrence?.type || "";
   if (!recurrenceType || recurrenceType === "none" || recurrenceType === "archived-series") {
-    return 0;
+    if (!startDate) {
+      return startDateWasImplicit ? Date.now() : 0;
+    }
+
+    const startOfStartDate = new Date(`${startDate}T00:00:00`);
+    if (Number.isNaN(startOfStartDate.getTime())) {
+      return startDateWasImplicit ? Date.now() : 0;
+    }
+
+    return startDateWasImplicit
+      ? Math.max(startOfStartDate.getTime(), Date.now())
+      : startOfStartDate.getTime();
   }
 
   const scheduledDate = dueDate || startDate || "";
@@ -4494,65 +4736,16 @@ function rememberRetiredWidget(widget) {
   store.retiredWidgets = [...normalizeWidgets(store.retiredWidgets), normalizeWidgetRecord(widget, widgetRegistryHelpers())].filter(Boolean);
 }
 
-function normalizeDeletedIds(value) {
-  return Array.isArray(value)
-    ? Array.from(new Set(value.filter((item) => typeof item === "string" && item)))
-    : [];
-}
-
-function unionIds(left = [], right = []) {
-  return Array.from(new Set([...(left || []), ...(right || [])]));
-}
-
-function filterDeletedTasks(tasks, deletedTaskIds, deletedTaskKeys, deletedSeriesIds) {
-  const deletedTaskSet = new Set(deletedTaskIds || []);
-  const deletedTaskKeySet = new Set(deletedTaskKeys || []);
-  const deletedSeriesSet = new Set(deletedSeriesIds || []);
-  return tasks.filter((task) => {
-    if (deletedTaskSet.has(task.id)) {
-      return false;
-    }
-    if (deletedTaskKeySet.has(buildLogicalWidgetTaskKey(task))) {
-      return false;
-    }
-    if (deletedSeriesSet.has(task.id)) {
-      return false;
-    }
-    if (task.templateId && deletedSeriesSet.has(task.templateId) && task.status === "open") {
-      return false;
-    }
-    return true;
-  });
-}
-
 function rememberDeletedTask(taskOrId, taskRecord = null) {
-  const task = typeof taskOrId === "object" && taskOrId
-    ? taskOrId
-    : taskRecord;
-  const taskId = typeof taskOrId === "string"
-    ? taskOrId
-    : typeof task?.id === "string"
-      ? task.id
-      : "";
-
-  if (taskId) {
-    store.deletedTaskIds = unionIds(store.deletedTaskIds, [taskId]);
-  }
-
-  if (task) {
-    store.deletedTaskKeys = unionIds(store.deletedTaskKeys, [buildLogicalWidgetTaskKey(task)]);
-  }
+  return undefined;
 }
 
 function rememberDeletedTaskKey(task) {
-  if (!task) {
-    return;
-  }
-  store.deletedTaskKeys = unionIds(store.deletedTaskKeys, [buildLogicalWidgetTaskKey(task)]);
+  return undefined;
 }
 
 function rememberDeletedSeries(templateId) {
-  store.deletedSeriesIds = unionIds(store.deletedSeriesIds, [templateId]);
+  return undefined;
 }
 
 function cleanupDetachedWidgetTasks() {
@@ -4732,11 +4925,10 @@ function buildGeneratedInstance(template, occurrenceIndex, startDate, dueDate, e
 
 function reconcileRecurringSeries() {
   for (const task of [...store.tasks]) {
-    if (!task.templateId && task.recurrence.type !== "none" && !store.deletedSeriesIds.includes(task.id)) {
+    if (!task.templateId && task.recurrence.type !== "none") {
       regenerateSeries(task.id, { preserveClosed: true });
     }
   }
-  store.tasks = filterDeletedTasks(store.tasks, store.deletedTaskIds, store.deletedTaskKeys, store.deletedSeriesIds);
   syncWidgetOwnedTasks();
   trimTasks();
 }
@@ -4785,6 +4977,42 @@ async function copyWidgetDiagnostics() {
   } catch {
     setSyncStatus("Clipboard access failed. Open DevTools and copy the diagnostics from the console instead.", "error");
     console.log(diagnostics);
+  }
+}
+
+async function downloadDriveData() {
+  if (!isDeveloperUser()) {
+    return;
+  }
+
+  try {
+    const response = await fetch(`${API_BASE}/api/lifetree/load`, {
+      credentials: FETCH_CREDENTIALS
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || "Drive load failed");
+    }
+    if (!payload.found) {
+      setSyncStatus("No Google Drive Lifetree data exists yet for this account.", "info");
+      return;
+    }
+
+    const blob = new Blob([`${JSON.stringify(payload.payload, null, 2)}\n`], {
+      type: "application/json"
+    });
+    const url = URL.createObjectURL(blob);
+    const timestamp = toDateString(new Date()).replace(/-/g, "");
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `lifetree-drive-${timestamp}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    setSyncStatus("Downloaded the raw Google Drive Lifetree JSON.", "success");
+  } catch (error) {
+    setSyncStatus(`Drive download failed: ${error.message}`, "error");
   }
 }
 
@@ -4897,8 +5125,6 @@ function buildWidgetDiagnostics(targetStore, widgetType) {
     taskCount: widgetTasks.length,
     taskCountByOwnerWidgetId: countBy(widgetTasks, (task) => task.ownerWidgetId || "none"),
     taskCountByStatus: countBy(widgetTasks, (task) => task.status),
-    deletedTaskIds: targetStore.deletedTaskIds.filter((taskId) => widgetTasks.some((task) => task.id === taskId)),
-    deletedTaskKeys: targetStore.deletedTaskKeys.filter((key) => key.startsWith(`${widgetType}|`)),
     closedTasks: widgetTasks
       .filter((task) => task.status !== "open")
       .sort((left, right) => {

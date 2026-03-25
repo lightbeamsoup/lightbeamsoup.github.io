@@ -60,7 +60,8 @@
           </div>
           <div class="canopy-columns" id="canopyColumns"></div>
           <div class="widget-actions">
-            <button type="button" class="primary-button" id="openTaskDesk">Open Task Desk</button>
+            <button type="button" class="ghost-button" id="openQuickAdd">Quick add</button>
+            <button type="button" class="primary-button" id="openTaskDesk">Task Desk</button>
           </div>
         </section>
         <article class="widget-slot" data-slot-index="0" aria-label="Widget slot 1"></article>
@@ -478,6 +479,62 @@
     </section>
   </div>
 
+  <div id="quickAddModal" class="widget-detail-modal hidden" aria-hidden="true">
+    <div class="task-desk-backdrop" id="closeQuickAddBackdrop"></div>
+    <section class="widget-detail-panel quick-add-panel" role="dialog" aria-modal="true" aria-labelledby="quickAddTitle">
+      <div class="task-desk-header">
+        <div>
+          <p class="eyebrow">Quick Add</p>
+          <h2 id="quickAddTitle">Add a canopy task fast</h2>
+          <p class="sync-status">Use the short form here, then open Task Desk later if you want to add details, recurrence, or dependencies.</p>
+        </div>
+        <button type="button" class="ghost-button" id="closeQuickAdd">Close</button>
+      </div>
+      <form id="quickAddForm" class="quick-add-form">
+        <div class="quick-add-grid">
+          <label class="quick-add-title">
+            <span>Title</span>
+            <input id="quickTaskName" name="quickTaskName" type="text" maxlength="80" placeholder="Add a task title" required />
+          </label>
+          <label>
+            <span>Due date</span>
+            <input id="quickTaskDueDate" name="quickTaskDueDate" type="date" />
+          </label>
+          <label>
+            <span>Due time</span>
+            <input id="quickTaskTimeOfDay" name="quickTaskTimeOfDay" type="time" />
+          </label>
+          <label>
+            <span>Category</span>
+            <select id="quickTaskCategory" name="quickTaskCategory"></select>
+          </label>
+          <label>
+            <span>Length</span>
+            <select id="quickTaskLength" name="quickTaskLength">
+              <option value="very-short">Very short</option>
+              <option value="short">Short</option>
+              <option value="medium" selected>Medium</option>
+              <option value="long">Long</option>
+              <option value="very-long">Very long</option>
+            </select>
+          </label>
+          <label>
+            <span>Priority</span>
+            <select id="quickTaskImportance" name="quickTaskImportance">
+              <option value="low">Low</option>
+              <option value="medium" selected>Medium</option>
+              <option value="high">High</option>
+            </select>
+          </label>
+        </div>
+        <div class="widget-actions quick-add-actions">
+          <button type="submit" class="primary-button">Add task</button>
+          <button type="button" class="ghost-button" id="cancelQuickAdd">Cancel</button>
+        </div>
+      </form>
+    </section>
+  </div>
+
   <div id="settingsModal" class="widget-detail-modal hidden" aria-hidden="true">
     <div class="task-desk-backdrop" id="closeSettingsBackdrop"></div>
     <section class="widget-detail-panel settings-panel" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
@@ -485,7 +542,7 @@
         <div>
           <p class="eyebrow">Settings</p>
           <h2 id="settingsTitle">Personalize Lifetree</h2>
-          <p class="sync-status">Set the name used in the welcome banner. This syncs with your Lifetree data.</p>
+          <p class="sync-status">Set your welcome name, Drive autosave behavior, and light or dark appearance. These settings sync with your Lifetree data.</p>
         </div>
         <button type="button" class="ghost-button" id="closeSettings">Close</button>
       </div>
@@ -502,6 +559,31 @@
           <span>Autosave interval (minutes)</span>
           <input id="settingsAutosaveInterval" name="autosaveInterval" type="number" min="1" max="120" value="5" />
         </label>
+        <label class="recurrence-toggle">
+          <input id="settingsDarkModeEnabled" name="darkModeEnabled" type="checkbox" />
+          <span class="settings-option-copy">
+            <strong>Always use dark mode</strong>
+            <small>Keep Lifetree dark all day and night.</small>
+          </span>
+        </label>
+        <label class="recurrence-toggle">
+          <input id="settingsAutoDarkModeEnabled" name="autoDarkModeEnabled" type="checkbox" />
+          <span class="settings-option-copy">
+            <strong>Auto dark mode</strong>
+            <small>Switch to dark mode automatically between your chosen hours.</small>
+          </span>
+        </label>
+        <div class="split">
+          <label>
+            <span>Auto dark start</span>
+            <input id="settingsAutoDarkModeStart" name="autoDarkModeStart" type="time" value="21:00" />
+          </label>
+          <label>
+            <span>Auto dark end</span>
+            <input id="settingsAutoDarkModeEnd" name="autoDarkModeEnd" type="time" value="07:00" />
+          </label>
+        </div>
+        <p class="sync-status">Choose either always-on dark mode or the automatic dark window. The default auto window is 9:00 PM to 7:00 AM.</p>
         <p class="sync-status">Autosave is on by default and only runs when Google Drive sync is available.</p>
         <div class="form-actions">
           <button type="submit" class="primary-button">Save settings</button>
@@ -625,6 +707,7 @@
         </div>
         <div class="sync-actions">
           <button type="button" class="ghost-button" id="copyWidgetDiagnostics">Copy diagnostics</button>
+          <button type="button" class="ghost-button" id="downloadDriveData">Download Drive JSON</button>
           <button type="button" class="ghost-button" id="cleanWidgetData">Run local cleanup</button>
           <button type="button" class="ghost-button" id="clearWidgetDriveData">Clear widget in Drive</button>
           <button type="button" class="ghost-button" id="injectPoints">Inject points</button>
