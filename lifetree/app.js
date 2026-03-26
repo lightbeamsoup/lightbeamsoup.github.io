@@ -167,6 +167,7 @@ const treeShellImage = document.getElementById("treeShellImage");
 const treeFruitLayer = document.getElementById("treeFruitLayer");
 const treeHarvestHint = document.getElementById("treeHarvestHint");
 const treeBankSummary = document.getElementById("treeBankSummary");
+const treeCoreTitle = document.getElementById("treeCoreTitle");
 const treePointSummary = document.getElementById("treePointSummary");
 const openTreeStyleButton = document.getElementById("openTreeStyle");
 const openTreeDetailButton = document.getElementById("openTreeDetail");
@@ -2911,6 +2912,8 @@ function formatAutosaveCountdown(ms) {
 function renderTreeCore() {
   const treeState = getTreeDisplayState();
   const profile = normalizeProfile(store.profile);
+  treeCoreTitle.textContent = formatLifetreeTitle(profile.displayName);
+  treeCoreTitle.dataset.help = "Fruit quantity, size, and color reflect how your points are accumulating on the tree.";
   treeHarvestButton.classList.toggle("ripe-ready", treeState.ripeFruitCount > 0);
   treeHarvestButton.dataset.help = treeState.ripeFruitCount > 0
     ? `Click to harvest ${treeState.ripeFruitCount} ripe ${treeState.ripeFruitCount === 1 ? "fruit" : "fruits"} for ${formatPointsLabel(treeState.ripePoints)}.`
@@ -2955,6 +2958,15 @@ function renderTreeCore() {
       </span>
     `).join("")
     : '<span class="tree-point-empty">No banked fruit points yet.</span>';
+}
+
+function formatLifetreeTitle(displayName) {
+  const safeName = String(displayName || "").trim();
+  if (!safeName) {
+    return "Your Lifetree";
+  }
+  const suffix = /s$/i.test(safeName) ? "'" : "'s";
+  return `${safeName}${suffix} Lifetree`;
 }
 
 function renderTreeDetailIfOpen() {

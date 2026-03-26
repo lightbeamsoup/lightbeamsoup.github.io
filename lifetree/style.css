@@ -1227,10 +1227,12 @@ body.developer-open {
 }
 
 .tree-bank {
-  display: grid;
-  gap: 4px;
+  display: inline-flex;
+  gap: 8px;
+  align-items: baseline;
   margin-top: 12px;
-  justify-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
 }
 
 .tree-bank-label {
