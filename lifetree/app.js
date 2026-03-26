@@ -2922,15 +2922,20 @@ function renderTreeCore() {
 
   treeFruitLayer.innerHTML = treeState.fruitDescriptors.map((fruit) => `
     <span
-      class="tree-fruit stage-${fruit.stage}${fruit.ripe ? " ripe" : ""}"
+      class="tree-fruit-anchor"
       style="
-        --fruit-color: ${escapeHtml(fruit.color)};
-        --fruit-size: ${fruit.size}px;
         left: ${fruit.left}%;
         top: ${fruit.top}%;
       "
-      title="${escapeHtml(`${fruit.categoryLabel}: ${fruit.points}/25 growth points`)}"
-    ></span>
+    >
+      ${renderTreeFruitMarkup({
+        color: fruit.color,
+        stage: fruit.stage,
+        size: fruit.size,
+        ripe: fruit.ripe,
+        title: `${fruit.categoryLabel}: ${fruit.points}/25 growth points`
+      })}
+    </span>
   `).join("");
 
   treeBankSummary.innerHTML = `
@@ -2999,9 +3004,13 @@ function renderTreeDetailIfOpen() {
                 <span class="task-chip points-chip" style="--chip-color: ${escapeHtml(category.color)}">${escapeHtml(formatPointsLabel(category.availablePoints))}</span>
               </div>
               <div class="tree-detail-fruit-row">
-                ${category.fruits.length > 0 ? category.fruits.map((fruit) => `
-                  <span class="tree-fruit detail stage-${fruit.stage}${fruit.ripe ? " ripe" : ""}" style="--fruit-color: ${escapeHtml(category.color)}; --fruit-size: ${11 + (fruit.stage * 4)}px;"></span>
-                `).join("") : '<span class="tree-point-empty">No visible fruit</span>'}
+                ${category.fruits.length > 0 ? category.fruits.map((fruit) => renderTreeFruitMarkup({
+                  color: category.color,
+                  stage: fruit.stage,
+                  size: 11 + (fruit.stage * 4),
+                  ripe: fruit.ripe,
+                  detail: true
+                })).join("") : '<span class="tree-point-empty">No visible fruit</span>'}
               </div>
               <p>${category.visibleFruitCount} / 3 fruits visible${category.overflowPoints > 0 ? ` · ${formatPointsLabel(category.overflowPoints)} waiting off-branch` : ""}</p>
               <p>${escapeHtml(formatPointsLabel(category.ripePoints))} ripe · ${escapeHtml(formatPointsLabel(category.bankedPoints))} banked</p>
@@ -3048,6 +3057,22 @@ function formatPointHistoryDueLabel(entry) {
   }
   const time = entry.timeOfDay || "23:59";
   return formatDateTime(`${entry.dueDate}T${time}:00`);
+}
+
+function renderTreeFruitMarkup({ color, stage, size, ripe, title = "", detail = false }) {
+  return `
+    <span
+      class="tree-fruit${detail ? " detail" : ""} stage-${stage}${ripe ? " ripe" : ""}"
+      style="--fruit-color: ${escapeHtml(color)}; --fruit-size: ${size}px;"
+      ${title ? `title="${escapeHtml(title)}"` : ""}
+    >
+      ${ripe ? `
+        <span class="tree-fruit-sparkle sparkle-a" aria-hidden="true"></span>
+        <span class="tree-fruit-sparkle sparkle-b" aria-hidden="true"></span>
+        <span class="tree-fruit-sparkle sparkle-c" aria-hidden="true"></span>
+      ` : ""}
+    </span>
+  `;
 }
 
 function renderTreeStyleIfOpen() {

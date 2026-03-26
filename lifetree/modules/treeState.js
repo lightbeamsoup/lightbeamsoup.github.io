@@ -141,7 +141,7 @@ function buildFruitSlots(points) {
       slotIndex,
       points: slotPoints,
       stage: Math.min(5, Math.ceil(slotPoints / 5)),
-      ripe: slotPoints >= 21
+      ripe: slotPoints >= 25
     });
   }
   return fruits;

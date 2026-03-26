@@ -1102,6 +1102,12 @@ body.developer-open {
   pointer-events: none;
 }
 
+.tree-fruit-anchor {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+
 .tree-fruit {
   position: absolute;
   width: var(--fruit-size, 18px);
@@ -1112,6 +1118,11 @@ body.developer-open {
     radial-gradient(circle at 32% 30%, rgba(255, 255, 255, 0.82), color-mix(in srgb, var(--fruit-color, #7dbf74) 68%, white) 28%, var(--fruit-color, #7dbf74));
   border: 2px solid color-mix(in srgb, var(--fruit-color, #7dbf74) 60%, #7a4b28);
   box-shadow: 0 5px 12px rgba(37, 50, 67, 0.16);
+}
+
+.tree-fruit-anchor > .tree-fruit {
+  left: 0;
+  top: 0;
 }
 
 .tree-fruit::before {
@@ -1149,6 +1160,58 @@ body.developer-open {
 
 .tree-fruit.ripe {
   animation: fruitPulse 2.2s ease-in-out infinite;
+  box-shadow:
+    0 5px 12px rgba(37, 50, 67, 0.16),
+    0 0 0 3px color-mix(in srgb, var(--fruit-color, #7dbf74) 24%, white),
+    0 0 18px color-mix(in srgb, var(--fruit-color, #7dbf74) 45%, white);
+}
+
+.tree-fruit-sparkle {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  pointer-events: none;
+  animation: fruitSparkle 1.8s ease-in-out infinite;
+}
+
+.tree-fruit-sparkle::before,
+.tree-fruit-sparkle::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 2px;
+  height: 100%;
+  border-radius: 999px;
+  background: rgba(255, 251, 215, 0.95);
+  box-shadow: 0 0 10px rgba(255, 243, 173, 0.7);
+  transform: translate(-50%, -50%);
+}
+
+.tree-fruit-sparkle::after {
+  transform: translate(-50%, -50%) rotate(90deg);
+}
+
+.tree-fruit-sparkle.sparkle-a {
+  left: 8%;
+  top: 6%;
+  animation-delay: 0s;
+}
+
+.tree-fruit-sparkle.sparkle-b {
+  left: 84%;
+  top: 22%;
+  width: 6px;
+  height: 6px;
+  animation-delay: 0.45s;
+}
+
+.tree-fruit-sparkle.sparkle-c {
+  left: 78%;
+  top: 82%;
+  width: 7px;
+  height: 7px;
+  animation-delay: 0.9s;
 }
 
 .tree-harvest-hint {
@@ -2808,6 +2871,17 @@ textarea {
   }
   50% {
     transform: translate(-50%, -50%) scale(1.06);
+  }
+}
+
+@keyframes fruitSparkle {
+  0%, 100% {
+    opacity: 0.25;
+    transform: scale(0.7) rotate(0deg);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.18) rotate(18deg);
   }
 }
 
