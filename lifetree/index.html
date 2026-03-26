@@ -297,19 +297,27 @@
               </div>
             </section>
 
-            <fieldset class="recurrence-panel">
-              <legend>Recurrence</legend>
-
-              <label>
-                <span>Pattern</span>
-                <select id="recurrenceType" name="recurrenceType">
-                  <option value="none" selected>Does not repeat</option>
-                  <option value="daily">Daily</option>
-                  <option value="weekly">Weekly</option>
-                  <option value="monthly-date">Monthly on day</option>
-                  <option value="monthly-weekday">Monthly on ordinal weekday</option>
-                </select>
-              </label>
+            <section class="recurrence-panel composer-panel-section">
+              <button
+                type="button"
+                class="ghost-button composer-panel-toggle"
+                id="toggleRecurrenceOptions"
+                aria-expanded="false"
+                aria-controls="recurrencePanelBody"
+              >
+                Repeat options
+              </button>
+              <div id="recurrencePanelBody" class="composer-panel-body hidden">
+                <label>
+                  <span>Pattern</span>
+                  <select id="recurrenceType" name="recurrenceType">
+                    <option value="none" selected>Does not repeat</option>
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="monthly-date">Monthly on day</option>
+                    <option value="monthly-weekday">Monthly on ordinal weekday</option>
+                  </select>
+                </label>
 
               <div class="recurrence-extra recurrence-weekly-panel" data-show-for="weekly">
                 <label>
@@ -397,11 +405,12 @@
                 </label>
               </div>
 
-              <label class="recurrence-extra recurrence-toggle" data-show-for="daily weekly monthly-date monthly-weekday">
-                <input id="recurrenceForever" name="recurrenceForever" type="checkbox" />
-                <span>Repeat indefinitely</span>
-              </label>
-            </fieldset>
+                <label class="recurrence-extra recurrence-toggle" data-show-for="daily weekly monthly-date monthly-weekday">
+                  <input id="recurrenceForever" name="recurrenceForever" type="checkbox" />
+                  <span>Repeat indefinitely</span>
+                </label>
+              </div>
+            </section>
 
             <div class="form-actions">
               <button type="submit" class="primary-button" id="submitButton">Add task</button>

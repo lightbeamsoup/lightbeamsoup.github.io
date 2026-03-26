@@ -1912,9 +1912,13 @@ textarea {
 
 .recurrence-weekly-panel {
   display: grid;
-  grid-template-columns: minmax(0, 132px) minmax(0, 1fr);
-  gap: 12px;
+  grid-template-columns: 1fr;
+  gap: 10px;
   align-items: start;
+}
+
+.recurrence-interval-field {
+  max-width: 140px;
 }
 
 .weekday-picker-panel > span,
@@ -2849,10 +2853,6 @@ textarea {
   .canopy-columns,
   .quick-add-grid,
   .split {
-    grid-template-columns: 1fr;
-  }
-
-  .recurrence-weekly-panel {
     grid-template-columns: 1fr;
   }
 

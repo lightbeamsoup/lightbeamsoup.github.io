@@ -2,7 +2,7 @@
 
 ## Open items
 
-- None right now.
+- Tree modal: fix dark mode styling and history presentation.
 
 ## Recently completed
 

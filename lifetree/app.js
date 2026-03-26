@@ -231,6 +231,8 @@ const addCategoryButton = document.getElementById("addCategory");
 const toggleDependenciesButton = document.getElementById("toggleDependencies");
 const dependenciesPanelBody = document.getElementById("dependenciesPanelBody");
 const dependenciesSelect = document.getElementById("dependencies");
+const toggleRecurrenceOptionsButton = document.getElementById("toggleRecurrenceOptions");
+const recurrencePanelBody = document.getElementById("recurrencePanelBody");
 const recurrenceType = document.getElementById("recurrenceType");
 const recurrenceForeverInput = document.getElementById("recurrenceForever");
 const recurrenceExtras = Array.from(document.querySelectorAll(".recurrence-extra"));
@@ -310,7 +312,8 @@ const editState = {
 };
 const composerPanelState = {
   categoryOptionsOpen: false,
-  dependenciesOpen: false
+  dependenciesOpen: false,
+  recurrenceOpen: false
 };
 
 const widgetMenuState = {
@@ -478,6 +481,10 @@ toggleCategoryOptionsButton.addEventListener("click", () => {
 });
 toggleDependenciesButton.addEventListener("click", () => {
   composerPanelState.dependenciesOpen = !composerPanelState.dependenciesOpen;
+  syncComposerPanelState();
+});
+toggleRecurrenceOptionsButton.addEventListener("click", () => {
+  composerPanelState.recurrenceOpen = !composerPanelState.recurrenceOpen;
   syncComposerPanelState();
 });
 categoryList.addEventListener("input", handleCategoryListInput);
@@ -3843,6 +3850,7 @@ function applyRecurrenceToForm(recurrence) {
   document.getElementById("recurrenceCount").value = recurrence?.count || "";
   recurrenceForeverInput.checked = Boolean(recurrence?.forever);
   renderDailyInstanceTimes([]);
+  composerPanelState.recurrenceOpen = recurrenceType.value !== "none";
 }
 
 function syncEditPanel() {
@@ -3873,6 +3881,7 @@ function clearEditState() {
 
 function resetComposer() {
   form.reset();
+  composerPanelState.recurrenceOpen = false;
   recurrenceForeverInput.checked = false;
   lateGraceMinutesInput.value = String(DEFAULT_LATE_GRACE_MINUTES);
   setTaskPointsInput(defaultPointsForLength(taskLengthInput.value || "medium"));
@@ -4191,6 +4200,9 @@ function updateRecurrenceVisibility() {
     const targets = block.getAttribute("data-show-for").split(" ");
     block.classList.toggle("visible", targets.includes(value));
   }
+
+  composerPanelState.recurrenceOpen = value !== "none";
+  syncComposerPanelState();
 
   const recurring = value !== "none";
   recurrenceForeverInput.disabled = !recurring;
@@ -5218,6 +5230,10 @@ function syncComposerPanelState() {
   syncComposerPanel(toggleDependenciesButton, dependenciesPanelBody, composerPanelState.dependenciesOpen, {
     collapsedLabel: "Depends on",
     expandedLabel: "Hide dependencies"
+  });
+  syncComposerPanel(toggleRecurrenceOptionsButton, recurrencePanelBody, composerPanelState.recurrenceOpen, {
+    collapsedLabel: "Repeat options",
+    expandedLabel: "Hide repeat options"
   });
 }
 
