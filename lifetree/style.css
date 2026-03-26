@@ -143,6 +143,13 @@ body[data-theme="dark"] .canopy-group-star {
   border-color: color-mix(in srgb, var(--canopy-bonus-color, #f4c95d) 34%, rgba(214, 228, 246, 0.18));
 }
 
+body[data-theme="dark"] .help-tooltip {
+  background: rgba(14, 23, 37, 0.96);
+  color: var(--ink);
+  border-color: rgba(214, 228, 246, 0.18);
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.3);
+}
+
 body[data-theme="dark"] .canopy-task-icon.complete,
 body[data-theme="dark"] .canopy-group-toggle.is-complete {
   color: #92d98b;
@@ -785,6 +792,7 @@ body.developer-open {
   justify-content: center;
   font-size: 1.1rem;
   font-weight: 800;
+  cursor: pointer;
   color: color-mix(in srgb, var(--canopy-bonus-color, #f4c95d) 72%, #8b6412);
   background: color-mix(in srgb, var(--canopy-bonus-color, #f4c95d) 18%, rgba(255, 255, 255, 0.94));
   border: 1px solid color-mix(in srgb, var(--canopy-bonus-color, #f4c95d) 38%, rgba(37, 50, 67, 0.14));
@@ -793,6 +801,21 @@ body.developer-open {
 
 .canopy-group-star:hover {
   transform: translateY(-1px);
+}
+
+.help-tooltip {
+  position: fixed;
+  z-index: 120;
+  max-width: min(260px, calc(100vw - 24px));
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 252, 245, 0.98);
+  color: var(--ink);
+  border: 1px solid rgba(37, 50, 67, 0.16);
+  box-shadow: 0 18px 36px rgba(37, 50, 67, 0.18);
+  font-size: 0.86rem;
+  line-height: 1.45;
+  pointer-events: none;
 }
 
 .canopy-task-main > span,

@@ -656,7 +656,19 @@
             <input id="settingsAutoDarkModeEnd" name="autoDarkModeEnd" type="time" value="07:00" />
           </label>
         </div>
+        <label class="recurrence-toggle">
+          <input id="settingsHelpTextEnabled" name="helpTextEnabled" type="checkbox" checked />
+          <span class="settings-option-copy">
+            <strong>Show hover / long-press help text</strong>
+            <small>Keep short reminders visible where extra help is available by hover or long-press.</small>
+          </span>
+        </label>
+        <label>
+          <span>Help hover delay (ms)</span>
+          <input id="settingsHelpTooltipDelay" name="helpTooltipDelay" type="number" min="200" max="5000" value="1000" />
+        </label>
         <p class="sync-status">Choose either always-on dark mode or the automatic dark window. The default auto window is 9:00 PM to 7:00 AM.</p>
+        <p class="sync-status">Supported controls show extra help after hovering for your chosen delay, or by long-pressing on touch devices.</p>
         <p class="sync-status">Autosave is on by default and only runs when Google Drive sync is available.</p>
         <div class="form-actions">
           <button type="submit" class="primary-button">Save settings</button>
@@ -798,6 +810,8 @@
       </section>
     </section>
   </div>
+
+  <div id="helpTooltip" class="help-tooltip hidden" aria-hidden="true" role="tooltip"></div>
 
   <script src="config.js"></script>
   <script type="module" src="app.js"></script>

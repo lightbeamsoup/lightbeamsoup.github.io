@@ -40,6 +40,7 @@ import {
   choosePreferredProfile,
   normalizeThemeTime,
   normalizeAutosaveIntervalMinutes,
+  normalizeHelpTooltipDelayMs,
   normalizeProfile
 } from "./modules/profile.js";
 import { createTaskDeskController } from "./modules/taskDesk.js";
@@ -182,6 +183,8 @@ const settingsDarkModeEnabledInput = document.getElementById("settingsDarkModeEn
 const settingsAutoDarkModeEnabledInput = document.getElementById("settingsAutoDarkModeEnabled");
 const settingsAutoDarkModeStartInput = document.getElementById("settingsAutoDarkModeStart");
 const settingsAutoDarkModeEndInput = document.getElementById("settingsAutoDarkModeEnd");
+const settingsHelpTextEnabledInput = document.getElementById("settingsHelpTextEnabled");
+const settingsHelpTooltipDelayInput = document.getElementById("settingsHelpTooltipDelay");
 const taskDeskModal = document.getElementById("taskDeskModal");
 const openTaskDeskButton = document.getElementById("openTaskDesk");
 const closeTaskDeskButton = document.getElementById("closeTaskDesk");
@@ -304,6 +307,7 @@ const clearDriveDataButton = document.getElementById("clearDriveData");
 const developerImportJsonInput = document.getElementById("developerImportJson");
 const developerFruitSummary = document.getElementById("developerFruitSummary");
 const developerPointsSummary = document.getElementById("developerPointsSummary");
+const helpTooltip = document.getElementById("helpTooltip");
 
 const authState = {
   authenticated: false,
@@ -342,6 +346,17 @@ const canopyState = {
     columnKey: "",
     groupKey: ""
   }
+};
+const helpTooltipState = {
+  timerId: 0,
+  target: null,
+  mode: "",
+  anchorX: 0,
+  anchorY: 0,
+  consumeNextClick: false,
+  pressPointerId: null,
+  pressStartX: 0,
+  pressStartY: 0
 };
 
 let store = loadStore();
@@ -468,6 +483,15 @@ widgetMenuOptions.addEventListener("click", handleWidgetMenuSelection);
 canopyColumns.addEventListener("click", handleCanopyAction);
 canopyDetailBody.addEventListener("click", handleCanopyAction);
 canopyDetailBody.addEventListener("change", handleCanopyChange);
+document.addEventListener("pointerover", handleHelpPointerOver, true);
+document.addEventListener("pointerout", handleHelpPointerOut, true);
+document.addEventListener("pointerdown", handleHelpPointerDown, true);
+document.addEventListener("pointerup", handleHelpPointerUp, true);
+document.addEventListener("pointercancel", handleHelpPointerCancel, true);
+document.addEventListener("pointermove", handleHelpPointerMove, true);
+document.addEventListener("click", handleHelpTooltipClick, true);
+window.addEventListener("scroll", hideHelpTooltip, true);
+window.addEventListener("resize", hideHelpTooltip);
 treeHarvestButton.addEventListener("click", harvestRipeFruit);
 openTreeStyleButton.addEventListener("click", openTreeStyle);
 openTreeDetailButton.addEventListener("click", openTreeDetail);
@@ -825,6 +849,8 @@ function openSettings() {
   settingsAutoDarkModeEnabledInput.checked = profile.autoDarkModeEnabled;
   settingsAutoDarkModeStartInput.value = profile.autoDarkModeStart;
   settingsAutoDarkModeEndInput.value = profile.autoDarkModeEnd;
+  settingsHelpTextEnabledInput.checked = profile.helpTextEnabled;
+  settingsHelpTooltipDelayInput.value = String(profile.helpTooltipDelayMs);
   syncSettingsAutosaveInputs();
   syncSettingsThemeInputs();
   settingsModal.classList.remove("hidden");
@@ -950,6 +976,8 @@ function handleSettingsSubmit(event) {
   const autoDarkModeEnabled = settingsAutoDarkModeEnabledInput.checked;
   const autoDarkModeStart = normalizeThemeTime(settingsAutoDarkModeStartInput.value, currentProfile.autoDarkModeStart);
   const autoDarkModeEnd = normalizeThemeTime(settingsAutoDarkModeEndInput.value, currentProfile.autoDarkModeEnd);
+  const helpTextEnabled = settingsHelpTextEnabledInput.checked;
+  const helpTooltipDelayMs = normalizeHelpTooltipDelayMs(settingsHelpTooltipDelayInput.value);
   const unchanged = (
     displayName === currentProfile.displayName
     && autosaveEnabled === currentProfile.autosaveEnabled
@@ -958,6 +986,8 @@ function handleSettingsSubmit(event) {
     && autoDarkModeEnabled === currentProfile.autoDarkModeEnabled
     && autoDarkModeStart === currentProfile.autoDarkModeStart
     && autoDarkModeEnd === currentProfile.autoDarkModeEnd
+    && helpTextEnabled === currentProfile.helpTextEnabled
+    && helpTooltipDelayMs === currentProfile.helpTooltipDelayMs
   );
   if (unchanged) {
     closeSettings();
@@ -972,6 +1002,8 @@ function handleSettingsSubmit(event) {
     autoDarkModeEnabled,
     autoDarkModeStart,
     autoDarkModeEnd,
+    helpTextEnabled,
+    helpTooltipDelayMs,
     updatedAt: Date.now()
   });
   persistStore();
@@ -999,6 +1031,179 @@ function handleThemeSettingModeChange(event) {
     settingsDarkModeEnabledInput.checked = false;
   }
   syncSettingsThemeInputs();
+}
+
+function getHelpTooltipDelay() {
+  return normalizeHelpTooltipDelayMs(store.profile?.helpTooltipDelayMs);
+}
+
+function clearHelpTooltipTimer() {
+  if (helpTooltipState.timerId) {
+    window.clearTimeout(helpTooltipState.timerId);
+    helpTooltipState.timerId = 0;
+  }
+}
+
+function hideHelpTooltip() {
+  clearHelpTooltipTimer();
+  helpTooltip.classList.add("hidden");
+  helpTooltip.setAttribute("aria-hidden", "true");
+  helpTooltip.textContent = "";
+  helpTooltipState.target = null;
+  helpTooltipState.mode = "";
+  helpTooltipState.consumeNextClick = false;
+  helpTooltipState.pressPointerId = null;
+}
+
+function scheduleHelpTooltip(target, { mode, anchorX = 0, anchorY = 0 }) {
+  if (!target?.dataset?.help) {
+    return;
+  }
+  clearHelpTooltipTimer();
+  helpTooltipState.target = target;
+  helpTooltipState.mode = mode;
+  helpTooltipState.anchorX = anchorX;
+  helpTooltipState.anchorY = anchorY;
+  helpTooltipState.timerId = window.setTimeout(() => {
+    showHelpTooltip(target);
+  }, getHelpTooltipDelay());
+}
+
+function showHelpTooltip(target) {
+  if (!target?.dataset?.help) {
+    return;
+  }
+
+  helpTooltip.textContent = target.dataset.help;
+  helpTooltip.classList.remove("hidden");
+  helpTooltip.setAttribute("aria-hidden", "false");
+  positionHelpTooltip(target);
+  helpTooltipState.target = target;
+  if (helpTooltipState.mode === "touch") {
+    helpTooltipState.consumeNextClick = true;
+  }
+}
+
+function positionHelpTooltip(target) {
+  const tooltipRect = helpTooltip.getBoundingClientRect();
+  const targetRect = target.getBoundingClientRect();
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  const prefersPointerAnchor = helpTooltipState.mode === "touch"
+    && Number.isFinite(helpTooltipState.anchorX)
+    && Number.isFinite(helpTooltipState.anchorY)
+    && helpTooltipState.anchorX > 0
+    && helpTooltipState.anchorY > 0;
+
+  let left = prefersPointerAnchor
+    ? helpTooltipState.anchorX - (tooltipRect.width / 2)
+    : targetRect.left + (targetRect.width / 2) - (tooltipRect.width / 2);
+  left = Math.max(12, Math.min(viewportWidth - tooltipRect.width - 12, left));
+
+  let top = targetRect.top - tooltipRect.height - 12;
+  if (prefersPointerAnchor) {
+    top = helpTooltipState.anchorY - tooltipRect.height - 14;
+  }
+  if (top < 12) {
+    top = Math.min(viewportHeight - tooltipRect.height - 12, targetRect.bottom + 12);
+  }
+
+  helpTooltip.style.left = `${left}px`;
+  helpTooltip.style.top = `${top}px`;
+}
+
+function handleHelpPointerOver(event) {
+  if (event.pointerType && event.pointerType !== "mouse") {
+    return;
+  }
+  const target = event.target.closest("[data-help]");
+  if (!target) {
+    return;
+  }
+  const related = event.relatedTarget?.closest?.("[data-help]") || null;
+  if (related === target) {
+    return;
+  }
+  scheduleHelpTooltip(target, {
+    mode: "hover",
+    anchorX: event.clientX,
+    anchorY: event.clientY
+  });
+}
+
+function handleHelpPointerOut(event) {
+  const target = event.target.closest("[data-help]");
+  if (!target) {
+    return;
+  }
+  const related = event.relatedTarget?.closest?.("[data-help]") || null;
+  if (related === target) {
+    return;
+  }
+  if (helpTooltipState.target === target) {
+    hideHelpTooltip();
+    return;
+  }
+  clearHelpTooltipTimer();
+}
+
+function handleHelpPointerDown(event) {
+  const target = event.target.closest("[data-help]");
+  if (!target) {
+    if (helpTooltipState.mode === "touch") {
+      hideHelpTooltip();
+    }
+    return;
+  }
+  if (event.pointerType === "mouse") {
+    return;
+  }
+
+  helpTooltipState.pressPointerId = event.pointerId;
+  helpTooltipState.pressStartX = event.clientX;
+  helpTooltipState.pressStartY = event.clientY;
+  helpTooltipState.consumeNextClick = false;
+  scheduleHelpTooltip(target, {
+    mode: "touch",
+    anchorX: event.clientX,
+    anchorY: event.clientY
+  });
+}
+
+function handleHelpPointerUp(event) {
+  if (helpTooltipState.pressPointerId !== event.pointerId) {
+    return;
+  }
+  helpTooltipState.pressPointerId = null;
+  clearHelpTooltipTimer();
+}
+
+function handleHelpPointerCancel(event) {
+  if (helpTooltipState.pressPointerId !== event.pointerId) {
+    return;
+  }
+  hideHelpTooltip();
+}
+
+function handleHelpPointerMove(event) {
+  if (helpTooltipState.pressPointerId !== event.pointerId) {
+    return;
+  }
+  const movedX = Math.abs(event.clientX - helpTooltipState.pressStartX);
+  const movedY = Math.abs(event.clientY - helpTooltipState.pressStartY);
+  if (movedX > 8 || movedY > 8) {
+    hideHelpTooltip();
+  }
+}
+
+function handleHelpTooltipClick(event) {
+  if (!helpTooltipState.consumeNextClick) {
+    return;
+  }
+  helpTooltipState.consumeNextClick = false;
+  hideHelpTooltip();
+  event.preventDefault();
+  event.stopPropagation();
 }
 
 function handleWidgetSlotClick(event) {
@@ -2442,6 +2647,7 @@ function renderCanopyDetailIfOpen() {
     escapeHtml,
     formatDate,
     formatPointsLabel,
+    showHelpText: normalizeProfile(store.profile).helpTextEnabled,
     getPendingActionForTask,
     renderPriorityIndicator
   });
@@ -2611,10 +2817,15 @@ function formatAutosaveCountdown(ms) {
 
 function renderTreeCore() {
   const treeState = getTreeDisplayState();
+  const profile = normalizeProfile(store.profile);
   treeHarvestButton.classList.toggle("ripe-ready", treeState.ripeFruitCount > 0);
-  treeHarvestHint.textContent = treeState.ripeFruitCount > 0
-    ? `${treeState.ripeFruitCount} ripe ${treeState.ripeFruitCount === 1 ? "fruit is" : "fruits are"} ready to harvest for ${formatPointsLabel(treeState.ripePoints)}.`
-    : "No ripe fruit right now. The tree becomes harvestable as fruit ripens.";
+  treeHarvestButton.dataset.help = treeState.ripeFruitCount > 0
+    ? `Click to harvest ${treeState.ripeFruitCount} ripe ${treeState.ripeFruitCount === 1 ? "fruit" : "fruits"} for ${formatPointsLabel(treeState.ripePoints)}.`
+    : "Click the tree to harvest ripe fruit once any are ready.";
+  treeHarvestHint.textContent = profile.helpTextEnabled
+    ? "Hover or long-press the tree for harvest help."
+    : "";
+  treeHarvestHint.classList.toggle("hidden", !profile.helpTextEnabled);
 
   treeFruitLayer.innerHTML = treeState.fruitDescriptors.map((fruit) => `
     <span
@@ -4984,7 +5195,9 @@ function buildComparableStore(normalized) {
       darkModeEnabled: normalizeProfile(normalized.profile).darkModeEnabled,
       autoDarkModeEnabled: normalizeProfile(normalized.profile).autoDarkModeEnabled,
       autoDarkModeStart: normalizeProfile(normalized.profile).autoDarkModeStart,
-      autoDarkModeEnd: normalizeProfile(normalized.profile).autoDarkModeEnd
+      autoDarkModeEnd: normalizeProfile(normalized.profile).autoDarkModeEnd,
+      helpTextEnabled: normalizeProfile(normalized.profile).helpTextEnabled,
+      helpTooltipDelayMs: normalizeProfile(normalized.profile).helpTooltipDelayMs
     },
     tasks: normalized.tasks
       .map((task) => ({

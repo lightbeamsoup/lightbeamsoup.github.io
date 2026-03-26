@@ -6,6 +6,10 @@ export const DEFAULT_DARK_MODE_ENABLED = false;
 export const DEFAULT_AUTO_DARK_MODE_ENABLED = false;
 export const DEFAULT_AUTO_DARK_MODE_START = "21:00";
 export const DEFAULT_AUTO_DARK_MODE_END = "07:00";
+export const DEFAULT_HELP_TEXT_ENABLED = true;
+export const DEFAULT_HELP_TOOLTIP_DELAY_MS = 1000;
+export const MIN_HELP_TOOLTIP_DELAY_MS = 200;
+export const MAX_HELP_TOOLTIP_DELAY_MS = 5000;
 
 export function normalizeProfile(value) {
   const autoDarkModeEnabled = value?.autoDarkModeEnabled === true;
@@ -17,6 +21,8 @@ export function normalizeProfile(value) {
     autoDarkModeEnabled,
     autoDarkModeStart: normalizeThemeTime(value?.autoDarkModeStart, DEFAULT_AUTO_DARK_MODE_START),
     autoDarkModeEnd: normalizeThemeTime(value?.autoDarkModeEnd, DEFAULT_AUTO_DARK_MODE_END),
+    helpTextEnabled: value?.helpTextEnabled !== false,
+    helpTooltipDelayMs: normalizeHelpTooltipDelayMs(value?.helpTooltipDelayMs),
     updatedAt: typeof value?.updatedAt === "number" ? value.updatedAt : 0
   };
 }
@@ -41,6 +47,17 @@ export function normalizeAutosaveIntervalMinutes(value) {
 export function normalizeThemeTime(value, fallback = DEFAULT_AUTO_DARK_MODE_START) {
   const candidate = String(value || "").trim();
   return /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(candidate) ? candidate : fallback;
+}
+
+export function normalizeHelpTooltipDelayMs(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return DEFAULT_HELP_TOOLTIP_DELAY_MS;
+  }
+  return Math.max(
+    MIN_HELP_TOOLTIP_DELAY_MS,
+    Math.min(MAX_HELP_TOOLTIP_DELAY_MS, Math.round(parsed))
+  );
 }
 
 export function isDarkModeActive(profile, now = new Date()) {

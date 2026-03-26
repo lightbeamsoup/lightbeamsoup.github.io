@@ -132,6 +132,7 @@ export function renderCanopyDetailContent(container, {
   escapeHtml,
   formatDate,
   formatPointsLabel,
+  showHelpText,
   getPendingActionForTask,
   renderPriorityIndicator
 }) {
@@ -165,9 +166,7 @@ export function renderCanopyDetailContent(container, {
     return {
       title: `${column.label} · ${group.label}`,
       subtitle: `Current ${group.periodLabel}. Progress stays visible until the ${group.periodLabel} ends.`,
-      footerNote: group.seriesCards.some((series) => !series.isWidgetManaged)
-        ? "Click a highlighted check or x again to mark the latest completion in that period incomplete."
-        : "Widget-managed recurring tasks update from their widget controls."
+      footerNote: showHelpText ? "Hover or long-press recurring actions for help." : ""
     };
   }
 
@@ -181,7 +180,7 @@ export function renderCanopyDetailContent(container, {
   return {
     title: `${column.label} tasks`,
     subtitle: "These one-off tasks leave the canopy as soon as they are completed or skipped.",
-    footerNote: ""
+    footerNote: showHelpText ? "Hover or long-press task actions for help." : ""
   };
 }
 
@@ -211,6 +210,7 @@ function renderRecurringGroupRow(column, escapeHtml, formatPointsLabel) {
               data-canopy-action="collect-group-bonus"
               data-column-key="${column.key}"
               data-group-key="${group.key}"
+              data-help="${escapeHtml(`Collect the ${group.label.toLowerCase()} bonus in ${group.bonus.selectedCategory?.label || "the selected category"}.`)}"
               style="--canopy-bonus-color: ${escapeHtml(group.bonus.selectedCategory?.color || "#f4c95d")}"
               title="${escapeHtml(`Collect ${formatPointsLabel(group.bonus.points)} in ${group.bonus.selectedCategory?.label || "the selected category"}`)}"
               aria-label="${escapeHtml(`Collect ${group.label} bonus`)}"
@@ -247,6 +247,7 @@ function renderRecurringBonusPanel(group, columnKey, escapeHtml, formatPointsLab
             data-canopy-bonus-select="true"
             data-column-key="${columnKey}"
             data-group-key="${group.key}"
+            data-help="${escapeHtml(`Choose which allowed category receives the ${formatPointsLabel(bonus.points)} bonus.`)}"
             ${bonus.claimed ? "disabled" : ""}
           >
             ${bonus.allowedCategories.map((category) => `
@@ -260,6 +261,7 @@ function renderRecurringBonusPanel(group, columnKey, escapeHtml, formatPointsLab
           data-canopy-action="collect-group-bonus"
           data-column-key="${columnKey}"
           data-group-key="${group.key}"
+          data-help="${escapeHtml(`Collect ${formatPointsLabel(bonus.points)} once every ${group.label.toLowerCase()} task in this ${bonus.periodLabel} is complete.`)}"
           ${!bonus.collectible ? "disabled" : ""}
         >${bonus.claimed ? "Collected" : `Collect ${formatPointsLabel(bonus.points)}`}</button>
       </div>
@@ -303,6 +305,7 @@ function renderCanopyTask(item, formatDate, escapeHtml, getPendingActionForTask,
             class="canopy-task-icon complete"
             data-canopy-action="complete"
             data-task-id="${item.task.id}"
+            data-help="${escapeHtml(item.blocked ? "This task is blocked by another unfinished task." : `Complete ${item.displayName}.`)}"
             aria-label="Complete ${escapeHtml(item.displayName)}"
             title="Complete"
             ${item.blocked ? "disabled" : ""}
@@ -312,6 +315,7 @@ function renderCanopyTask(item, formatDate, escapeHtml, getPendingActionForTask,
             class="canopy-task-icon skip"
             data-canopy-action="skip"
             data-task-id="${item.task.id}"
+            data-help="${escapeHtml(`Skip ${item.displayName}.`)}"
             aria-label="Skip ${escapeHtml(item.displayName)}"
             title="Skip"
           >×</button>
@@ -320,6 +324,7 @@ function renderCanopyTask(item, formatDate, escapeHtml, getPendingActionForTask,
             class="canopy-task-icon edit"
             data-canopy-action="edit"
             data-task-id="${item.task.id}"
+            data-help="${escapeHtml(`Edit ${item.displayName} in Task Desk.`)}"
             aria-label="Edit ${escapeHtml(item.displayName)}"
             title="Edit"
           >…</button>
@@ -548,8 +553,8 @@ function buildRecurringSeriesStatusLabel({
 function renderRecurringSeriesActions(series, escapeHtml) {
   if (series.isWidgetManaged) {
     return `
-      <button type="button" class="canopy-task-icon complete" title="Managed by widget" aria-label="Managed by widget" disabled>✓</button>
-      <button type="button" class="canopy-task-icon skip" title="Managed by widget" aria-label="Managed by widget" disabled>×</button>
+      <button type="button" class="canopy-task-icon complete" title="Managed by widget" aria-label="Managed by widget" data-help="${escapeHtml(`Complete ${series.displayName} from its widget.`)}" disabled>✓</button>
+      <button type="button" class="canopy-task-icon skip" title="Managed by widget" aria-label="Managed by widget" data-help="${escapeHtml(`Skip ${series.displayName} from its widget.`)}" disabled>×</button>
     `;
   }
 
@@ -591,6 +596,7 @@ function renderRecurringSeriesActions(series, escapeHtml) {
       class="canopy-task-icon complete${completeAction?.active ? " is-active" : ""}"
       data-canopy-action="${completeAction?.action || "complete-group-task"}"
       data-task-id="${escapeHtml(completeAction?.taskId || "")}"
+      data-help="${escapeHtml(completeAction?.active ? `Mark ${series.displayName} incomplete for this period.` : `Complete the next ${series.displayName} instance.`)}"
       aria-label="${escapeHtml(completeAction?.active ? `Mark ${series.displayName} incomplete` : `Complete ${series.displayName}`)}"
       title="${escapeHtml(completeAction?.active ? "Mark incomplete" : "Complete")}"
       ${!completeAction || completeAction.disabled ? "disabled" : ""}
@@ -600,6 +606,7 @@ function renderRecurringSeriesActions(series, escapeHtml) {
       class="canopy-task-icon skip${skipAction?.active ? " is-active" : ""}"
       data-canopy-action="${skipAction?.action || "skip-group-task"}"
       data-task-id="${escapeHtml(skipAction?.taskId || "")}"
+      data-help="${escapeHtml(skipAction?.active ? `Mark the latest ${series.displayName} skip incomplete.` : `Skip the next ${series.displayName} instance.`)}"
       aria-label="${escapeHtml(skipAction?.active ? `Mark ${series.displayName} incomplete` : `Skip ${series.displayName}`)}"
       title="${escapeHtml(skipAction?.active ? "Mark incomplete" : "Skip")}"
       ${!skipAction || skipAction.disabled ? "disabled" : ""}
