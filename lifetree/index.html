@@ -311,7 +311,7 @@
                 </select>
               </label>
 
-              <div class="split recurrence-extra" data-show-for="weekly">
+              <div class="recurrence-extra recurrence-weekly-panel" data-show-for="weekly">
                 <label>
                   <span>Every</span>
                   <input id="weeklyInterval" name="weeklyInterval" type="number" min="1" value="1" />
@@ -319,13 +319,13 @@
                 <div class="weekday-picker-panel">
                   <span>Days in the week</span>
                   <div class="weekday-picker" id="weeklyDayPicker">
-                    <label><input type="checkbox" name="weeklyDays" value="0" />Sun</label>
-                    <label><input type="checkbox" name="weeklyDays" value="1" />Mon</label>
-                    <label><input type="checkbox" name="weeklyDays" value="2" />Tue</label>
-                    <label><input type="checkbox" name="weeklyDays" value="3" />Wed</label>
-                    <label><input type="checkbox" name="weeklyDays" value="4" />Thu</label>
-                    <label><input type="checkbox" name="weeklyDays" value="5" />Fri</label>
-                    <label><input type="checkbox" name="weeklyDays" value="6" />Sat</label>
+                    <label><input type="checkbox" name="weeklyDays" value="0" /><span>Sun</span></label>
+                    <label><input type="checkbox" name="weeklyDays" value="1" /><span>Mon</span></label>
+                    <label><input type="checkbox" name="weeklyDays" value="2" /><span>Tue</span></label>
+                    <label><input type="checkbox" name="weeklyDays" value="3" /><span>Wed</span></label>
+                    <label><input type="checkbox" name="weeklyDays" value="4" /><span>Thu</span></label>
+                    <label><input type="checkbox" name="weeklyDays" value="5" /><span>Fri</span></label>
+                    <label><input type="checkbox" name="weeklyDays" value="6" /><span>Sat</span></label>
                   </div>
                   <select id="weeklyWeekday" name="weeklyWeekday" class="hidden" aria-hidden="true">
                     <option value="0">Sunday</option>

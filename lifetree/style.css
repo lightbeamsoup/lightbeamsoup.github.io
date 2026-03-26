@@ -1910,6 +1910,13 @@ textarea {
   gap: 10px;
 }
 
+.recurrence-weekly-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 132px) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
 .weekday-picker-panel > span,
 .recurrence-slot-header span {
   font-size: 0.92rem;
@@ -1918,25 +1925,62 @@ textarea {
 
 .weekday-picker {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 8px;
 }
 
 .weekday-picker label {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 8px 10px;
-  border-radius: 12px;
+  min-height: 42px;
+  padding: 8px 6px;
+  border-radius: 999px;
   border: 1px solid rgba(37, 50, 67, 0.12);
   background: rgba(255, 255, 255, 0.72);
-  font-size: 0.85rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  color: var(--muted);
   cursor: pointer;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    transform 160ms ease,
+    box-shadow 160ms ease;
 }
 
 .weekday-picker input {
+  position: absolute;
+  inset: 0;
   margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.weekday-picker label:hover {
+  border-color: rgba(227, 124, 82, 0.35);
+  color: var(--ink);
+  transform: translateY(-1px);
+}
+
+.weekday-picker label:has(input:checked) {
+  background: color-mix(in srgb, var(--accent-soft) 74%, #fff 26%);
+  border-color: color-mix(in srgb, var(--accent) 46%, rgba(37, 50, 67, 0.12));
+  color: var(--ink);
+  box-shadow: 0 10px 18px rgba(71, 49, 24, 0.1);
+}
+
+.weekday-picker label:has(input:focus-visible) {
+  outline: 2px solid color-mix(in srgb, var(--accent) 70%, white 30%);
+  outline-offset: 2px;
+}
+
+.weekday-picker label span {
+  pointer-events: none;
 }
 
 .recurrence-slot-header {
@@ -2806,6 +2850,14 @@ textarea {
   .quick-add-grid,
   .split {
     grid-template-columns: 1fr;
+  }
+
+  .recurrence-weekly-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .weekday-picker {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
   .history-panel-header,
