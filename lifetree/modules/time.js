@@ -114,17 +114,17 @@ export function buildTemporalState(date = new Date()) {
   const moonProgress = clamp(moonMinutes / 540, 0, 1);
   const sun = buildOrbitPosition(sunProgress, {
     centerX: 50,
-    centerY: 52,
+    centerY: 58,
     radiusX: 43,
-    radiusY: 43,
+    radiusY: 35,
     startAngle: 210,
     endAngle: 330
   });
   const moon = buildOrbitPosition(moonProgress, {
     centerX: 50,
-    centerY: 52,
+    centerY: 56,
     radiusX: 43,
-    radiusY: 43,
+    radiusY: 37,
     startAngle: 330,
     endAngle: 210
   });
