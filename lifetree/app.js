@@ -2158,7 +2158,7 @@ function renderCanopy() {
       blockedNote: describeCompletionGate(card.task)
     }));
   const recurringEntries = store.tasks
-    .filter((task) => !task.ownerWidgetType && !task.archived && !task.historyOnly && task.recurrence.type !== "none" && (task.status === "open" || task.status === "done" || task.status === "skipped"))
+    .filter((task) => !task.archived && !task.historyOnly && task.recurrence.type !== "none" && (task.status === "open" || task.status === "done" || task.status === "skipped"))
     .map((task) => ({
       key: task.id,
       task,

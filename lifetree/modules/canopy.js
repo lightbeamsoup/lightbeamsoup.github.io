@@ -46,9 +46,17 @@ export function buildCanopyColumnsData({ standardCards, recurringEntries, today 
       key: groupKey,
       label: RECURRING_GROUP_LABELS[groupKey],
       periodLabel: RECURRING_PERIOD_LABELS[groupKey],
-      tasks: []
+      tasks: [],
+      seriesByKey: new Map()
     };
     existing.tasks.push(entry);
+    const seriesKey = buildRecurringSeriesKey(entry.task, groupKey);
+    const existingSeries = existing.seriesByKey.get(seriesKey) || {
+      key: seriesKey,
+      tasks: []
+    };
+    existingSeries.tasks.push(entry);
+    existing.seriesByKey.set(seriesKey, existingSeries);
     column.recurringGroups.set(groupKey, existing);
   }
 
@@ -57,14 +65,18 @@ export function buildCanopyColumnsData({ standardCards, recurringEntries, today 
       .map((group) => ({
         ...group,
         tasks: group.tasks.sort(compareRecurringEntries),
-        completedCount: group.tasks.filter((entry) => entry.task.status === "done").length
+        seriesCards: [...group.seriesByKey.values()]
+          .map((series) => finalizeRecurringSeriesCard(series.tasks.sort(compareRecurringEntries)))
+          .sort(compareRecurringSeriesCards),
+        completedCount: group.tasks.filter((entry) => entry.task.status === "done").length,
+        totalCount: group.tasks.length
       }))
       .sort((left, right) => RECURRING_GROUP_ORDER.indexOf(left.key) - RECURRING_GROUP_ORDER.indexOf(right.key));
     const visibleStandardItems = column.standardItems.slice(0, 2);
     const hiddenStandardItems = column.standardItems.slice(2);
     return {
       ...column,
-      totalCount: column.standardItems.length + recurringGroups.reduce((sum, group) => sum + group.tasks.length, 0),
+      totalCount: column.standardItems.length + recurringGroups.reduce((sum, group) => sum + group.seriesCards.length, 0),
       visibleStandardItems,
       hiddenStandardItems,
       recurringGroups
@@ -139,13 +151,15 @@ export function renderCanopyDetailContent(container, {
 
     container.innerHTML = `
       <div class="canopy-detail-list recurring">
-        ${group.tasks.map((entry) => renderRecurringDetailTask(entry, formatDate, escapeHtml, getPendingActionForTask, renderPriorityIndicator)).join("")}
+        ${group.seriesCards.map((series) => renderRecurringDetailSeriesCard(series, formatDate, escapeHtml, getPendingActionForTask, renderPriorityIndicator)).join("")}
       </div>
     `;
     return {
       title: `${column.label} · ${group.label}`,
-      subtitle: `Current ${group.periodLabel}. Completed items stay here until the ${group.periodLabel} ends.`,
-      footerNote: "Click a highlighted check or x again to mark a task incomplete."
+      subtitle: `Current ${group.periodLabel}. Progress stays visible until the ${group.periodLabel} ends.`,
+      footerNote: group.seriesCards.some((series) => !series.isWidgetManaged)
+        ? "Click a highlighted check or x again to mark the latest completion in that period incomplete."
+        : "Widget-managed recurring tasks update from their widget controls."
     };
   }
 
@@ -179,7 +193,7 @@ function renderRecurringGroupRow(column, escapeHtml) {
           data-group-key="${group.key}"
         >
           <strong>${escapeHtml(group.label)}</strong>
-          <span>${group.completedCount}/${group.tasks.length} complete</span>
+          <span>${group.completedCount}/${group.totalCount} complete · ${group.seriesCards.length} tracked</span>
         </button>
       `).join("")}
     </div>
@@ -249,25 +263,25 @@ function renderCanopyTask(item, formatDate, escapeHtml, getPendingActionForTask,
   `;
 }
 
-function renderRecurringDetailTask(entry, formatDate, escapeHtml, getPendingActionForTask, renderPriorityIndicator) {
-  const { task } = entry;
+function renderRecurringDetailSeriesCard(series, formatDate, escapeHtml, getPendingActionForTask, renderPriorityIndicator) {
+  const { representativeTask: task } = series;
   const taskColor = escapeHtml(task.categoryColor || "#7dbf74");
-  const pendingAction = getPendingActionForTask(task.id);
-  const isDone = task.status === "done";
-  const isSkipped = task.status === "skipped";
-  const blocked = !isDone && entry.blocked;
+  const pendingEntry = series.tasks.find((entry) => getPendingActionForTask(entry.task.id)) || null;
+  const pendingAction = pendingEntry ? getPendingActionForTask(pendingEntry.task.id) : null;
+  const blocked = Boolean(series.blocked);
 
   if (pendingAction) {
     return `
       <article class="canopy-group-task pending" style="--canopy-category-color: ${taskColor}">
         <div class="canopy-group-main">
-          <strong>${escapeHtml(task.name)}</strong>
-          <span>${escapeHtml(describeTaskDate(task, formatDate))}</span>
+          <strong>${escapeHtml(series.displayName)}</strong>
+          <span>${escapeHtml(series.progressLabel)}</span>
           ${renderCanopyMeta(task, escapeHtml, renderPriorityIndicator)}
+          <span class="canopy-task-status">${escapeHtml(series.statusLabel)}</span>
         </div>
         <div class="canopy-task-footer">
           <span class="canopy-task-status">${escapeHtml(pendingAction.description || "Pending action")}</span>
-          <button type="button" class="canopy-task-undo" data-canopy-action="undo" data-task-id="${task.id}" data-pending-key="${pendingAction.key}">
+          <button type="button" class="canopy-task-undo" data-canopy-action="undo" data-task-id="${pendingEntry.task.id}" data-pending-key="${pendingAction.key}">
             Undo
           </button>
         </div>
@@ -276,34 +290,21 @@ function renderRecurringDetailTask(entry, formatDate, escapeHtml, getPendingActi
   }
 
   return `
-    <article class="canopy-group-task${isDone ? " done" : ""}${isSkipped ? " skipped" : ""}${blocked ? " blocked" : ""}" style="--canopy-category-color: ${taskColor}">
+    <article class="canopy-group-task${series.completedCount === series.totalCount ? " done" : ""}${series.skippedCount === series.totalCount ? " skipped" : ""}${blocked ? " blocked" : ""}" style="--canopy-category-color: ${taskColor}">
       <div class="canopy-group-main">
-        <strong>${escapeHtml(task.name)}</strong>
-        <span>${escapeHtml(describeTaskDate(task, formatDate))}</span>
+        <strong>${escapeHtml(series.displayName)}</strong>
+        <span>${escapeHtml(series.progressLabel)}</span>
         ${renderCanopyMeta(task, escapeHtml, renderPriorityIndicator)}
-        ${blocked ? `<span class="canopy-note">${escapeHtml(entry.blockedNote || "Blocked")}</span>` : ""}
+        <span class="canopy-task-status">${escapeHtml(series.statusLabel)}</span>
+        ${series.isWidgetManaged
+          ? `<span class="canopy-note">${escapeHtml(series.lockedNote)}</span>`
+          : (blocked ? `<span class="canopy-note">${escapeHtml(series.blockedNote || "Blocked")}</span>` : "")}
       </div>
-      <div class="canopy-task-footer">
-        <span class="canopy-task-status">${escapeHtml(describeRecurringTaskStatus(task, blocked, entry.blockedNote || ""))}</span>
+      <div class="canopy-task-footer${series.isWidgetManaged ? " locked" : ""}">
+        ${series.isWidgetManaged ? "" : `<span class="canopy-task-status">${escapeHtml(series.footerLabel)}</span>`}
         <div class="canopy-task-actions">
           <button
-            type="button"
-            class="canopy-task-icon complete${isDone ? " is-active" : ""}"
-            data-canopy-action="${isDone ? "reopen-group-task" : "complete-group-task"}"
-            data-task-id="${task.id}"
-            aria-label="${escapeHtml(isDone ? `Mark ${task.name} incomplete` : `Complete ${task.name}`)}"
-            title="${escapeHtml(isDone ? "Mark incomplete" : "Complete")}"
-            ${blocked || isSkipped ? "disabled" : ""}
-          >✓</button>
-          <button
-            type="button"
-            class="canopy-task-icon skip${isSkipped ? " is-active" : ""}"
-            data-canopy-action="${isSkipped ? "reopen-group-task" : "skip-group-task"}"
-            data-task-id="${task.id}"
-            aria-label="${escapeHtml(isSkipped ? `Mark ${task.name} incomplete` : `Skip ${task.name}`)}"
-            title="${escapeHtml(isSkipped ? "Mark incomplete" : "Skip")}"
-            ${isDone ? "disabled" : ""}
-          >×</button>
+            ${renderRecurringSeriesActions(series, escapeHtml)}
         </div>
       </div>
     </article>
@@ -364,6 +365,179 @@ function compareRecurringEntries(left, right) {
     return leftTime.localeCompare(rightTime);
   }
   return (left.task.name || "").localeCompare(right.task.name || "");
+}
+
+function buildRecurringSeriesKey(task, groupKey) {
+  if (groupKey === "daily" || groupKey === "weekly") {
+    if (task?.linkedSeries?.groupId) {
+      return `linked:${task.linkedSeries.groupId}`;
+    }
+    if (task?.templateId) {
+      return `template:${task.templateId}`;
+    }
+    return `template:${task?.id || task?.ownerTaskKey || task?.name || "task"}`;
+  }
+
+  return [
+    "period",
+    task?.templateId || task?.id || task?.ownerTaskKey || task?.name || "task"
+  ].join(":");
+}
+
+function finalizeRecurringSeriesCard(entries) {
+  const tasks = [...entries].sort(compareRecurringEntries);
+  const representativeTask = tasks[0]?.task || null;
+  const nextOpen = tasks.find((entry) => entry.task.status === "open") || null;
+  const nextActionable = tasks.find((entry) => entry.task.status === "open" && !entry.blocked) || null;
+  const completedEntries = tasks.filter((entry) => entry.task.status === "done");
+  const skippedEntries = tasks.filter((entry) => entry.task.status === "skipped");
+  const latestCompleted = completedEntries[completedEntries.length - 1] || null;
+  const latestSkipped = skippedEntries[skippedEntries.length - 1] || null;
+  const completedCount = completedEntries.length;
+  const skippedCount = skippedEntries.length;
+  const totalCount = tasks.length;
+  const isWidgetManaged = Boolean(representativeTask?.ownerWidgetType);
+  const statusLabel = buildRecurringSeriesStatusLabel({
+    representativeTask,
+    nextOpen,
+    nextActionable,
+    completedCount,
+    skippedCount,
+    totalCount,
+    isWidgetManaged
+  });
+
+  return {
+    key: entries[0]?.key || buildRecurringSeriesKey(representativeTask, getRecurringGroupKey(representativeTask)),
+    tasks,
+    representativeTask,
+    displayName: representativeTask?.name || "Recurring task",
+    completedCount,
+    skippedCount,
+    totalCount,
+    progressLabel: `Completions: ${completedCount}/${totalCount}`,
+    statusLabel,
+    footerLabel: nextOpen
+      ? (nextActionable ? `Next due ${describeTaskDate(nextOpen.task, (value) => value)}` : (nextOpen.blockedNote || "Waiting for this period to unlock."))
+      : "This period is fully resolved.",
+    blocked: Boolean(nextOpen && !nextActionable),
+    blockedNote: nextOpen && !nextActionable ? (nextOpen.blockedNote || "Blocked") : "",
+    isWidgetManaged,
+    lockedNote: representativeTask?.ownerWidgetType
+      ? `Managed in the ${representativeTask.ownerWidgetType} widget.`
+      : "",
+    nextOpenTaskId: nextOpen?.task.id || "",
+    nextActionTaskId: nextActionable?.task.id || "",
+    latestCompletedTaskId: latestCompleted?.task.id || "",
+    latestSkippedTaskId: latestSkipped?.task.id || ""
+  };
+}
+
+function compareRecurringSeriesCards(left, right) {
+  const leftTask = left.representativeTask || {};
+  const rightTask = right.representativeTask || {};
+  const leftDate = leftTask.dueDate || leftTask.startDate || "9999-12-31";
+  const rightDate = rightTask.dueDate || rightTask.startDate || "9999-12-31";
+  if (leftDate !== rightDate) {
+    return leftDate.localeCompare(rightDate);
+  }
+  const leftTime = leftTask.timeOfDay || "99:99";
+  const rightTime = rightTask.timeOfDay || "99:99";
+  if (leftTime !== rightTime) {
+    return leftTime.localeCompare(rightTime);
+  }
+  return left.displayName.localeCompare(right.displayName);
+}
+
+function buildRecurringSeriesStatusLabel({
+  representativeTask,
+  nextOpen,
+  nextActionable,
+  completedCount,
+  skippedCount,
+  totalCount,
+  isWidgetManaged
+}) {
+  if (isWidgetManaged) {
+    return completedCount >= totalCount
+      ? "Completed from the widget for this period."
+      : `Track progress from the ${representativeTask.ownerWidgetType} widget.`;
+  }
+  if (!nextOpen) {
+    if (completedCount === totalCount) {
+      return "Completed for this period.";
+    }
+    if (skippedCount === totalCount) {
+      return "Skipped for this period.";
+    }
+    return "This period is fully resolved.";
+  }
+  if (!nextActionable) {
+    return nextOpen.blockedNote || "Blocked";
+  }
+  return "Ready for the next completion in this period.";
+}
+
+function renderRecurringSeriesActions(series, escapeHtml) {
+  if (series.isWidgetManaged) {
+    return `
+      <button type="button" class="canopy-task-icon complete" title="Managed by widget" aria-label="Managed by widget" disabled>✓</button>
+      <button type="button" class="canopy-task-icon skip" title="Managed by widget" aria-label="Managed by widget" disabled>×</button>
+    `;
+  }
+
+  const completeAction = series.nextOpenTaskId
+    ? {
+        action: "complete-group-task",
+        taskId: series.nextOpenTaskId,
+        active: false,
+        disabled: !series.nextActionTaskId
+      }
+    : (series.latestCompletedTaskId
+        ? {
+            action: "reopen-group-task",
+            taskId: series.latestCompletedTaskId,
+            active: true,
+            disabled: false
+          }
+        : null);
+
+  const skipAction = series.nextOpenTaskId
+    ? {
+        action: "skip-group-task",
+        taskId: series.nextOpenTaskId,
+        active: false,
+        disabled: !series.nextActionTaskId
+      }
+    : (series.latestSkippedTaskId
+        ? {
+            action: "reopen-group-task",
+            taskId: series.latestSkippedTaskId,
+            active: true,
+            disabled: false
+          }
+        : null);
+
+  return `
+    <button
+      type="button"
+      class="canopy-task-icon complete${completeAction?.active ? " is-active" : ""}"
+      data-canopy-action="${completeAction?.action || "complete-group-task"}"
+      data-task-id="${escapeHtml(completeAction?.taskId || "")}"
+      aria-label="${escapeHtml(completeAction?.active ? `Mark ${series.displayName} incomplete` : `Complete ${series.displayName}`)}"
+      title="${escapeHtml(completeAction?.active ? "Mark incomplete" : "Complete")}"
+      ${!completeAction || completeAction.disabled ? "disabled" : ""}
+    >✓</button>
+    <button
+      type="button"
+      class="canopy-task-icon skip${skipAction?.active ? " is-active" : ""}"
+      data-canopy-action="${skipAction?.action || "skip-group-task"}"
+      data-task-id="${escapeHtml(skipAction?.taskId || "")}"
+      aria-label="${escapeHtml(skipAction?.active ? `Mark ${series.displayName} incomplete` : `Skip ${series.displayName}`)}"
+      title="${escapeHtml(skipAction?.active ? "Mark incomplete" : "Skip")}"
+      ${!skipAction || skipAction.disabled ? "disabled" : ""}
+    >×</button>
+  `;
 }
 
 function getTaskColumnKey(task, today, thisWeekCutoff) {
