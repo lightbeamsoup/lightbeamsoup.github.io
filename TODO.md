@@ -2,7 +2,8 @@
 
 ## Open items
 
-- None right now.
+- Widgets: Create a Travel Buddy widget.
+- Widgets: Create a Workout Coach widget.
 
 ## Recently completed
 
