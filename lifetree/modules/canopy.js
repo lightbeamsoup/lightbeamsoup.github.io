@@ -29,7 +29,7 @@ export function buildCanopyColumnsData({ standardCards, recurringEntries, today 
     standardItems: [],
     recurringGroups: new Map()
   }));
-  const thisWeekCutoff = addDays(today, 6);
+  const thisWeekCutoff = endOfWeek(today);
   const thisMonthCutoff = addDays(today, 30);
 
   for (const card of [...standardCards].sort(compareCanopyCards)) {
