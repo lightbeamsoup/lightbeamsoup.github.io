@@ -277,10 +277,33 @@ body[data-theme="dark"] .canopy-task .canopy-chip,
 body[data-theme="dark"] .canopy-group-task .canopy-chip,
 body[data-theme="dark"] .task-chip.category-chip,
 body[data-theme="dark"] .task-chip.points-chip,
-body[data-theme="dark"] .tree-style-bank-pill {
+body[data-theme="dark"] .tree-style-bank-pill,
+body[data-theme="dark"] .tree-point-pill {
   background: color-mix(in srgb, var(--chip-color, var(--canopy-chip-color, #7dbf74)) 34%, rgba(10, 16, 26, 0.92));
   border: 1px solid color-mix(in srgb, var(--chip-color, var(--canopy-chip-color, #7dbf74)) 58%, rgba(255, 255, 255, 0.12));
   color: #f7fbff;
+}
+
+body[data-theme="dark"] .tree-detail-stat,
+body[data-theme="dark"] .tree-detail-card,
+body[data-theme="dark"] .tree-detail-section,
+body[data-theme="dark"] .tree-detail-source-item {
+  background: rgba(18, 28, 42, 0.94);
+  border-color: rgba(214, 228, 246, 0.14);
+  box-shadow: var(--shadow);
+}
+
+body[data-theme="dark"] .tree-detail-stat strong,
+body[data-theme="dark"] .tree-detail-section-header h3,
+body[data-theme="dark"] .tree-detail-source-heading strong {
+  color: var(--ink);
+}
+
+body[data-theme="dark"] .tree-detail-stat span,
+body[data-theme="dark"] .tree-detail-card p,
+body[data-theme="dark"] .tree-detail-source-meta,
+body[data-theme="dark"] .tree-detail-section .sync-status {
+  color: var(--muted);
 }
 
 body[data-theme="dark"] .canopy-task .canopy-complete-hint {
@@ -1061,11 +1084,37 @@ body.developer-open {
 }
 
 .tree-sun {
+  position: relative;
   background:
     radial-gradient(circle at 34% 34%, rgba(255, 255, 255, 0.96), rgba(255, 245, 181, 0.85) 30%, #ffbf48 68%, rgba(255, 172, 73, 0.95));
   box-shadow:
     0 0 24px rgba(255, 191, 72, 0.6),
     0 0 46px rgba(255, 191, 72, 0.34);
+}
+
+.tree-sun::before {
+  content: "";
+  position: absolute;
+  inset: -10px;
+  border-radius: 50%;
+  background:
+    repeating-conic-gradient(
+      from -8deg,
+      rgba(255, 224, 133, 0.95) 0deg 10deg,
+      transparent 10deg 30deg
+    );
+  -webkit-mask: radial-gradient(circle, transparent 0 51%, #000 55% 73%, transparent 76%);
+  mask: radial-gradient(circle, transparent 0 51%, #000 55% 73%, transparent 76%);
+  opacity: 0.92;
+  animation: sunRaySpin 18s linear infinite;
+}
+
+.tree-sun::after {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, rgba(255, 255, 255, 0.98), rgba(255, 244, 174, 0.78) 34%, rgba(255, 189, 68, 0.18) 72%, transparent 74%);
 }
 
 .tree-moon {
@@ -2884,6 +2933,15 @@ textarea {
   50% {
     opacity: 1;
     transform: scale(1.18) rotate(18deg);
+  }
+}
+
+@keyframes sunRaySpin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
   }
 }
 
