@@ -62,15 +62,20 @@ export function buildCanopyColumnsData({ standardCards, recurringEntries, today 
 
   return columns.map((column) => {
     const recurringGroups = [...column.recurringGroups.values()]
-      .map((group) => ({
-        ...group,
-        tasks: group.tasks.sort(compareRecurringEntries),
-        seriesCards: [...group.seriesByKey.values()]
+      .map((group) => {
+        const seriesCards = [...group.seriesByKey.values()]
           .map((series) => finalizeRecurringSeriesCard(series.tasks.sort(compareRecurringEntries)))
-          .sort(compareRecurringSeriesCards),
-        completedCount: group.tasks.filter((entry) => entry.task.status === "done").length,
-        totalCount: group.tasks.length
-      }))
+          .sort(compareRecurringSeriesCards);
+
+        return {
+          ...group,
+          tasks: group.tasks.sort(compareRecurringEntries),
+          seriesCards,
+          completedCount: group.tasks.filter((entry) => entry.task.status === "done").length,
+          totalCount: group.tasks.length,
+          resolvedSeriesCount: seriesCards.filter((series) => !series.nextOpenTaskId).length
+        };
+      })
       .sort((left, right) => RECURRING_GROUP_ORDER.indexOf(left.key) - RECURRING_GROUP_ORDER.indexOf(right.key));
     const visibleStandardItems = column.standardItems.slice(0, 2);
     const hiddenStandardItems = column.standardItems.slice(2);
@@ -193,7 +198,7 @@ function renderRecurringGroupRow(column, escapeHtml) {
           data-group-key="${group.key}"
         >
           <strong>${escapeHtml(group.label)}</strong>
-          <span>${group.completedCount}/${group.totalCount} complete · ${group.seriesCards.length} tracked</span>
+          <span>${group.resolvedSeriesCount}/${group.seriesCards.length} finished</span>
         </button>
       `).join("")}
     </div>

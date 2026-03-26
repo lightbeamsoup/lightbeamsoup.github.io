@@ -5680,6 +5680,7 @@ function syncLinkedSeriesGroup(groupId) {
     return;
   }
 
+  const isWeeklyWindow = groupedTasks[0]?.linkedSeries?.kind === LINKED_SERIES_KIND_WEEKLY;
   const slotCount = groupedTasks.reduce((max, task) => Math.max(max, task.linkedSeries?.slotCount || 1), 1);
   let previous = null;
   for (const task of groupedTasks) {
@@ -5687,6 +5688,9 @@ function syncLinkedSeriesGroup(groupId) {
       ...task.linkedSeries,
       slotCount
     };
+    if (isWeeklyWindow && task.skipRule?.type !== "widget-lockout") {
+      task.skipRule = { type: "end-of-day" };
+    }
     task.sequenceDependencyId = previous ? previous.id : "";
     previous = task;
   }

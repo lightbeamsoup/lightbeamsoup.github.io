@@ -351,6 +351,19 @@ test("auto-skip can trigger at end of scheduled day", () => {
   assert.equal(shouldAutoSkipTask(task, new Date("2026-03-22T00:01:00")), true);
 });
 
+test("end-of-day auto-skip ignores earlier visible due times", () => {
+  const task = {
+    id: "weekly-window",
+    status: "open",
+    dueDate: "2026-03-21",
+    timeOfDay: "09:00",
+    skipRule: { type: "end-of-day" }
+  };
+
+  assert.equal(shouldAutoSkipTask(task, new Date("2026-03-21T21:00:00")), false);
+  assert.equal(shouldAutoSkipTask(task, new Date("2026-03-22T00:01:00")), true);
+});
+
 test("energy completion only targets the active reminder window", () => {
   const tasks = [
     {

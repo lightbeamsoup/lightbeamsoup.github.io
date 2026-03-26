@@ -434,6 +434,22 @@ function buildTaskDateTime(task, fallbackTime = "23:59") {
   );
 }
 
+function buildTaskDayEndDateTime(task) {
+  const date = taskScheduleKey(task);
+  if (!date) {
+    return null;
+  }
+  return new Date(
+    Number(date.slice(0, 4)),
+    Number(date.slice(5, 7)) - 1,
+    Number(date.slice(8, 10)),
+    23,
+    59,
+    59,
+    999
+  );
+}
+
 export function shouldAutoSkipTask(task, now = new Date()) {
   if (!task || task.status !== "open" || task.archived) {
     return false;
@@ -445,7 +461,7 @@ export function shouldAutoSkipTask(task, now = new Date()) {
   }
 
   if (skipType === "end-of-day") {
-    const cutoff = buildTaskDateTime(task, "23:59");
+    const cutoff = buildTaskDayEndDateTime(task);
     return Boolean(cutoff && now > cutoff);
   }
 
