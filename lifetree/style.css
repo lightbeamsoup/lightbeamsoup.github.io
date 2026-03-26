@@ -1117,7 +1117,7 @@ body.developer-open {
   -webkit-mask: radial-gradient(circle, transparent 0 51%, #000 55% 73%, transparent 76%);
   mask: radial-gradient(circle, transparent 0 51%, #000 55% 73%, transparent 76%);
   opacity: 0.92;
-  animation: sunRaySpin 18s linear infinite;
+  animation: sunRaySpin 30s linear infinite;
 }
 
 .tree-sun::after {

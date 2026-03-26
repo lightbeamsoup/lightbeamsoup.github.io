@@ -30,9 +30,14 @@ export function buildCanopyColumnsData({ standardCards, recurringEntries, today 
     recurringGroups: new Map()
   }));
   const thisWeekCutoff = addDays(today, 6);
+  const thisMonthCutoff = addDays(today, 30);
 
   for (const card of [...standardCards].sort(compareCanopyCards)) {
-    findColumn(columns, getTaskColumnKey(card.task, today, thisWeekCutoff)).standardItems.push(card);
+    const columnKey = getTaskColumnKey(card.task, today, thisWeekCutoff, thisMonthCutoff);
+    if (!columnKey) {
+      continue;
+    }
+    findColumn(columns, columnKey).standardItems.push(card);
   }
 
   for (const entry of dedupeRecurringEntries(recurringEntries)) {
@@ -616,7 +621,7 @@ function renderRecurringSeriesActions(series, escapeHtml) {
   `;
 }
 
-function getTaskColumnKey(task, today, thisWeekCutoff) {
+function getTaskColumnKey(task, today, thisWeekCutoff, thisMonthCutoff = addDays(today, 30)) {
   const taskDate = task.dueDate || task.startDate || "";
   if (taskDate && taskDate <= today) {
     return "today";
@@ -624,7 +629,10 @@ function getTaskColumnKey(task, today, thisWeekCutoff) {
   if (taskDate && taskDate <= thisWeekCutoff) {
     return "week";
   }
-  return "later";
+  if (taskDate && taskDate <= thisMonthCutoff) {
+    return "later";
+  }
+  return "";
 }
 
 function getRecurringColumnKey(groupKey, task, today, thisWeekCutoff) {
