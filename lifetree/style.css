@@ -1072,7 +1072,6 @@ body.developer-open {
 
 .tree-celestial {
   position: absolute;
-  z-index: 2;
   width: 34px;
   height: 34px;
   border-radius: 50%;
@@ -1081,6 +1080,15 @@ body.developer-open {
     left 320ms ease,
     top 320ms ease,
     opacity 260ms ease;
+}
+
+.tree-celestial-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border-radius: 50%;
+  overflow: hidden;
+  pointer-events: none;
 }
 
 .tree-sun {
@@ -1147,7 +1155,7 @@ body.developer-open {
 .tree-fruit-layer {
   position: absolute;
   inset: 10px;
-  z-index: 2;
+  z-index: 3;
   pointer-events: none;
 }
 
