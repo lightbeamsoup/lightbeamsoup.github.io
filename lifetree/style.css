@@ -803,6 +803,13 @@ body.developer-open {
   transform: translateY(-1px);
 }
 
+.canopy-group-star.pending {
+  width: auto;
+  min-width: 72px;
+  padding: 0 14px;
+  font-size: 0.9rem;
+}
+
 .help-tooltip {
   position: fixed;
   z-index: 120;

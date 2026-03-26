@@ -206,15 +206,16 @@ function renderRecurringGroupRow(column, escapeHtml, formatPointsLabel) {
           ${group.bonus?.collectible ? `
             <button
               type="button"
-              class="canopy-group-star"
-              data-canopy-action="collect-group-bonus"
+              class="canopy-group-star${group.bonus.pendingAction ? " pending" : ""}"
+              data-canopy-action="${group.bonus.pendingAction ? "undo-group-bonus" : "collect-group-bonus"}"
               data-column-key="${column.key}"
               data-group-key="${group.key}"
-              data-help="${escapeHtml(`Collect the ${group.label.toLowerCase()} bonus in ${group.bonus.selectedCategory?.label || "the selected category"}.`)}"
+              data-pending-key="${group.bonus.pendingAction?.key || ""}"
+              data-help="${escapeHtml(group.bonus.pendingAction ? "Undo this pending recurring bonus collection." : `Collect the ${group.label.toLowerCase()} bonus in ${group.bonus.selectedCategory?.label || "the selected category"}.`)}"
               style="--canopy-bonus-color: ${escapeHtml(group.bonus.selectedCategory?.color || "#f4c95d")}"
-              title="${escapeHtml(`Collect ${formatPointsLabel(group.bonus.points)} in ${group.bonus.selectedCategory?.label || "the selected category"}`)}"
-              aria-label="${escapeHtml(`Collect ${group.label} bonus`)}"
-            >★</button>
+              title="${escapeHtml(group.bonus.pendingAction ? "Undo pending bonus collection" : `Collect ${formatPointsLabel(group.bonus.points)} in ${group.bonus.selectedCategory?.label || "the selected category"}`)}"
+              aria-label="${escapeHtml(group.bonus.pendingAction ? `Undo ${group.label} bonus collection` : `Collect ${group.label} bonus`)}"
+            >${group.bonus.pendingAction ? "Undo" : "★"}</button>
           ` : ""}
         </div>
       `).join("")}
@@ -248,7 +249,7 @@ function renderRecurringBonusPanel(group, columnKey, escapeHtml, formatPointsLab
             data-column-key="${columnKey}"
             data-group-key="${group.key}"
             data-help="${escapeHtml(`Choose which allowed category receives the ${formatPointsLabel(bonus.points)} bonus.`)}"
-            ${bonus.claimed ? "disabled" : ""}
+            ${bonus.claimed || bonus.pendingAction ? "disabled" : ""}
           >
             ${bonus.allowedCategories.map((category) => `
               <option value="${escapeHtml(category.key)}"${category.key === bonus.selectedCategoryKey ? " selected" : ""}>${escapeHtml(category.label)}</option>
@@ -258,12 +259,13 @@ function renderRecurringBonusPanel(group, columnKey, escapeHtml, formatPointsLab
         <button
           type="button"
           class="ghost-button canopy-bonus-collect"
-          data-canopy-action="collect-group-bonus"
+          data-canopy-action="${bonus.pendingAction ? "undo-group-bonus" : "collect-group-bonus"}"
           data-column-key="${columnKey}"
           data-group-key="${group.key}"
-          data-help="${escapeHtml(`Collect ${formatPointsLabel(bonus.points)} once every ${group.label.toLowerCase()} task in this ${bonus.periodLabel} is complete.`)}"
-          ${!bonus.collectible ? "disabled" : ""}
-        >${bonus.claimed ? "Collected" : `Collect ${formatPointsLabel(bonus.points)}`}</button>
+          data-pending-key="${bonus.pendingAction?.key || ""}"
+          data-help="${escapeHtml(bonus.pendingAction ? "Undo this pending recurring bonus collection." : `Collect ${formatPointsLabel(bonus.points)} once every ${group.label.toLowerCase()} task in this ${bonus.periodLabel} is complete.`)}"
+          ${!bonus.pendingAction && !bonus.collectible ? "disabled" : ""}
+        >${bonus.claimed ? "Collected" : bonus.pendingAction ? "Undo" : `Collect ${formatPointsLabel(bonus.points)}`}</button>
       </div>
     </section>
   `;

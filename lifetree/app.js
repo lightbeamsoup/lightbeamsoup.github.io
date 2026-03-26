@@ -1384,6 +1384,14 @@ function handleCanopyAction(event) {
     return;
   }
 
+  if (action === "undo-group-bonus") {
+    const pendingKey = actionTarget.getAttribute("data-pending-key") || "";
+    if (pendingKey) {
+      undoPendingAction(pendingKey, "Undid the pending recurring bonus collection.");
+    }
+    return;
+  }
+
   if (action === "undo") {
     const pendingKey = actionTarget.getAttribute("data-pending-key");
     if (pendingKey) {
@@ -1541,9 +1549,23 @@ function findCanopyRecurringGroup(columnKey, groupKey) {
     ?.recurringGroups.find((group) => group.key === groupKey) || null;
 }
 
+function findCanopyRecurringGroupByBonusKey(bonusKey) {
+  for (const column of canopyState.columns) {
+    const match = column.recurringGroups.find((group) => group.bonus?.key === bonusKey);
+    if (match) {
+      return match;
+    }
+  }
+  return null;
+}
+
 function collectRecurringGroupBonus(group) {
   const bonus = group?.bonus;
   if (!bonus) {
+    return;
+  }
+
+  if (bonus.pendingAction) {
     return;
   }
 
@@ -1563,22 +1585,41 @@ function collectRecurringGroupBonus(group) {
     return;
   }
 
-  store.pointLedger = mergePointLedger(store.pointLedger, [{
-    id: createId(),
-    taskId: "",
-    taskName: `${group.label} bonus`,
-    at: Date.now(),
-    points: bonus.points,
-    categoryKey: category.key,
-    categoryLabel: category.label,
-    categoryColor: category.color,
-    sourceKey: `recurring-bonus:${bonus.key}`,
-    sourceType: "recurring-bonus",
-    sourceLabel: `${group.label} completion bonus`
-  }]);
-  persistStore();
-  renderAll();
-  setSyncStatus(`Collected ${formatPointsLabel(bonus.points)} in ${category.label} from ${group.label}.`, "info");
+  stagePendingAction({
+    key: `collect-bonus:${bonus.key}`,
+    description: `Pending ${group.label.toLowerCase()} bonus collection in ${category.label}. Click undo within 5 seconds to cancel.`,
+    commit: () => {
+      const currentGroup = findCanopyRecurringGroupByBonusKey(bonus.key);
+      const currentBonus = currentGroup?.bonus || null;
+      if (!currentGroup || !currentBonus || currentBonus.claimed || !currentBonus.collectible) {
+        return false;
+      }
+
+      const currentCategory = currentBonus.selectedCategory || currentBonus.allowedCategories[0] || null;
+      if (!currentCategory) {
+        return false;
+      }
+
+      store.pointLedger = mergePointLedger(store.pointLedger, [{
+        id: createId(),
+        taskId: "",
+        taskName: `${currentGroup.label} bonus`,
+        at: Date.now(),
+        points: currentBonus.points,
+        categoryKey: currentCategory.key,
+        categoryLabel: currentCategory.label,
+        categoryColor: currentCategory.color,
+        sourceKey: `recurring-bonus:${currentBonus.key}`,
+        sourceType: "recurring-bonus",
+        sourceLabel: `${currentGroup.label} completion bonus`
+      }]);
+
+      return {
+        message: `Collected ${formatPointsLabel(currentBonus.points)} in ${currentCategory.label} from ${currentGroup.label}.`,
+        tone: "info"
+      };
+    }
+  });
 }
 
 function openWidgetMenu(slotIndex) {
@@ -2505,6 +2546,7 @@ function buildRecurringGroupBonusState(group, today = todayString()) {
   const selectedCategoryKey = getRecurringBonusSelection(key) || allowedCategories[0]?.key || "";
   const selectedCategory = allowedCategories.find((category) => category.key === selectedCategoryKey) || allowedCategories[0] || null;
   const claimedEntry = store.pointLedger.find((entry) => entry.sourceKey === `recurring-bonus:${key}`) || null;
+  const pendingAction = getPendingActionByKey(`collect-bonus:${key}`);
   const completedAll = group.tasks.every((entry) => entry.task.status === "done");
 
   return {
@@ -2518,6 +2560,7 @@ function buildRecurringGroupBonusState(group, today = todayString()) {
     claimed: Boolean(claimedEntry),
     claimedEntryId: claimedEntry?.id || "",
     claimedCategoryLabel: claimedEntry?.categoryLabel || "",
+    pendingAction,
     completedAll,
     collectible: completedAll && !claimedEntry && Boolean(selectedCategory)
   };
@@ -3364,6 +3407,10 @@ function getPendingActionForTask(taskId) {
     }
   }
   return null;
+}
+
+function getPendingActionByKey(key) {
+  return pendingActions.get(key) || null;
 }
 
 function stagePendingAction({ key, taskId = "", widgetId = "", description, commit, ...metadata }) {
