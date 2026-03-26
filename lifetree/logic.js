@@ -177,6 +177,7 @@ export function buildLogicalWidgetTaskKey(task) {
 
 export function compactTaskHistory(history = []) {
   const compacted = [];
+  let lifecycleState = "open";
   for (const item of Array.isArray(history) ? history : []) {
     if (!item?.id) {
       continue;
@@ -186,6 +187,25 @@ export function compactTaskHistory(history = []) {
       compacted[compacted.length - 1] = item;
       continue;
     }
+
+    if (item.type === "completed" || item.type === "skipped") {
+      if (lifecycleState !== "open") {
+        continue;
+      }
+      compacted.push(item);
+      lifecycleState = item.type === "completed" ? "done" : "skipped";
+      continue;
+    }
+
+    if (item.type === "reopened") {
+      if (lifecycleState === "open") {
+        continue;
+      }
+      compacted.push(item);
+      lifecycleState = "open";
+      continue;
+    }
+
     compacted.push(item);
   }
   return compacted;

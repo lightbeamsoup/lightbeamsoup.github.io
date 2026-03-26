@@ -34,17 +34,13 @@ export function createAutosaveController({
       return false;
     }
 
-    const currentFingerprint = computeStoreFingerprint(getStore());
-    if (currentFingerprint === lastSavedFingerprint) {
-      return false;
-    }
-
     inFlight = true;
     nextRunAt = 0;
     try {
       const result = await saveToDrive({
         suppressAuthError: true,
-        quiet: true
+        quiet: true,
+        force: true
       });
       const success = typeof result === "object" ? Boolean(result?.success) : Boolean(result);
       if (success) {

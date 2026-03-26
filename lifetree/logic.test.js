@@ -252,6 +252,17 @@ test("compacts repeated lifecycle history entries", () => {
   assert.deepEqual(compacted.map((item) => item.id), ["h2", "h3", "h5"]);
 });
 
+test("compacts invalid closed-state lifecycle transitions without a reopen", () => {
+  const compacted = compactTaskHistory([
+    { id: "h1", type: "completed", at: 100 },
+    { id: "h2", type: "skipped", at: 200 },
+    { id: "h3", type: "reopened", at: 300 },
+    { id: "h4", type: "skipped", at: 400 }
+  ]);
+
+  assert.deepEqual(compacted.map((item) => item.id), ["h1", "h3", "h4"]);
+});
+
 test("current-day widget completion does not allow future tasks", () => {
   const tomorrowTask = {
     id: "future",

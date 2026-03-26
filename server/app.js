@@ -182,7 +182,7 @@ app.get("/api/lifetree/load", async (req, res) => {
     }
 
     const payload = await response.json();
-    res.json({ found: true, fileId: file.id, payload });
+    res.json({ found: true, fileId: file.id, modifiedTime: file.modifiedTime || "", payload });
   } catch (error) {
     res.status(401).json({ error: error.message });
   }
@@ -200,7 +200,7 @@ app.post("/api/lifetree/save", async (req, res) => {
     }
 
     const file = await upsertDriveFile(accessToken, payload, fileId);
-    res.json({ ok: true, fileId: file.id });
+    res.json({ ok: true, fileId: file.id, modifiedTime: file.modifiedTime || "" });
   } catch (error) {
     res.status(401).json({ error: error.message });
   }

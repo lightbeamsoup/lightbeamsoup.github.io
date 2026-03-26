@@ -55,6 +55,11 @@
               <p class="eyebrow">Canopy</p>
               <h2>Manual task canopy</h2>
               <p>Tasks without a dedicated widget live here so you can see what is coming up before opening the Task Desk.</p>
+              <p class="canopy-legend">
+                <span><strong>✓</strong> Complete</span>
+                <span><strong>×</strong> Skip</span>
+                <span><strong>…</strong> Edit</span>
+              </p>
             </div>
             <span class="widget-badge">Core</span>
           </div>
@@ -246,28 +251,51 @@
               </label>
             </div>
 
-            <fieldset class="category-panel">
-              <legend>Categories</legend>
-              <div id="categoryList" class="category-list"></div>
-              <div class="split">
-                <label>
-                  <span>New category</span>
-                  <input id="newCategoryName" name="newCategoryName" type="text" maxlength="40" placeholder="Add a category" />
-                </label>
-                <label>
-                  <span>Color</span>
-                  <input id="newCategoryColor" name="newCategoryColor" type="color" value="#7dbf74" />
-                </label>
+            <section class="category-panel composer-panel-section">
+              <button
+                type="button"
+                class="ghost-button composer-panel-toggle"
+                id="toggleCategoryOptions"
+                aria-expanded="false"
+                aria-controls="categoryPanelBody"
+              >
+                Category options
+              </button>
+              <div id="categoryPanelBody" class="composer-panel-body hidden">
+                <div id="categoryList" class="category-list"></div>
+                <div class="split">
+                  <label>
+                    <span>New category</span>
+                    <input id="newCategoryName" name="newCategoryName" type="text" maxlength="40" placeholder="Add a category" />
+                  </label>
+                  <label>
+                    <span>Color</span>
+                    <input id="newCategoryColor" name="newCategoryColor" type="color" value="#7dbf74" />
+                  </label>
+                </div>
+                <div class="form-actions">
+                  <button type="button" class="ghost-button" id="addCategory">Add category</button>
+                </div>
               </div>
-              <div class="form-actions">
-                <button type="button" class="ghost-button" id="addCategory">Add category</button>
-              </div>
-            </fieldset>
+            </section>
 
-            <label>
-              <span>Depends on</span>
-              <select id="dependencies" name="dependencies" multiple size="5"></select>
-            </label>
+            <section class="dependency-panel composer-panel-section">
+              <button
+                type="button"
+                class="ghost-button composer-panel-toggle"
+                id="toggleDependencies"
+                aria-expanded="false"
+                aria-controls="dependenciesPanelBody"
+              >
+                Depends on
+              </button>
+              <div id="dependenciesPanelBody" class="composer-panel-body hidden">
+                <label>
+                  <span>Select prerequisite tasks</span>
+                  <select id="dependencies" name="dependencies" multiple size="5"></select>
+                </label>
+              </div>
+            </section>
 
             <fieldset class="recurrence-panel">
               <legend>Recurrence</legend>
@@ -535,6 +563,22 @@
     </section>
   </div>
 
+  <div id="canopyDetailModal" class="widget-detail-modal hidden" aria-hidden="true">
+    <div class="task-desk-backdrop" id="closeCanopyDetailBackdrop"></div>
+    <section class="widget-detail-panel canopy-detail-panel" role="dialog" aria-modal="true" aria-labelledby="canopyDetailTitle">
+      <div class="task-desk-header">
+        <div>
+          <p class="eyebrow">Canopy</p>
+          <h2 id="canopyDetailTitle">Canopy details</h2>
+          <p class="sync-status" id="canopyDetailSubtitle">Review tasks in this canopy section.</p>
+        </div>
+        <button type="button" class="ghost-button" id="closeCanopyDetail">Close</button>
+      </div>
+      <div id="canopyDetailBody" class="widget-detail-body"></div>
+      <p class="sync-status canopy-detail-footer hidden" id="canopyDetailFooter"></p>
+    </section>
+  </div>
+
   <div id="settingsModal" class="widget-detail-modal hidden" aria-hidden="true">
     <div class="task-desk-backdrop" id="closeSettingsBackdrop"></div>
     <section class="widget-detail-panel settings-panel" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
@@ -708,6 +752,7 @@
         <div class="sync-actions">
           <button type="button" class="ghost-button" id="copyWidgetDiagnostics">Copy diagnostics</button>
           <button type="button" class="ghost-button" id="downloadDriveData">Download Drive JSON</button>
+          <button type="button" class="ghost-button" id="importDriveData">Import JSON backup</button>
           <button type="button" class="ghost-button" id="cleanWidgetData">Run local cleanup</button>
           <button type="button" class="ghost-button" id="clearWidgetDriveData">Clear widget in Drive</button>
           <button type="button" class="ghost-button" id="injectPoints">Inject points</button>
@@ -718,6 +763,7 @@
           <button type="button" class="ghost-button" id="resetFruitGrowth">Reset fruit testing</button>
           <button type="button" class="ghost-button" id="clearDriveData">Clear Google Drive data</button>
         </div>
+        <input id="developerImportJson" class="hidden" type="file" accept="application/json,.json" />
         <div id="developerFruitSummary" class="developer-fruit-summary"></div>
         <div id="developerPointsSummary" class="developer-points-summary"></div>
       </section>

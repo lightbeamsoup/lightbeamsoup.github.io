@@ -12,7 +12,11 @@ import {
   shouldAutoSkipTask,
   toDateString
 } from "./logic.js";
-import { renderCanopyColumns } from "./modules/canopy.js";
+import {
+  buildCanopyColumnsData,
+  renderCanopyColumns,
+  renderCanopyDetailContent
+} from "./modules/canopy.js";
 import { createAutosaveController } from "./modules/autosave.js";
 import { createDriveSyncController, resolveApiBase } from "./modules/driveSync.js";
 import {
@@ -134,6 +138,13 @@ const quickTaskTimeOfDayInput = document.getElementById("quickTaskTimeOfDay");
 const quickTaskCategoryInput = document.getElementById("quickTaskCategory");
 const quickTaskLengthInput = document.getElementById("quickTaskLength");
 const quickTaskImportanceInput = document.getElementById("quickTaskImportance");
+const canopyDetailModal = document.getElementById("canopyDetailModal");
+const closeCanopyDetailButton = document.getElementById("closeCanopyDetail");
+const closeCanopyDetailBackdrop = document.getElementById("closeCanopyDetailBackdrop");
+const canopyDetailTitle = document.getElementById("canopyDetailTitle");
+const canopyDetailSubtitle = document.getElementById("canopyDetailSubtitle");
+const canopyDetailBody = document.getElementById("canopyDetailBody");
+const canopyDetailFooter = document.getElementById("canopyDetailFooter");
 const treeHarvestButton = document.getElementById("treeHarvestButton");
 const treeSkyLayer = document.getElementById("treeSkyLayer");
 const treeSun = document.getElementById("treeSun");
@@ -206,11 +217,15 @@ const skipGraceRow = document.getElementById("skipGraceRow");
 const taskLengthInput = document.getElementById("taskLength");
 const taskPointsInput = document.getElementById("taskPoints");
 const taskCategoryInput = document.getElementById("taskCategory");
+const toggleCategoryOptionsButton = document.getElementById("toggleCategoryOptions");
+const categoryPanelBody = document.getElementById("categoryPanelBody");
 const taskImportanceInput = document.getElementById("taskImportance");
 const categoryList = document.getElementById("categoryList");
 const newCategoryNameInput = document.getElementById("newCategoryName");
 const newCategoryColorInput = document.getElementById("newCategoryColor");
 const addCategoryButton = document.getElementById("addCategory");
+const toggleDependenciesButton = document.getElementById("toggleDependencies");
+const dependenciesPanelBody = document.getElementById("dependenciesPanelBody");
 const dependenciesSelect = document.getElementById("dependencies");
 const recurrenceType = document.getElementById("recurrenceType");
 const recurrenceForeverInput = document.getElementById("recurrenceForever");
@@ -262,6 +277,7 @@ const grantTreeSkinButton = document.getElementById("grantTreeSkin");
 const removeTreeSkinButton = document.getElementById("removeTreeSkin");
 const copyWidgetDiagnosticsButton = document.getElementById("copyWidgetDiagnostics");
 const downloadDriveDataButton = document.getElementById("downloadDriveData");
+const importDriveDataButton = document.getElementById("importDriveData");
 const cleanWidgetDataButton = document.getElementById("cleanWidgetData");
 const clearWidgetDriveDataButton = document.getElementById("clearWidgetDriveData");
 const injectPointsButton = document.getElementById("injectPoints");
@@ -271,6 +287,7 @@ const addBankedPointsButton = document.getElementById("addBankedPoints");
 const removeBankedPointsButton = document.getElementById("removeBankedPoints");
 const resetFruitGrowthButton = document.getElementById("resetFruitGrowth");
 const clearDriveDataButton = document.getElementById("clearDriveData");
+const developerImportJsonInput = document.getElementById("developerImportJson");
 const developerFruitSummary = document.getElementById("developerFruitSummary");
 const developerPointsSummary = document.getElementById("developerPointsSummary");
 
@@ -282,6 +299,10 @@ const authState = {
 const editState = {
   taskId: "",
   scope: "single"
+};
+const composerPanelState = {
+  categoryOptionsOpen: false,
+  dependenciesOpen: false
 };
 
 const widgetMenuState = {
@@ -298,6 +319,14 @@ const widgetDetailState = {
   widgetId: "",
   cleanup: null
 };
+const canopyState = {
+  columns: [],
+  detail: {
+    kind: "",
+    columnKey: "",
+    groupKey: ""
+  }
+};
 
 let store = loadStore();
 const mobileTaskDeskQuery = window.matchMedia(MOBILE_TASK_DESK_MEDIA);
@@ -305,8 +334,13 @@ let activeTaskDeskPane = "tasks";
 const syncState = {
   remoteUpdatedAt: 0,
   remoteFingerprint: "",
+  remoteSavedAt: 0,
   remoteUserUpdatedAt: 0,
   remoteUserFingerprint: ""
+};
+const driveSaveState = {
+  inFlight: false,
+  mode: ""
 };
 const localFingerprintCache = {
   storeRef: null,
@@ -343,6 +377,7 @@ const driveSyncController = createDriveSyncController({
   },
   normalizeStore,
   mergeStores,
+  finalizeStoreState,
   ensureWidgetIntegrity,
   ensureWidgetTasks,
   reconcileRecurringSeries,
@@ -371,23 +406,30 @@ let autosaveController = createAutosaveController({
   isAuthenticated: () => authState.authenticated,
   computeStoreFingerprint,
   saveToDrive: async (options) => {
-    const result = await saveToDrive(options);
-    if (result?.success) {
-      rememberRemoteStoreState({
-        updatedAt: result.remoteUpdatedAt,
-        fingerprint: result.remoteFingerprint,
-        userUpdatedAt: result.remoteUserUpdatedAt,
-        userFingerprint: result.remoteUserFingerprint
-      });
-      renderSyncMeta();
+    setDriveSaveInFlight(true, "autosave");
+    try {
+      const result = await saveToDrive(options);
+      if (result?.success) {
+        rememberRemoteStoreState({
+          updatedAt: result.remoteUpdatedAt,
+          fingerprint: result.remoteFingerprint,
+          savedAt: result.remoteSavedAt,
+          userUpdatedAt: result.remoteUserUpdatedAt,
+          userFingerprint: result.remoteUserFingerprint
+        });
+        renderSyncMeta();
+      }
+      return result;
+    } finally {
+      setDriveSaveInFlight(false);
     }
-    return result;
   }
 });
 
 updateRecurrenceVisibility();
 updateSkipVisibility();
 applyHeroState(loadHeroCollapsed());
+syncComposerPanelState();
 taskPointsInput.dataset.auto = "true";
 syncTaskPointsDefault();
 renderTemporalUi();
@@ -398,12 +440,15 @@ toggleHeroButton.addEventListener("click", toggleHeroCollapsed);
 openSettingsButton.addEventListener("click", openSettings);
 openQuickAddButton.addEventListener("click", openQuickAdd);
 openTaskDeskButton.addEventListener("click", () => handleOpenTaskDesk("composer"));
+closeCanopyDetailButton.addEventListener("click", closeCanopyDetail);
+closeCanopyDetailBackdrop.addEventListener("click", closeCanopyDetail);
 closeTaskDeskButton.addEventListener("click", closeTaskDesk);
 closeTaskDeskBackdrop.addEventListener("click", closeTaskDesk);
 taskDeskTabs.addEventListener("click", handleTaskDeskTabClick);
 closeWidgetMenuButton.addEventListener("click", closeWidgetMenu);
 widgetMenuOptions.addEventListener("click", handleWidgetMenuSelection);
 canopyColumns.addEventListener("click", handleCanopyAction);
+canopyDetailBody.addEventListener("click", handleCanopyAction);
 treeHarvestButton.addEventListener("click", harvestRipeFruit);
 openTreeStyleButton.addEventListener("click", openTreeStyle);
 openTreeDetailButton.addEventListener("click", openTreeDetail);
@@ -417,6 +462,14 @@ quickAddForm.addEventListener("submit", handleQuickAddSubmit);
 clearFormButton.addEventListener("click", resetComposer);
 cancelEditButton.addEventListener("click", clearEditState);
 addCategoryButton.addEventListener("click", handleAddCategory);
+toggleCategoryOptionsButton.addEventListener("click", () => {
+  composerPanelState.categoryOptionsOpen = !composerPanelState.categoryOptionsOpen;
+  syncComposerPanelState();
+});
+toggleDependenciesButton.addEventListener("click", () => {
+  composerPanelState.dependenciesOpen = !composerPanelState.dependenciesOpen;
+  syncComposerPanelState();
+});
 categoryList.addEventListener("input", handleCategoryListInput);
 categoryList.addEventListener("click", handleCategoryListClick);
 editScope.addEventListener("change", () => {
@@ -452,6 +505,8 @@ removeTreeSkinButton.addEventListener("click", removeSelectedTreeSkin);
 resetFruitGrowthButton.addEventListener("click", resetDeveloperFruitGrowth);
 copyWidgetDiagnosticsButton.addEventListener("click", copyWidgetDiagnostics);
 downloadDriveDataButton.addEventListener("click", downloadDriveData);
+importDriveDataButton.addEventListener("click", openDeveloperImportPicker);
+developerImportJsonInput.addEventListener("change", handleDeveloperImportJson);
 cleanWidgetDataButton.addEventListener("click", runLocalWidgetCleanup);
 clearWidgetDriveDataButton.addEventListener("click", clearWidgetDriveData);
 clearWidgetHistoryButton.addEventListener("click", clearSelectedHistorySource);
@@ -493,12 +548,14 @@ async function continueStartup() {
   if (
     startupResult.remoteUpdatedAt
     || startupResult.remoteFingerprint
+    || startupResult.remoteSavedAt
     || startupResult.remoteUserUpdatedAt
     || startupResult.remoteUserFingerprint
   ) {
     rememberRemoteStoreState({
       updatedAt: startupResult.remoteUpdatedAt,
       fingerprint: startupResult.remoteFingerprint,
+      savedAt: startupResult.remoteSavedAt,
       userUpdatedAt: startupResult.remoteUserUpdatedAt,
       userFingerprint: startupResult.remoteUserFingerprint
     });
@@ -550,6 +607,7 @@ async function handleManualLoadFromDrive() {
     rememberRemoteStoreState({
       updatedAt: result.remoteUpdatedAt,
       fingerprint: result.remoteFingerprint,
+      savedAt: result.remoteSavedAt,
       userUpdatedAt: result.remoteUserUpdatedAt,
       userFingerprint: result.remoteUserFingerprint
     });
@@ -564,15 +622,24 @@ async function handleManualLoadFromDrive() {
 }
 
 async function handleManualSaveToDrive() {
-  const result = await saveToDrive();
-  if (result?.success) {
-    rememberRemoteStoreState({
-      updatedAt: result.remoteUpdatedAt,
-      fingerprint: result.remoteFingerprint,
-      userUpdatedAt: result.remoteUserUpdatedAt,
-      userFingerprint: result.remoteUserFingerprint
-    });
-    autosaveController.markCurrentAsSaved();
+  if (driveSaveState.inFlight) {
+    return;
+  }
+  setDriveSaveInFlight(true, "manual");
+  try {
+    const result = await saveToDrive();
+    if (result?.success) {
+      rememberRemoteStoreState({
+        updatedAt: result.remoteUpdatedAt,
+        fingerprint: result.remoteFingerprint,
+        savedAt: result.remoteSavedAt,
+        userUpdatedAt: result.remoteUserUpdatedAt,
+        userFingerprint: result.remoteUserFingerprint
+      });
+      autosaveController.markCurrentAsSaved();
+    }
+  } finally {
+    setDriveSaveInFlight(false);
   }
   renderSyncMeta();
 }
@@ -584,10 +651,35 @@ function finalizeStoreState() {
   cleanupLegacyWidgetArtifacts();
   reconcileRecurringSeries();
   ensureWidgetTasks();
+  cleanupLegacyWidgetArtifacts();
+  normalizeTaskHistoriesInStore();
   repairTaskStatusFromHistory();
   if (JSON.stringify(store) !== before) {
     persistStore({ touchUserUpdatedAt: false });
   }
+}
+
+function normalizeTaskHistoriesInStore() {
+  let changed = false;
+
+  for (const task of store.tasks) {
+    const currentHistory = Array.isArray(task.history) ? task.history : [];
+    const compactedHistory = compactTaskHistory(currentHistory);
+    if (compactedHistory.length !== currentHistory.length) {
+      task.history = compactedHistory;
+      changed = true;
+      continue;
+    }
+    for (let index = 0; index < compactedHistory.length; index += 1) {
+      if (compactedHistory[index]?.id !== currentHistory[index]?.id) {
+        task.history = compactedHistory;
+        changed = true;
+        break;
+      }
+    }
+  }
+
+  return changed;
 }
 
 function handleGlobalKeydown(event) {
@@ -607,6 +699,11 @@ function handleGlobalKeydown(event) {
 
   if (isQuickAddOpen()) {
     closeQuickAdd();
+    return;
+  }
+
+  if (isCanopyDetailOpen()) {
+    closeCanopyDetail();
     return;
   }
 
@@ -660,11 +757,35 @@ function openDeveloper() {
 }
 
 function openQuickAdd() {
+  closeCanopyDetail();
   resetQuickAddForm();
   quickAddModal.classList.remove("hidden");
   quickAddModal.setAttribute("aria-hidden", "false");
   document.body.classList.add("quick-add-open");
   window.setTimeout(() => quickTaskNameInput.focus(), 0);
+}
+
+function openCanopyDetail(kind, columnKey, groupKey = "") {
+  canopyState.detail.kind = kind;
+  canopyState.detail.columnKey = columnKey;
+  canopyState.detail.groupKey = groupKey;
+  canopyDetailModal.classList.remove("hidden");
+  canopyDetailModal.setAttribute("aria-hidden", "false");
+  document.body.classList.add("canopy-detail-open");
+  renderCanopyDetailIfOpen();
+}
+
+function closeCanopyDetail() {
+  canopyState.detail.kind = "";
+  canopyState.detail.columnKey = "";
+  canopyState.detail.groupKey = "";
+  canopyDetailModal.classList.add("hidden");
+  canopyDetailModal.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("canopy-detail-open");
+}
+
+function isCanopyDetailOpen() {
+  return !canopyDetailModal.classList.contains("hidden");
 }
 
 function openSettings() {
@@ -766,6 +887,9 @@ function handleTaskDeskTabClick(event) {
 }
 
 function handleOpenTaskDesk(preferredPane = "tasks") {
+  if (isCanopyDetailOpen()) {
+    closeCanopyDetail();
+  }
   if (isQuickAddOpen()) {
     closeQuickAdd();
   }
@@ -1002,13 +1126,19 @@ function handleCanopyAction(event) {
     return;
   }
 
-  const taskId = actionTarget.getAttribute("data-task-id");
   const action = actionTarget.getAttribute("data-canopy-action");
-  const task = store.tasks.find((item) => item.id === taskId);
-  if (!task || task.archived || task.status !== "open") {
+  if (action === "show-column") {
+    const columnKey = actionTarget.getAttribute("data-column-key") || "today";
+    openCanopyDetail("column", columnKey);
     return;
   }
-  const pendingAction = getPendingActionForTask(taskId);
+
+  if (action === "open-group") {
+    const columnKey = actionTarget.getAttribute("data-column-key") || "today";
+    const groupKey = actionTarget.getAttribute("data-group-key") || "";
+    openCanopyDetail("group", columnKey, groupKey);
+    return;
+  }
 
   if (action === "undo") {
     const pendingKey = actionTarget.getAttribute("data-pending-key");
@@ -1018,7 +1148,74 @@ function handleCanopyAction(event) {
     return;
   }
 
+  const taskId = actionTarget.getAttribute("data-task-id");
+  const task = store.tasks.find((item) => item.id === taskId);
+  if (!task || task.archived) {
+    return;
+  }
+  const pendingAction = getPendingActionForTask(taskId);
+
   if (pendingAction) {
+    return;
+  }
+
+  if (action === "reopen-group-task") {
+    if (task.status !== "done" && task.status !== "skipped") {
+      return;
+    }
+    markTaskOpen(task);
+    reconcileRecurringSeries();
+    persistStore();
+    renderAll();
+    setSyncStatus(`Marked ${task.name} incomplete for this period.`, "info");
+    return;
+  }
+
+  if (action === "complete-group-task") {
+    if (task.status !== "open") {
+      return;
+    }
+    if (isBlocked(task)) {
+      setSyncStatus(describeBlockedTask(task), "error");
+      return;
+    }
+    stagePendingAction({
+      key: `complete:${task.id}`,
+      taskId: task.id,
+      description: `Pending completion for ${task.name}. Click undo within 5 seconds to cancel.`,
+      commit: () => {
+        const nextTask = store.tasks.find((item) => item.id === task.id);
+        if (!nextTask || nextTask.archived || nextTask.status !== "open" || isBlocked(nextTask)) {
+          return false;
+        }
+        markTaskCompleted(nextTask);
+        return { message: `Completed ${nextTask.name} from the canopy.`, tone: "info" };
+      }
+    });
+    return;
+  }
+
+  if (action === "skip-group-task") {
+    if (task.status !== "open") {
+      return;
+    }
+    stagePendingAction({
+      key: `skip:${task.id}`,
+      taskId: task.id,
+      description: `Pending skip for ${task.name}. Click undo within 5 seconds to cancel.`,
+      commit: () => {
+        const nextTask = store.tasks.find((item) => item.id === task.id);
+        if (!nextTask || nextTask.archived || nextTask.status !== "open") {
+          return false;
+        }
+        markTaskSkipped(nextTask);
+        return { message: `Skipped ${nextTask.name} for this period.`, tone: "info" };
+      }
+    });
+    return;
+  }
+
+  if (task.status !== "open") {
     return;
   }
 
@@ -1046,6 +1243,7 @@ function handleCanopyAction(event) {
   }
 
   if (action === "edit") {
+    closeCanopyDetail();
     beginEdit(task, "single");
     handleOpenTaskDesk("composer");
     setSyncStatus(`Editing ${task.name} in Task Desk.`, "info");
@@ -1574,6 +1772,7 @@ function renderAll() {
   renderHistoryPanel();
   renderDeveloperPanel();
   renderWidgetDetailIfOpen();
+  renderCanopyDetailIfOpen();
   renderTreeStyleIfOpen();
   renderTreeDetailIfOpen();
   syncEditPanel();
@@ -1644,22 +1843,55 @@ function renderDeveloperFruitSummary(treeState) {
 }
 
 function renderCanopy() {
-  const manualCards = getVisibleCards()
-    .filter((card) => !card.task.ownerWidgetType && !card.task.archived && card.status === "open")
+  const standardCards = getVisibleCards()
+    .filter((card) => !card.task.ownerWidgetType && !card.task.archived && card.status === "open" && card.task.recurrence.type === "none")
     .map((card) => ({
       ...card,
       blocked: isBlocked(card.task),
       blockedNote: describeCompletionGate(card.task)
     }));
+  const recurringEntries = store.tasks
+    .filter((task) => !task.ownerWidgetType && !task.archived && !task.historyOnly && task.recurrence.type !== "none" && (task.status === "open" || task.status === "done" || task.status === "skipped"))
+    .map((task) => ({
+      key: task.id,
+      task,
+      displayName: task.name,
+      blocked: isBlocked(task),
+      blockedNote: describeCompletionGate(task)
+    }));
+
+  canopyState.columns = buildCanopyColumnsData({
+    standardCards,
+    recurringEntries,
+    today: todayString()
+  });
 
   renderCanopyColumns(canopyColumns, {
-    cards: manualCards,
-    today: todayString(),
+    columns: canopyState.columns,
     escapeHtml,
     formatDate,
     getPendingActionForTask,
     renderPriorityIndicator
   });
+}
+
+function renderCanopyDetailIfOpen() {
+  if (!isCanopyDetailOpen()) {
+    return;
+  }
+
+  const detail = renderCanopyDetailContent(canopyDetailBody, {
+    detail: canopyState.detail,
+    columns: canopyState.columns,
+    escapeHtml,
+    formatDate,
+    getPendingActionForTask,
+    renderPriorityIndicator
+  });
+  canopyDetailTitle.textContent = detail.title;
+  canopyDetailSubtitle.textContent = detail.subtitle;
+  canopyDetailFooter.textContent = detail.footerNote;
+  canopyDetailFooter.classList.toggle("hidden", !detail.footerNote);
 }
 
 function renderTemporalUi(now = new Date()) {
@@ -1706,6 +1938,7 @@ function renderTreeSky(now = new Date()) {
 
 function renderSyncMeta(now = new Date()) {
   const localUpdatedAt = store.userUpdatedAt || 0;
+  const remoteSavedAt = syncState.remoteSavedAt || 0;
   const remoteUpdatedAt = syncState.remoteUserUpdatedAt || 0;
   const remoteFingerprint = syncState.remoteUserFingerprint || "";
   const localFingerprint = remoteFingerprint ? getCurrentUserFingerprint() : "";
@@ -1734,11 +1967,18 @@ function renderSyncMeta(now = new Date()) {
   syncLocalCard.dataset.state = localState;
   syncDriveCard.dataset.state = driveState;
   syncLocalValue.textContent = localUpdatedAt ? formatDateTime(localUpdatedAt) : "No local edits yet";
-  syncDriveValue.textContent = remoteUpdatedAt ? formatDateTime(remoteUpdatedAt) : "No Drive save yet";
+  syncDriveValue.textContent = remoteSavedAt
+    ? formatDateTime(remoteSavedAt)
+    : remoteUpdatedAt
+      ? formatDateTime(remoteUpdatedAt)
+      : "No Drive save yet";
 
   let autosaveState = "neutral";
   let autosaveText = "Autosave off";
-  if (!authState.authenticated) {
+  if (driveSaveState.inFlight) {
+    autosaveState = "info";
+    autosaveText = driveSaveState.mode === "autosave" ? "Autosaving now…" : "Saving now…";
+  } else if (!authState.authenticated) {
     autosaveText = profile.autosaveEnabled ? "Connect Google" : "Autosave off";
   } else if (!profile.autosaveEnabled) {
     autosaveText = "Autosave off";
@@ -1774,11 +2014,13 @@ function getCurrentUserFingerprint() {
 function rememberRemoteStoreState({
   updatedAt = 0,
   fingerprint = "",
+  savedAt = 0,
   userUpdatedAt = 0,
   userFingerprint = ""
 } = {}) {
   syncState.remoteUpdatedAt = updatedAt || 0;
   syncState.remoteFingerprint = fingerprint || "";
+  syncState.remoteSavedAt = savedAt || 0;
   syncState.remoteUserUpdatedAt = userUpdatedAt || 0;
   syncState.remoteUserFingerprint = userFingerprint || "";
 }
@@ -1786,8 +2028,15 @@ function rememberRemoteStoreState({
 function clearRemoteStoreState() {
   syncState.remoteUpdatedAt = 0;
   syncState.remoteFingerprint = "";
+  syncState.remoteSavedAt = 0;
   syncState.remoteUserUpdatedAt = 0;
   syncState.remoteUserFingerprint = "";
+}
+
+function setDriveSaveInFlight(inFlight, mode = "") {
+  driveSaveState.inFlight = Boolean(inFlight);
+  driveSaveState.mode = driveSaveState.inFlight ? mode : "";
+  updateGoogleButtons();
 }
 
 function formatAutosaveCountdown(ms) {
@@ -2416,6 +2665,10 @@ function applyAutoSkipRules(now = new Date()) {
 }
 
 function shouldSkipTask(task, now = new Date()) {
+  if (!task || task.status !== "open" || task.archived) {
+    return false;
+  }
+
   if (shouldAutoSkipTask(task, now)) {
     return true;
   }
@@ -2449,7 +2702,7 @@ function renderDependencyOptions() {
 }
 
 function getDependencyCandidates() {
-  return store.tasks.filter((task) => !task.templateId && !task.archived);
+  return store.tasks.filter((task) => !task.templateId && !task.archived && task.status === "open");
 }
 
 function renderSummary() {
@@ -4163,10 +4416,22 @@ function shouldKeepUnpairedTask(task, otherStoreUpdatedAt = 0) {
   if (!task) {
     return false;
   }
+  if (shouldAlwaysKeepUnpairedTask(task)) {
+    return true;
+  }
   if (!otherStoreUpdatedAt) {
     return true;
   }
   return latestTaskTimestampForMerge(task) >= otherStoreUpdatedAt;
+}
+
+function shouldAlwaysKeepUnpairedTask(task) {
+  return !task.ownerWidgetType
+    || task.status !== "open"
+    || Boolean(task.pointsEntryId)
+    || task.archived === true
+    || task.historyOnly === true
+    || (Array.isArray(task.history) && task.history.length > 0);
 }
 
 function latestTaskTimestampForMerge(task) {
@@ -4226,10 +4491,15 @@ function describeMergeResult(localStore, remoteStore) {
 }
 
 function updateGoogleButtons() {
-  googleSignInButton.disabled = authState.authenticated;
-  googleSignOutButton.disabled = !authState.authenticated;
-  loadDriveButton.disabled = !authState.authenticated;
-  saveDriveButton.disabled = !authState.authenticated;
+  const saveInFlight = driveSaveState.inFlight;
+  googleSignInButton.disabled = authState.authenticated || saveInFlight;
+  googleSignOutButton.disabled = !authState.authenticated || saveInFlight;
+  loadDriveButton.disabled = !authState.authenticated || saveInFlight;
+  saveDriveButton.disabled = !authState.authenticated || saveInFlight;
+  saveDriveButton.dataset.state = saveInFlight ? driveSaveState.mode || "saving" : "idle";
+  saveDriveButton.textContent = saveInFlight
+    ? (driveSaveState.mode === "autosave" ? "Autosaving…" : "Saving…")
+    : "Save to Drive";
   clearDriveDataButton.disabled = !isDeveloperUser();
   clearWidgetDriveDataButton.disabled = !isDeveloperUser();
   downloadDriveDataButton.disabled = !isDeveloperUser();
@@ -4300,6 +4570,7 @@ function renderDeveloperPanel() {
   developerTreeSkin.disabled = !hasSkins;
   grantTreeSkinButton.disabled = !hasSkins;
   removeTreeSkinButton.disabled = !hasSkins;
+  importDriveDataButton.disabled = !visible;
 
   const devSettings = normalizeDevSettings(store.devSettings);
   developerMaxTaskPoints.value = String(devSettings.maxTaskPoints);
@@ -4550,6 +4821,27 @@ function syncTaskPointsAutoState() {
   taskPointsInput.dataset.auto = current === defaultPointsForLength(taskLengthInput.value || "medium") ? "true" : "false";
 }
 
+function syncComposerPanelState() {
+  syncComposerPanel(toggleCategoryOptionsButton, categoryPanelBody, composerPanelState.categoryOptionsOpen, {
+    collapsedLabel: "Category options",
+    expandedLabel: "Hide category options"
+  });
+  syncComposerPanel(toggleDependenciesButton, dependenciesPanelBody, composerPanelState.dependenciesOpen, {
+    collapsedLabel: "Depends on",
+    expandedLabel: "Hide dependencies"
+  });
+}
+
+function syncComposerPanel(button, body, open, labels) {
+  if (!button || !body) {
+    return;
+  }
+  button.textContent = open ? labels.expandedLabel : labels.collapsedLabel;
+  button.setAttribute("aria-expanded", open ? "true" : "false");
+  button.classList.toggle("is-open", open);
+  body.classList.toggle("hidden", !open);
+}
+
 function awardPointsForTask(task, at = Date.now()) {
   if (task.status !== "done") {
     return null;
@@ -4759,11 +5051,16 @@ function cleanupDetachedWidgetTasks() {
     }
 
     const activeWidget = activeWidgetByType.get(task.ownerWidgetType);
+    const definition = getWidgetDefinition(task.ownerWidgetType);
     if (activeWidget && task.ownerWidgetId === activeWidget.id) {
       continue;
     }
 
     if (activeWidget && task.ownerWidgetId !== activeWidget.id) {
+      if (definition?.singleton) {
+        removedIds.add(task.id);
+        continue;
+      }
       if (task.templateId) {
         if (task.status === "open" && (!Array.isArray(task.history) || task.history.length === 0)) {
           removedIds.add(task.id);
@@ -5016,6 +5313,50 @@ async function downloadDriveData() {
   }
 }
 
+function openDeveloperImportPicker() {
+  if (!isDeveloperUser()) {
+    return;
+  }
+  developerImportJsonInput.value = "";
+  developerImportJsonInput.click();
+}
+
+async function handleDeveloperImportJson(event) {
+  if (!isDeveloperUser()) {
+    event.target.value = "";
+    return;
+  }
+
+  const file = event.target.files?.[0] || null;
+  event.target.value = "";
+  if (!file) {
+    return;
+  }
+
+  if (!window.confirm("Replace the local Lifetree data on this browser with the selected JSON backup? Google Drive will not change until you save manually.")) {
+    return;
+  }
+
+  try {
+    const rawText = await file.text();
+    const parsed = JSON.parse(rawText);
+    const payload = parsed && typeof parsed === "object" && parsed.payload && typeof parsed.payload === "object"
+      ? parsed.payload
+      : parsed;
+    store = normalizeStore(payload);
+    finalizeStoreState();
+    persistStore({ touchUpdatedAt: false, touchUserUpdatedAt: false });
+    clearRemoteStoreState();
+    autosaveController.clearSavedBaseline();
+    autosaveController.refreshSchedule();
+    renderAll();
+    renderSyncMeta();
+    setSyncStatus(`Imported ${file.name} into local Lifetree data. Review it, then save to Google Drive if you want to replace the remote copy.`, "success");
+  } catch (error) {
+    setSyncStatus(`JSON import failed: ${error.message}`, "error");
+  }
+}
+
 function runLocalWidgetCleanup() {
   const widgetType = getDeveloperSelectedWidgetType();
   if (!widgetType) {
@@ -5098,6 +5439,12 @@ function getDeveloperSelectedWidgetType() {
 function buildWidgetDiagnostics(targetStore, widgetType) {
   const activeWidget = targetStore.widgets.find((widget) => widget.type === widgetType) || null;
   const widgetTasks = targetStore.tasks.filter((task) => task.ownerWidgetType === widgetType);
+  const taskSlotKey = (task) => [
+    task.dueDate || task.startDate || "",
+    task.timeOfDay || "",
+    task.ownerTaskKey || "",
+    task.templateId ? "generated" : (task.recurrence?.type !== "none" ? "template" : "single")
+  ].join("|");
   const duplicateGroups = Array.from(groupWidgetTasks(widgetTasks).entries())
     .filter(([, tasks]) => tasks.length > 1)
     .map(([signature, tasks]) => ({
@@ -5169,6 +5516,41 @@ function buildWidgetDiagnostics(targetStore, widgetType) {
         }
         return false;
       }),
+    openTasks: widgetTasks
+      .filter((task) => task.status === "open")
+      .sort((left, right) => {
+        const leftKey = `${left.dueDate || left.startDate || ""}|${left.timeOfDay || ""}|${left.ownerTaskKey || ""}`;
+        const rightKey = `${right.dueDate || right.startDate || ""}|${right.timeOfDay || ""}|${right.ownerTaskKey || ""}`;
+        return leftKey.localeCompare(rightKey);
+      })
+      .map((task) => ({
+        id: task.id,
+        name: task.name,
+        kind: task.templateId ? "generated" : (task.recurrence?.type !== "none" ? "template" : "single"),
+        signature: buildWidgetTaskSignature(task),
+        slotKey: taskSlotKey(task),
+        templateId: task.templateId || "",
+        occurrenceIndex: Number.isFinite(task.occurrenceIndex) ? task.occurrenceIndex : 0,
+        ownerTaskKey: task.ownerTaskKey || "",
+        dueDate: task.dueDate || "",
+        timeOfDay: task.timeOfDay || "",
+        dependencies: Array.isArray(task.dependencies) ? [...task.dependencies] : [],
+        archived: task.archived === true
+      })),
+    slotCounts: Array.from(
+      widgetTasks.reduce((accumulator, task) => {
+        const key = [
+          task.dueDate || task.startDate || "",
+          task.timeOfDay || "",
+          task.ownerTaskKey || "",
+          task.status
+        ].join("|");
+        accumulator.set(key, (accumulator.get(key) || 0) + 1);
+        return accumulator;
+      }, new Map()).entries()
+    )
+      .filter(([, count]) => count > 1)
+      .map(([key, count]) => ({ key, count })),
     duplicateGroups
   };
 }
@@ -5352,6 +5734,18 @@ function groupWidgetTasks(tasks) {
 }
 
 function buildWidgetTaskSignature(task) {
+  if (task?.ownerWidgetType === "energy") {
+    const scheduledDate = task?.dueDate || task?.startDate || "";
+    const scheduledTime = task?.timeOfDay || "";
+    if (scheduledDate || scheduledTime) {
+      return [
+        "energy-slot",
+        scheduledDate,
+        scheduledTime,
+        Number(task?.archived === true)
+      ].join("|");
+    }
+  }
   return buildLogicalWidgetTaskKey(task);
 }
 
@@ -5363,6 +5757,10 @@ function choosePreferredWidgetTask(tasks, activeWidgetId) {
   return [...tasks].sort((left, right) => {
     if (Boolean(right.ownerWidgetId === activeWidgetId) !== Boolean(left.ownerWidgetId === activeWidgetId)) {
       return Number(right.ownerWidgetId === activeWidgetId) - Number(left.ownerWidgetId === activeWidgetId);
+    }
+    const resolutionPreference = compareTaskResolutionPreference(right, left);
+    if (resolutionPreference !== 0) {
+      return resolutionPreference;
     }
     if (Boolean(right.pointsEntryId) !== Boolean(left.pointsEntryId)) {
       return Number(Boolean(right.pointsEntryId)) - Number(Boolean(left.pointsEntryId));
