@@ -42,6 +42,7 @@
 - Keep `app.js` focused on orchestration: DOM wiring, store updates, modal coordination, and cross-module integration.
 - When changing persistent data, update normalization paths in `app.js` so older stores still load safely.
 - Settings/profile changes should update both the settings modal in [`lifetree/index.html`](/home/jbk/lightbeamsoup.github.io/lifetree/index.html) and the profile normalization defaults in [`lifetree/modules/profile.js`](/home/jbk/lightbeamsoup.github.io/lifetree/modules/profile.js).
+- After each edit turn is complete and ready for a new prompt, create a local commit by default, but do not push unless the user explicitly asks.
 - Drive sync behavior now has three layers:
   - manual auth/load/save flow in [`lifetree/modules/driveSync.js`](/home/jbk/lightbeamsoup.github.io/lifetree/modules/driveSync.js)
   - autosave cadence in [`lifetree/modules/autosave.js`](/home/jbk/lightbeamsoup.github.io/lifetree/modules/autosave.js)
