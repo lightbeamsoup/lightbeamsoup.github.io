@@ -1,4 +1,7 @@
 export const DEFAULT_MAX_TASK_POINTS = 10;
+export const DEFAULT_MAX_POINT_HISTORY_ENTRIES = 50;
+export const MAX_POINT_HISTORY_ENTRIES = 50;
+export const POINT_HISTORY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 export const LENGTH_POINT_DEFAULTS = {
   "very-short": 1,
@@ -34,12 +37,53 @@ export function normalizeDevSettings(value) {
   const maxTaskPoints = Number.isFinite(numeric) && numeric > 0
     ? Math.round(numeric)
     : DEFAULT_MAX_TASK_POINTS;
+  const pointHistoryNumeric = Number(value?.maxPointHistoryEntries);
+  const maxPointHistoryEntries = Number.isFinite(pointHistoryNumeric) && pointHistoryNumeric > 0
+    ? Math.round(pointHistoryNumeric)
+    : DEFAULT_MAX_POINT_HISTORY_ENTRIES;
   return {
-    maxTaskPoints: Math.max(1, Math.min(50, maxTaskPoints))
+    maxTaskPoints: Math.max(1, Math.min(50, maxTaskPoints)),
+    maxPointHistoryEntries: Math.max(1, Math.min(MAX_POINT_HISTORY_ENTRIES, maxPointHistoryEntries))
   };
 }
 
 export function normalizePointLedger(
+  value,
+  { defaultCategoryKey, normalizeCategoryColor, resolveCategorySnapshot }
+) {
+  return normalizePointEntries(value, { defaultCategoryKey, normalizeCategoryColor, resolveCategorySnapshot });
+}
+
+export function normalizePointHistory(
+  value,
+  {
+    defaultCategoryKey,
+    normalizeCategoryColor,
+    resolveCategorySnapshot,
+    maxEntries = DEFAULT_MAX_POINT_HISTORY_ENTRIES,
+    now = Date.now()
+  }
+) {
+  return trimPointHistoryEntries(
+    normalizePointEntries(value, { defaultCategoryKey, normalizeCategoryColor, resolveCategorySnapshot }),
+    { maxEntries, now }
+  );
+}
+
+export function mergePointHistory(localEntries = [], remoteEntries = [], options) {
+  const mergedById = new Map();
+  for (const entry of normalizePointEntries(remoteEntries, options)) {
+    mergedById.set(entry.id, entry);
+  }
+  for (const entry of normalizePointEntries(localEntries, options)) {
+    if (!mergedById.has(entry.id)) {
+      mergedById.set(entry.id, entry);
+    }
+  }
+  return trimPointHistoryEntries(Array.from(mergedById.values()), options);
+}
+
+function normalizePointEntries(
   value,
   { defaultCategoryKey, normalizeCategoryColor, resolveCategorySnapshot }
 ) {
@@ -66,6 +110,8 @@ export function normalizePointLedger(
         categoryColor: normalizeCategoryColor(
           entry.categoryColor || categorySnapshot.color || fallbackCategory.color
         ),
+        dueDate: typeof entry.dueDate === "string" ? entry.dueDate : "",
+        timeOfDay: typeof entry.timeOfDay === "string" ? entry.timeOfDay : "",
         sourceKey: typeof entry.sourceKey === "string" ? entry.sourceKey : "",
         sourceType: typeof entry.sourceType === "string" ? entry.sourceType : "manual",
         sourceLabel: typeof entry.sourceLabel === "string" ? entry.sourceLabel : "Manual task"
@@ -76,10 +122,10 @@ export function normalizePointLedger(
 
 export function mergePointLedger(localEntries = [], remoteEntries = [], options) {
   const mergedById = new Map();
-  for (const entry of normalizePointLedger(remoteEntries, options)) {
+  for (const entry of normalizePointEntries(remoteEntries, options)) {
     mergedById.set(entry.id, entry);
   }
-  for (const entry of normalizePointLedger(localEntries, options)) {
+  for (const entry of normalizePointEntries(localEntries, options)) {
     if (!mergedById.has(entry.id)) {
       mergedById.set(entry.id, entry);
     }
@@ -129,6 +175,8 @@ export function buildTaskPointEntry(
     categoryKey: category.key,
     categoryLabel: task.categoryLabel || category.label,
     categoryColor: normalizeCategoryColor(task.categoryColor || category.color),
+    dueDate: typeof task.dueDate === "string" ? task.dueDate : "",
+    timeOfDay: typeof task.timeOfDay === "string" ? task.timeOfDay : "",
     sourceKey: task.ownerWidgetType
       ? `${task.ownerWidgetType}:${task.ownerTaskKey || task.name}`
       : `task:${task.id}`,
@@ -222,4 +270,20 @@ function normalizeTreePointMap(value, { allowNegative = false, slugifyCategoryKe
   }
 
   return result;
+}
+
+function trimPointHistoryEntries(
+  entries,
+  {
+    maxEntries = DEFAULT_MAX_POINT_HISTORY_ENTRIES,
+    now = Date.now(),
+    maxAgeMs = POINT_HISTORY_WINDOW_MS
+  } = {}
+) {
+  const latestAllowedAt = Math.max(0, now - maxAgeMs);
+  const normalizedMaxEntries = Math.max(1, Math.min(MAX_POINT_HISTORY_ENTRIES, Math.round(Number(maxEntries) || DEFAULT_MAX_POINT_HISTORY_ENTRIES)));
+  return (Array.isArray(entries) ? entries : [])
+    .filter((entry) => typeof entry?.at === "number" && entry.at >= latestAllowedAt)
+    .sort((left, right) => left.at - right.at)
+    .slice(-normalizedMaxEntries);
 }

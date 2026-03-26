@@ -24,12 +24,15 @@ import { createDriveSyncController, resolveApiBase } from "./modules/driveSync.j
 import {
   buildTaskPointEntry as buildTaskPointEntryBase,
   choosePreferredTreeState as choosePreferredTreeStateBase,
+  DEFAULT_MAX_POINT_HISTORY_ENTRIES,
   DEFAULT_MAX_TASK_POINTS,
   defaultPointsForLength,
   formatPointsLabel,
   mergePointLedger as mergePointLedgerBase,
+  mergePointHistory as mergePointHistoryBase,
   normalizeDevSettings,
   normalizePointLedger as normalizePointLedgerBase,
+  normalizePointHistory as normalizePointHistoryBase,
   normalizeTaskPoints,
   normalizeTreeState as normalizeTreeStateBase,
   renderDeveloperFruitSummary as renderDeveloperFruitSummaryBase,
@@ -282,6 +285,7 @@ const developerPanel = document.getElementById("developerPanel");
 const developerEmail = document.getElementById("developerEmail");
 const developerWidgetType = document.getElementById("developerWidgetType");
 const developerMaxTaskPoints = document.getElementById("developerMaxTaskPoints");
+const developerMaxPointHistoryEntries = document.getElementById("developerMaxPointHistoryEntries");
 const developerInjectCategory = document.getElementById("developerInjectCategory");
 const developerInjectPoints = document.getElementById("developerInjectPoints");
 const developerInjectSource = document.getElementById("developerInjectSource");
@@ -547,6 +551,7 @@ saveDriveButton.addEventListener("click", handleManualSaveToDrive);
 clearDriveDataButton.addEventListener("click", clearDriveData);
 openDeveloperButton.addEventListener("click", openDeveloper);
 developerMaxTaskPoints.addEventListener("change", updateMaxTaskPointsSetting);
+developerMaxPointHistoryEntries.addEventListener("change", updateMaxPointHistoryEntriesSetting);
 injectPointsButton.addEventListener("click", injectDeveloperPoints);
 addFruitGrowthButton.addEventListener("click", () => adjustDeveloperFruitGrowth(1));
 removeFruitGrowthButton.addEventListener("click", () => adjustDeveloperFruitGrowth(-1));
@@ -1600,7 +1605,7 @@ function collectRecurringGroupBonus(group) {
         return false;
       }
 
-      store.pointLedger = mergePointLedger(store.pointLedger, [{
+      recordPointEntry({
         id: createId(),
         taskId: "",
         taskName: `${currentGroup.label} bonus`,
@@ -1609,10 +1614,12 @@ function collectRecurringGroupBonus(group) {
         categoryKey: currentCategory.key,
         categoryLabel: currentCategory.label,
         categoryColor: currentCategory.color,
+        dueDate: "",
+        timeOfDay: "",
         sourceKey: `recurring-bonus:${currentBonus.key}`,
         sourceType: "recurring-bonus",
         sourceLabel: `${currentGroup.label} completion bonus`
-      }]);
+      });
 
       return {
         message: `Collected ${formatPointsLabel(currentBonus.points)} in ${currentCategory.label} from ${currentGroup.label}.`,
@@ -2435,6 +2442,10 @@ function getPointLedgerSummary() {
   return buildPointSummary(store.pointLedger);
 }
 
+function getRecentPointHistory() {
+  return [...normalizePointHistory(store.pointHistory, store.devSettings)].sort((left, right) => right.at - left.at);
+}
+
 function normalizeTreeState(value) {
   return normalizeTreeStateBase(value, {
     normalizeTreeStyleState,
@@ -2457,11 +2468,31 @@ function normalizePointLedger(value) {
   });
 }
 
+function normalizePointHistory(value, devSettings = store?.devSettings) {
+  const normalizedDevSettings = normalizeDevSettings(devSettings || {});
+  return normalizePointHistoryBase(value, {
+    defaultCategoryKey: DEFAULT_CATEGORY_KEY,
+    normalizeCategoryColor,
+    resolveCategorySnapshot,
+    maxEntries: normalizedDevSettings.maxPointHistoryEntries
+  });
+}
+
 function mergePointLedger(localEntries = [], remoteEntries = []) {
   return mergePointLedgerBase(localEntries, remoteEntries, {
     defaultCategoryKey: DEFAULT_CATEGORY_KEY,
     normalizeCategoryColor,
     resolveCategorySnapshot
+  });
+}
+
+function mergePointHistory(localEntries = [], remoteEntries = [], devSettings = store?.devSettings) {
+  const normalizedDevSettings = normalizeDevSettings(devSettings || {});
+  return mergePointHistoryBase(localEntries, remoteEntries, {
+    defaultCategoryKey: DEFAULT_CATEGORY_KEY,
+    normalizeCategoryColor,
+    resolveCategorySnapshot,
+    maxEntries: normalizedDevSettings.maxPointHistoryEntries
   });
 }
 
@@ -2483,6 +2514,26 @@ function renderDeveloperPointsSummary(summary) {
 
 function renderDeveloperFruitSummary(treeState) {
   return renderDeveloperFruitSummaryBase(treeState, { escapeHtml });
+}
+
+function recordPointEntry(entry) {
+  if (!entry) {
+    return;
+  }
+  store.pointLedger = mergePointLedger(store.pointLedger, [entry]);
+  store.pointHistory = mergePointHistory(store.pointHistory, [entry]);
+}
+
+function removePointEntryById(entryId) {
+  if (!entryId) {
+    return false;
+  }
+  const nextLedger = store.pointLedger.filter((entry) => entry.id !== entryId);
+  const nextHistory = store.pointHistory.filter((entry) => entry.id !== entryId);
+  const changed = nextLedger.length !== store.pointLedger.length || nextHistory.length !== store.pointHistory.length;
+  store.pointLedger = nextLedger;
+  store.pointHistory = nextHistory;
+  return changed;
 }
 
 function renderCanopy() {
@@ -2648,8 +2699,7 @@ function syncRecurringBonusState(today = todayString()) {
       }
       activeKeys.add(bonus.key);
       if (bonus.claimedEntryId && (!bonus.completedAll || !bonus.allowedCategories.some((category) => category.key === (store.pointLedger.find((entry) => entry.id === bonus.claimedEntryId)?.categoryKey || "")))) {
-        store.pointLedger = store.pointLedger.filter((entry) => entry.id !== bonus.claimedEntryId);
-        changed = true;
+        changed = removePointEntryById(bonus.claimedEntryId) || changed;
       }
     }
   }
@@ -2908,7 +2958,8 @@ function renderTreeDetailIfOpen() {
   }
 
   const treeState = getTreeDisplayState();
-  const pointSummary = getPointLedgerSummary();
+  const pointHistory = getRecentPointHistory();
+  const devSettings = normalizeDevSettings(store.devSettings);
   const visibleCategories = treeState.categories.filter((category) => category.availablePoints > 0 || category.bankedPoints > 0 || category.earnedPoints > 0 || category.adjustmentPoints !== 0);
 
   treeDetailBody.innerHTML = `
@@ -2963,16 +3014,24 @@ function renderTreeDetailIfOpen() {
         <div class="tree-detail-section-header">
           <div>
             <p class="eyebrow">Points</p>
-            <h3>Point source breakdown</h3>
+            <h3>Recent point history</h3>
+            <p class="sync-status">Showing the last 7 days of point awards, up to ${escapeHtml(String(devSettings.maxPointHistoryEntries))} entries.</p>
           </div>
         </div>
         <div class="tree-detail-sources">
-          ${pointSummary.bySource.length > 0 ? pointSummary.bySource.map((entry) => `
-            <div class="developer-point-item source">
-              <span>${escapeHtml(entry.label)}</span>
-              <strong>${escapeHtml(formatPointsLabel(entry.points))}</strong>
-            </div>
-          `).join("") : '<p class="tree-point-empty">No point sources recorded yet.</p>'}
+          ${pointHistory.length > 0 ? pointHistory.map((entry) => `
+            <article class="tree-detail-source-item">
+              <div class="tree-detail-source-heading">
+                <strong>${escapeHtml(entry.sourceLabel || entry.taskName || "Point award")}</strong>
+                <span class="task-chip points-chip" style="--chip-color: ${escapeHtml(entry.categoryColor)}">${escapeHtml(formatPointsLabel(entry.points))}</span>
+              </div>
+              <div class="tree-detail-source-meta">
+                <span class="task-chip category-chip" style="--chip-color: ${escapeHtml(entry.categoryColor)}">${escapeHtml(entry.categoryLabel)}</span>
+                <span>${escapeHtml(`Awarded ${formatDateTime(entry.at)}`)}</span>
+                ${formatPointHistoryDueLabel(entry) ? `<span>${escapeHtml(`Due ${formatPointHistoryDueLabel(entry)}`)}</span>` : ""}
+              </div>
+            </article>
+          `).join("") : '<p class="tree-point-empty">No recent point awards are recorded yet.</p>'}
         </div>
       </section>
     </section>
@@ -2981,6 +3040,14 @@ function renderTreeDetailIfOpen() {
   treeDetailBody.querySelector("[data-tree-detail-action='harvest']")?.addEventListener("click", () => {
     harvestRipeFruit();
   });
+}
+
+function formatPointHistoryDueLabel(entry) {
+  if (!entry?.dueDate) {
+    return "";
+  }
+  const time = entry.timeOfDay || "23:59";
+  return formatDateTime(`${entry.dueDate}T${time}:00`);
 }
 
 function renderTreeStyleIfOpen() {
@@ -4775,19 +4842,28 @@ function normalizeStore(input) {
   const widgets = normalizeWidgets(input.widgets);
   const retiredWidgets = normalizeWidgets(input.retiredWidgets);
   const resolveStoredCategorySnapshot = createCategorySnapshotResolver(categories, widgets);
+  const devSettings = normalizeDevSettings(input.devSettings);
+  const normalizedPointLedger = normalizePointLedgerBase(input.pointLedger, {
+    defaultCategoryKey: DEFAULT_CATEGORY_KEY,
+    normalizeCategoryColor,
+    resolveCategorySnapshot: resolveStoredCategorySnapshot
+  });
+  const pointHistorySource = Array.isArray(input.pointHistory) ? input.pointHistory : normalizedPointLedger;
   const normalized = {
-    version: 15,
+    version: 16,
     updatedAt: typeof input.updatedAt === "number" ? input.updatedAt : Date.now(),
     driveFileId: typeof input.driveFileId === "string" ? input.driveFileId : "",
     profile: normalizeProfile(input.profile),
     tasks,
-    pointLedger: normalizePointLedgerBase(input.pointLedger, {
+    pointLedger: normalizedPointLedger,
+    pointHistory: normalizePointHistoryBase(pointHistorySource, {
       defaultCategoryKey: DEFAULT_CATEGORY_KEY,
       normalizeCategoryColor,
-      resolveCategorySnapshot: resolveStoredCategorySnapshot
+      resolveCategorySnapshot: resolveStoredCategorySnapshot,
+      maxEntries: devSettings.maxPointHistoryEntries
     }),
     treeState: normalizeTreeState(input.treeState),
-    devSettings: normalizeDevSettings(input.devSettings),
+    devSettings,
     categories,
     widgets,
     retiredWidgets,
@@ -5114,6 +5190,7 @@ function mergeRecurringBonusSelections(localSelections = [], remoteSelections = 
 
 function persistStore({ touchUpdatedAt = true, touchUserUpdatedAt = touchUpdatedAt } = {}) {
   const now = Date.now();
+  store.pointHistory = normalizePointHistory(store.pointHistory, store.devSettings);
   if (touchUpdatedAt) {
     store.updatedAt = now;
   }
@@ -5131,13 +5208,14 @@ function persistLocalStore(nextStore) {
 function createEmptyStore() {
   const now = Date.now();
   const emptyStore = {
-    version: 15,
+    version: 16,
     updatedAt: now,
     userUpdatedAt: now,
     driveFileId: "",
     profile: normalizeProfile({}),
     tasks: [],
     pointLedger: [],
+    pointHistory: [],
     treeState: normalizeTreeState({}),
     devSettings: normalizeDevSettings({}),
     categories: normalizeCategoryDefinitions([]),
@@ -5163,6 +5241,9 @@ function mergeStores(localStore, remoteStore) {
   const mergedCategories = mergeCategoryDefinitions(localStore.categories, remoteStore.categories);
   const mergedWidgets = mergeWidgetLists(localStore.widgets, remoteStore.widgets, widgetRegistryHelpers(), MAX_WIDGETS);
   const preferredUserState = choosePreferredUserSyncState(localStore, remoteStore);
+  const mergedDevSettings = (localStore.updatedAt || 0) >= (remoteStore.updatedAt || 0)
+    ? normalizeDevSettings(localStore.devSettings)
+    : normalizeDevSettings(remoteStore.devSettings);
   const mergedById = new Map();
   const localById = new Map(localStore.tasks.map((task) => [task.id, task]));
   const remoteById = new Map(remoteStore.tasks.map((task) => [task.id, task]));
@@ -5185,7 +5266,7 @@ function mergeStores(localStore, remoteStore) {
   }
 
   return {
-    version: 15,
+    version: 16,
     updatedAt: Math.max(localStore.updatedAt || 0, remoteStore.updatedAt || 0),
     userUpdatedAt: preferredUserState.userUpdatedAt,
     userFingerprint: preferredUserState.userFingerprint,
@@ -5193,10 +5274,13 @@ function mergeStores(localStore, remoteStore) {
     profile: choosePreferredProfile(localStore.profile, remoteStore.profile),
     tasks: Array.from(mergedById.values()).sort((a, b) => b.createdAt - a.createdAt).slice(0, MAX_TASKS),
     pointLedger: mergePointLedger(localStore.pointLedger, remoteStore.pointLedger),
+    pointHistory: mergePointHistory(
+      Array.isArray(localStore.pointHistory) ? localStore.pointHistory : localStore.pointLedger,
+      Array.isArray(remoteStore.pointHistory) ? remoteStore.pointHistory : remoteStore.pointLedger,
+      mergedDevSettings
+    ),
     treeState: choosePreferredTreeState(localStore.treeState, remoteStore.treeState),
-    devSettings: (localStore.updatedAt || 0) >= (remoteStore.updatedAt || 0)
-      ? normalizeDevSettings(localStore.devSettings)
-      : normalizeDevSettings(remoteStore.devSettings),
+    devSettings: mergedDevSettings,
     categories: mergedCategories,
     widgets: mergedWidgets,
     retiredWidgets: mergeRetiredWidgets(localStore.retiredWidgets, remoteStore.retiredWidgets, mergedWidgets),
@@ -5515,6 +5599,7 @@ function renderDeveloperPanel() {
 
   const devSettings = normalizeDevSettings(store.devSettings);
   developerMaxTaskPoints.value = String(devSettings.maxTaskPoints);
+  developerMaxPointHistoryEntries.value = String(devSettings.maxPointHistoryEntries);
   taskPointsInput.max = String(devSettings.maxTaskPoints);
   developerFruitSummary.innerHTML = renderDeveloperFruitSummary(getTreeDisplayState());
   developerPointsSummary.innerHTML = renderDeveloperPointsSummary(getPointLedgerSummary());
@@ -5533,6 +5618,20 @@ function updateMaxTaskPointsSetting() {
   setSyncStatus(`Max task points updated to ${nextValue}. Future task edits use this cap.`, "info");
 }
 
+function updateMaxPointHistoryEntriesSetting() {
+  const nextValue = Math.max(1, Math.min(DEFAULT_MAX_POINT_HISTORY_ENTRIES, parsePositiveNumber(developerMaxPointHistoryEntries.value) || DEFAULT_MAX_POINT_HISTORY_ENTRIES));
+  store.devSettings = normalizeDevSettings({
+    ...store.devSettings,
+    maxPointHistoryEntries: nextValue
+  });
+  store.pointHistory = normalizePointHistory(store.pointHistory, store.devSettings);
+  developerMaxPointHistoryEntries.value = String(nextValue);
+  persistStore();
+  renderDeveloperPanel();
+  renderTreeDetailIfOpen();
+  setSyncStatus(`Recent point history is now capped at ${nextValue} entries over the last 7 days.`, "info");
+}
+
 function injectDeveloperPoints() {
   if (!isDeveloperUser()) {
     return;
@@ -5546,7 +5645,7 @@ function injectDeveloperPoints() {
     return;
   }
 
-  store.pointLedger = mergePointLedger(store.pointLedger, [{
+  recordPointEntry({
     id: createId(),
     taskId: "",
     taskName: "",
@@ -5555,13 +5654,16 @@ function injectDeveloperPoints() {
     categoryKey: category.key,
     categoryLabel: category.label,
     categoryColor: category.color,
+    dueDate: "",
+    timeOfDay: "",
     sourceKey: `developer:${slugifyCategoryKey(source) || "injection"}`,
     sourceType: "developer",
     sourceLabel: source
-  }]);
+  });
 
   persistStore();
   renderDeveloperPanel();
+  renderTreeDetailIfOpen();
   setSyncStatus(`Injected ${formatPointsLabel(points)} into ${category.label}.`, "info");
 }
 
@@ -5813,7 +5915,7 @@ function awardPointsForTask(task, at = Date.now()) {
   }
 
   task.pointsEntryId = entry.id;
-  store.pointLedger = mergePointLedger(store.pointLedger, [entry]);
+  recordPointEntry(entry);
   return entry;
 }
 
@@ -5822,9 +5924,7 @@ function revokePointsForTask(task) {
     return false;
   }
 
-  const nextLedger = store.pointLedger.filter((entry) => entry.id !== task.pointsEntryId);
-  const changed = nextLedger.length !== store.pointLedger.length;
-  store.pointLedger = nextLedger;
+  const changed = removePointEntryById(task.pointsEntryId);
   task.pointsEntryId = "";
   return changed;
 }
@@ -5849,6 +5949,10 @@ function syncTaskPointAward(task) {
     ...store.pointLedger.filter((entry) => entry.id !== nextEntry.id),
     nextEntry
   ].sort((left, right) => left.at - right.at);
+  store.pointHistory = mergePointHistory(
+    store.pointHistory.filter((entry) => entry.id !== nextEntry.id),
+    [nextEntry]
+  );
 }
 
 function deriveTaskNotBeforeAt({ recurrence, startDate, dueDate, originalTask = null, startDateWasImplicit = false }) {
