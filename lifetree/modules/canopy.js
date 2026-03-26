@@ -93,6 +93,7 @@ export function renderCanopyColumns(container, {
   columns,
   escapeHtml,
   formatDate,
+  formatPointsLabel,
   getPendingActionForTask,
   renderPriorityIndicator
 }) {
@@ -118,7 +119,7 @@ export function renderCanopyColumns(container, {
         ${column.visibleStandardItems.length > 0
           ? column.visibleStandardItems.map((item) => renderCanopyTask(item, formatDate, escapeHtml, getPendingActionForTask, renderPriorityIndicator)).join("")
           : ""}
-        ${renderRecurringGroupRow(column, escapeHtml)}
+        ${renderRecurringGroupRow(column, escapeHtml, formatPointsLabel)}
         ${column.visibleStandardItems.length === 0 && column.recurringGroups.length === 0 ? '<p class="canopy-empty">No tasks queued.</p>' : ""}
       </div>
     </section>
@@ -130,6 +131,7 @@ export function renderCanopyDetailContent(container, {
   columns,
   escapeHtml,
   formatDate,
+  formatPointsLabel,
   getPendingActionForTask,
   renderPriorityIndicator
 }) {
@@ -155,6 +157,7 @@ export function renderCanopyDetailContent(container, {
     }
 
     container.innerHTML = `
+      ${renderRecurringBonusPanel(group, detail.columnKey, escapeHtml, formatPointsLabel)}
       <div class="canopy-detail-list recurring">
         ${group.seriesCards.map((series) => renderRecurringDetailSeriesCard(series, formatDate, escapeHtml, getPendingActionForTask, renderPriorityIndicator)).join("")}
       </div>
@@ -182,7 +185,7 @@ export function renderCanopyDetailContent(container, {
   };
 }
 
-function renderRecurringGroupRow(column, escapeHtml) {
+function renderRecurringGroupRow(column, escapeHtml, formatPointsLabel) {
   if (column.recurringGroups.length === 0) {
     return "";
   }
@@ -190,18 +193,77 @@ function renderRecurringGroupRow(column, escapeHtml) {
   return `
     <div class="canopy-recurring-row">
       ${column.recurringGroups.map((group) => `
-        <button
-          type="button"
-          class="canopy-group-card"
-          data-canopy-action="open-group"
-          data-column-key="${column.key}"
-          data-group-key="${group.key}"
-        >
-          <strong>${escapeHtml(group.label)}</strong>
-          <span>${group.resolvedSeriesCount}/${group.seriesCards.length} finished</span>
-        </button>
+        <div class="canopy-group-entry">
+          <button
+            type="button"
+            class="canopy-group-card"
+            data-canopy-action="open-group"
+            data-column-key="${column.key}"
+            data-group-key="${group.key}"
+          >
+            <strong>${escapeHtml(group.label)}</strong>
+            <span>${group.resolvedSeriesCount}/${group.seriesCards.length} finished</span>
+          </button>
+          ${group.bonus?.collectible ? `
+            <button
+              type="button"
+              class="canopy-group-star"
+              data-canopy-action="collect-group-bonus"
+              data-column-key="${column.key}"
+              data-group-key="${group.key}"
+              style="--canopy-bonus-color: ${escapeHtml(group.bonus.selectedCategory?.color || "#f4c95d")}"
+              title="${escapeHtml(`Collect ${formatPointsLabel(group.bonus.points)} in ${group.bonus.selectedCategory?.label || "the selected category"}`)}"
+              aria-label="${escapeHtml(`Collect ${group.label} bonus`)}"
+            >★</button>
+          ` : ""}
+        </div>
       `).join("")}
     </div>
+  `;
+}
+
+function renderRecurringBonusPanel(group, columnKey, escapeHtml, formatPointsLabel) {
+  const bonus = group.bonus;
+  if (!bonus || bonus.allowedCategories.length === 0) {
+    return "";
+  }
+
+  return `
+    <section class="canopy-bonus-panel${bonus.collectible ? " ready" : ""}${bonus.claimed ? " claimed" : ""}" style="--canopy-bonus-color: ${escapeHtml(bonus.selectedCategory?.color || "#f4c95d")}">
+      <div class="canopy-bonus-copy">
+        <strong>${escapeHtml(group.label)} bonus</strong>
+        <span>${escapeHtml(
+          bonus.claimed
+            ? `Collected ${formatPointsLabel(bonus.points)} in ${bonus.claimedCategoryLabel || bonus.selectedCategory?.label || "the selected category"} for this ${bonus.periodLabel}.`
+            : bonus.collectible
+              ? `All tasks for this ${bonus.periodLabel} are complete. Collect ${formatPointsLabel(bonus.points)} in an eligible category.`
+              : `Complete every ${group.label.toLowerCase()} task in this ${bonus.periodLabel} to unlock ${formatPointsLabel(bonus.points)}.`
+        )}</span>
+      </div>
+      <div class="canopy-bonus-controls">
+        <label class="canopy-bonus-field">
+          <span>Bonus type</span>
+          <select
+            data-canopy-bonus-select="true"
+            data-column-key="${columnKey}"
+            data-group-key="${group.key}"
+            ${bonus.claimed ? "disabled" : ""}
+          >
+            ${bonus.allowedCategories.map((category) => `
+              <option value="${escapeHtml(category.key)}"${category.key === bonus.selectedCategoryKey ? " selected" : ""}>${escapeHtml(category.label)}</option>
+            `).join("")}
+          </select>
+        </label>
+        <button
+          type="button"
+          class="ghost-button canopy-bonus-collect"
+          data-canopy-action="collect-group-bonus"
+          data-column-key="${columnKey}"
+          data-group-key="${group.key}"
+          ${!bonus.collectible ? "disabled" : ""}
+        >${bonus.claimed ? "Collected" : `Collect ${formatPointsLabel(bonus.points)}`}</button>
+      </div>
+    </section>
   `;
 }
 

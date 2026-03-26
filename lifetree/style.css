@@ -101,6 +101,7 @@ body[data-theme="dark"] .canopy-task-main,
 body[data-theme="dark"] .canopy-task-icon,
 body[data-theme="dark"] .canopy-task-undo,
 body[data-theme="dark"] .canopy-group-card,
+body[data-theme="dark"] .canopy-group-star,
 body[data-theme="dark"] .canopy-group-toggle,
 body[data-theme="dark"] .energy-widget-level,
 body[data-theme="dark"] .tree-point-pill,
@@ -127,6 +128,19 @@ body[data-theme="dark"] .canopy-group-task {
     linear-gradient(90deg, color-mix(in srgb, var(--canopy-category-color, #7dbf74) 18%, rgba(24, 35, 52, 0.96)), transparent 26%);
   border-color: color-mix(in srgb, var(--canopy-category-color, #7dbf74) 36%, rgba(214, 228, 246, 0.18));
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+body[data-theme="dark"] .canopy-bonus-panel {
+  background:
+    linear-gradient(180deg, rgba(24, 35, 52, 0.96), rgba(18, 28, 42, 0.96)),
+    linear-gradient(90deg, color-mix(in srgb, var(--canopy-bonus-color, #f4c95d) 18%, rgba(24, 35, 52, 0.96)), transparent 26%);
+  border-color: color-mix(in srgb, var(--canopy-bonus-color, #f4c95d) 32%, rgba(214, 228, 246, 0.18));
+}
+
+body[data-theme="dark"] .canopy-group-star {
+  color: color-mix(in srgb, var(--canopy-bonus-color, #f4c95d) 82%, #fff0b6);
+  background: rgba(24, 35, 52, 0.92);
+  border-color: color-mix(in srgb, var(--canopy-bonus-color, #f4c95d) 34%, rgba(214, 228, 246, 0.18));
 }
 
 body[data-theme="dark"] .canopy-task-icon.complete,
@@ -742,6 +756,13 @@ body.developer-open {
   gap: 10px;
 }
 
+.canopy-group-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: stretch;
+}
+
 .canopy-group-card {
   display: grid;
   gap: 4px;
@@ -752,6 +773,26 @@ body.developer-open {
 
 .canopy-group-card strong {
   font-size: 0.9rem;
+}
+
+.canopy-group-star {
+  width: 44px;
+  min-width: 44px;
+  border-radius: 16px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: color-mix(in srgb, var(--canopy-bonus-color, #f4c95d) 72%, #8b6412);
+  background: color-mix(in srgb, var(--canopy-bonus-color, #f4c95d) 18%, rgba(255, 255, 255, 0.94));
+  border: 1px solid color-mix(in srgb, var(--canopy-bonus-color, #f4c95d) 38%, rgba(37, 50, 67, 0.14));
+  box-shadow: 0 10px 24px rgba(37, 50, 67, 0.08);
+}
+
+.canopy-group-star:hover {
+  transform: translateY(-1px);
 }
 
 .canopy-task-main > span,
@@ -774,6 +815,61 @@ body.developer-open {
 .canopy-detail-list {
   display: grid;
   gap: 12px;
+}
+
+.canopy-bonus-panel {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 14px;
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(248, 237, 219, 0.96)),
+    linear-gradient(90deg, color-mix(in srgb, var(--canopy-bonus-color, #f4c95d) 24%, white), transparent 26%);
+  border: 1px solid color-mix(in srgb, var(--canopy-bonus-color, #f4c95d) 36%, rgba(37, 50, 67, 0.12));
+}
+
+.canopy-bonus-panel.ready {
+  box-shadow: 0 16px 36px rgba(37, 50, 67, 0.08);
+}
+
+.canopy-bonus-panel.claimed {
+  opacity: 0.82;
+}
+
+.canopy-bonus-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.canopy-bonus-copy strong {
+  font-size: 0.95rem;
+}
+
+.canopy-bonus-copy span,
+.canopy-bonus-field span {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.canopy-bonus-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.canopy-bonus-field {
+  display: grid;
+  gap: 6px;
+}
+
+.canopy-bonus-field select {
+  min-width: 0;
+}
+
+.canopy-bonus-collect {
+  white-space: nowrap;
 }
 
 .canopy-detail-footer {

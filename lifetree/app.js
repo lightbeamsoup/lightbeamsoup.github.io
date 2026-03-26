@@ -83,6 +83,11 @@ const DEFAULT_CATEGORY_KEY = "productivity";
 const DEFAULT_IMPORTANCE = "medium";
 const DEFAULT_LATE_GRACE_MINUTES = 15;
 const TEMPORAL_REFRESH_MS = 30_000;
+const RECURRING_BONUS_POINTS = {
+  daily: 5,
+  weekly: 25,
+  monthly: 50
+};
 
 const BASE_CATEGORIES = [
   { key: "fun", label: "Fun", color: "#f4b64e", builtin: true },
@@ -462,6 +467,7 @@ closeWidgetMenuButton.addEventListener("click", closeWidgetMenu);
 widgetMenuOptions.addEventListener("click", handleWidgetMenuSelection);
 canopyColumns.addEventListener("click", handleCanopyAction);
 canopyDetailBody.addEventListener("click", handleCanopyAction);
+canopyDetailBody.addEventListener("change", handleCanopyChange);
 treeHarvestButton.addEventListener("click", harvestRipeFruit);
 openTreeStyleButton.addEventListener("click", openTreeStyle);
 openTreeDetailButton.addEventListener("click", openTreeDetail);
@@ -1162,6 +1168,17 @@ function handleCanopyAction(event) {
     return;
   }
 
+  if (action === "collect-group-bonus") {
+    const columnKey = actionTarget.getAttribute("data-column-key") || "today";
+    const groupKey = actionTarget.getAttribute("data-group-key") || "";
+    const group = findCanopyRecurringGroup(columnKey, groupKey);
+    if (!group) {
+      return;
+    }
+    collectRecurringGroupBonus(group);
+    return;
+  }
+
   if (action === "undo") {
     const pendingKey = actionTarget.getAttribute("data-pending-key");
     if (pendingKey) {
@@ -1287,6 +1304,76 @@ function handleCanopyAction(event) {
       }
     });
   }
+}
+
+function handleCanopyChange(event) {
+  const selection = event.target.closest("[data-canopy-bonus-select]");
+  if (!selection) {
+    return;
+  }
+
+  const columnKey = selection.getAttribute("data-column-key") || "today";
+  const groupKey = selection.getAttribute("data-group-key") || "";
+  const group = findCanopyRecurringGroup(columnKey, groupKey);
+  if (!group?.bonus) {
+    return;
+  }
+
+  const categoryKey = String(selection.value || "");
+  if (!group.bonus.allowedCategories.some((category) => category.key === categoryKey)) {
+    return;
+  }
+
+  if (setRecurringBonusSelection(group.bonus.key, categoryKey)) {
+    persistStore();
+    renderAll();
+  }
+}
+
+function findCanopyRecurringGroup(columnKey, groupKey) {
+  return canopyState.columns
+    .find((column) => column.key === columnKey)
+    ?.recurringGroups.find((group) => group.key === groupKey) || null;
+}
+
+function collectRecurringGroupBonus(group) {
+  const bonus = group?.bonus;
+  if (!bonus) {
+    return;
+  }
+
+  if (bonus.claimed) {
+    setSyncStatus(`${group.label} bonus has already been collected for this ${bonus.periodLabel}.`, "info");
+    return;
+  }
+
+  if (!bonus.collectible) {
+    setSyncStatus(`Complete every ${group.label.toLowerCase()} task in this ${bonus.periodLabel} before collecting the bonus.`, "error");
+    return;
+  }
+
+  const category = bonus.selectedCategory || bonus.allowedCategories[0] || null;
+  if (!category) {
+    setSyncStatus("No eligible bonus category is available for that recurring group.", "error");
+    return;
+  }
+
+  store.pointLedger = mergePointLedger(store.pointLedger, [{
+    id: createId(),
+    taskId: "",
+    taskName: `${group.label} bonus`,
+    at: Date.now(),
+    points: bonus.points,
+    categoryKey: category.key,
+    categoryLabel: category.label,
+    categoryColor: category.color,
+    sourceKey: `recurring-bonus:${bonus.key}`,
+    sourceType: "recurring-bonus",
+    sourceLabel: `${group.label} completion bonus`
+  }]);
+  persistStore();
+  renderAll();
+  setSyncStatus(`Collected ${formatPointsLabel(bonus.points)} in ${category.label} from ${group.label}.`, "info");
 }
 
 function openWidgetMenu(slotIndex) {
@@ -2066,6 +2153,9 @@ function renderAll() {
   if (applyAutoArchiving()) {
     persistStore({ touchUserUpdatedAt: false });
   }
+  if (syncRecurringBonusState()) {
+    persistStore({ touchUserUpdatedAt: false });
+  }
   renderCanopy();
   renderTemporalUi();
   renderTreeCore();
@@ -2157,7 +2247,27 @@ function renderCanopy() {
       blocked: isBlocked(card.task),
       blockedNote: describeCompletionGate(card.task)
     }));
-  const recurringEntries = store.tasks
+  const today = todayString();
+  const recurringEntries = buildRecurringCanopyEntries();
+
+  canopyState.columns = enrichCanopyColumnsWithRecurringBonuses(buildCanopyColumnsData({
+    standardCards,
+    recurringEntries,
+    today
+  }), today);
+
+  renderCanopyColumns(canopyColumns, {
+    columns: canopyState.columns,
+    escapeHtml,
+    formatDate,
+    formatPointsLabel,
+    getPendingActionForTask,
+    renderPriorityIndicator
+  });
+}
+
+function buildRecurringCanopyEntries() {
+  return store.tasks
     .filter((task) => !task.archived && !task.historyOnly && task.recurrence.type !== "none" && (task.status === "open" || task.status === "done" || task.status === "skipped"))
     .map((task) => ({
       key: task.id,
@@ -2166,20 +2276,159 @@ function renderCanopy() {
       blocked: isBlocked(task),
       blockedNote: describeCompletionGate(task)
     }));
+}
 
-  canopyState.columns = buildCanopyColumnsData({
-    standardCards,
+function enrichCanopyColumnsWithRecurringBonuses(columns, today = todayString()) {
+  return columns.map((column) => ({
+    ...column,
+    recurringGroups: column.recurringGroups.map((group) => ({
+      ...group,
+      bonus: buildRecurringGroupBonusState(group, today)
+    }))
+  }));
+}
+
+function buildRecurringGroupBonusState(group, today = todayString()) {
+  const points = RECURRING_BONUS_POINTS[group?.key] || 0;
+  if (!group || !points || !Array.isArray(group.tasks) || group.tasks.length === 0) {
+    return null;
+  }
+
+  const periodKey = buildRecurringBonusPeriodKey(group.key, today);
+  const key = `${group.key}:${periodKey}`;
+  const allowedCategories = collectRecurringBonusCategories(group.tasks);
+  const selectedCategoryKey = getRecurringBonusSelection(key) || allowedCategories[0]?.key || "";
+  const selectedCategory = allowedCategories.find((category) => category.key === selectedCategoryKey) || allowedCategories[0] || null;
+  const claimedEntry = store.pointLedger.find((entry) => entry.sourceKey === `recurring-bonus:${key}`) || null;
+  const completedAll = group.tasks.every((entry) => entry.task.status === "done");
+
+  return {
+    key,
+    periodKey,
+    periodLabel: group.periodLabel,
+    points,
+    allowedCategories,
+    selectedCategoryKey,
+    selectedCategory,
+    claimed: Boolean(claimedEntry),
+    claimedEntryId: claimedEntry?.id || "",
+    claimedCategoryLabel: claimedEntry?.categoryLabel || "",
+    completedAll,
+    collectible: completedAll && !claimedEntry && Boolean(selectedCategory)
+  };
+}
+
+function buildRecurringBonusPeriodKey(groupKey, today = todayString()) {
+  if (groupKey === "daily") {
+    return today;
+  }
+  if (groupKey === "weekly") {
+    const start = startOfWeekString(today);
+    return `${start}:${addDaysToDateString(start, 6)}`;
+  }
+  if (groupKey === "monthly") {
+    return today.slice(0, 7);
+  }
+  return today;
+}
+
+function collectRecurringBonusCategories(entries = []) {
+  const categories = new Map();
+  for (const entry of entries) {
+    const category = resolveCategorySnapshot(entry.task.categoryKey || DEFAULT_CATEGORY_KEY, entry.task);
+    if (!categories.has(category.key)) {
+      categories.set(category.key, category);
+    }
+  }
+  return Array.from(categories.values()).sort((left, right) => left.label.localeCompare(right.label));
+}
+
+function getRecurringBonusSelection(key) {
+  return store.recurringBonusSelections.find((entry) => entry.key === key)?.selectedCategoryKey || "";
+}
+
+function setRecurringBonusSelection(key, categoryKey) {
+  const nextKey = slugifyCategoryKey(categoryKey || "");
+  const current = store.recurringBonusSelections.find((entry) => entry.key === key) || null;
+  if (!nextKey) {
+    if (!current) {
+      return false;
+    }
+    store.recurringBonusSelections = store.recurringBonusSelections.filter((entry) => entry.key !== key);
+    return true;
+  }
+  if (current?.selectedCategoryKey === nextKey) {
+    return false;
+  }
+  const nextRecord = {
+    key,
+    selectedCategoryKey: nextKey,
+    updatedAt: Date.now()
+  };
+  store.recurringBonusSelections = [
+    ...store.recurringBonusSelections.filter((entry) => entry.key !== key),
+    nextRecord
+  ].sort((left, right) => left.key.localeCompare(right.key));
+  return true;
+}
+
+function pruneRecurringBonusSelections(activeKeys = new Set()) {
+  const nextSelections = store.recurringBonusSelections.filter((entry) => activeKeys.has(entry.key));
+  if (nextSelections.length === store.recurringBonusSelections.length) {
+    return false;
+  }
+  store.recurringBonusSelections = nextSelections;
+  return true;
+}
+
+function syncRecurringBonusState(today = todayString()) {
+  const recurringEntries = buildRecurringCanopyEntries();
+  const columns = enrichCanopyColumnsWithRecurringBonuses(buildCanopyColumnsData({
+    standardCards: [],
     recurringEntries,
-    today: todayString()
-  });
+    today
+  }), today);
 
-  renderCanopyColumns(canopyColumns, {
-    columns: canopyState.columns,
-    escapeHtml,
-    formatDate,
-    getPendingActionForTask,
-    renderPriorityIndicator
-  });
+  const activeKeys = new Set();
+  let changed = false;
+
+  for (const column of columns) {
+    for (const group of column.recurringGroups) {
+      const bonus = group.bonus;
+      if (!bonus) {
+        continue;
+      }
+      activeKeys.add(bonus.key);
+      if (bonus.claimedEntryId && (!bonus.completedAll || !bonus.allowedCategories.some((category) => category.key === (store.pointLedger.find((entry) => entry.id === bonus.claimedEntryId)?.categoryKey || "")))) {
+        store.pointLedger = store.pointLedger.filter((entry) => entry.id !== bonus.claimedEntryId);
+        changed = true;
+      }
+    }
+  }
+
+  if (pruneRecurringBonusSelections(activeKeys)) {
+    changed = true;
+  }
+
+  return changed;
+}
+
+function startOfWeekString(value) {
+  const date = new Date(`${value}T12:00:00`);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  date.setDate(date.getDate() - date.getDay());
+  return toDateString(date);
+}
+
+function addDaysToDateString(value, days) {
+  const date = new Date(`${value}T12:00:00`);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  date.setDate(date.getDate() + days);
+  return toDateString(date);
 }
 
 function renderCanopyDetailIfOpen() {
@@ -2192,6 +2441,7 @@ function renderCanopyDetailIfOpen() {
     columns: canopyState.columns,
     escapeHtml,
     formatDate,
+    formatPointsLabel,
     getPendingActionForTask,
     renderPriorityIndicator
   });
@@ -4268,7 +4518,7 @@ function normalizeStore(input) {
   const retiredWidgets = normalizeWidgets(input.retiredWidgets);
   const resolveStoredCategorySnapshot = createCategorySnapshotResolver(categories, widgets);
   const normalized = {
-    version: 14,
+    version: 15,
     updatedAt: typeof input.updatedAt === "number" ? input.updatedAt : Date.now(),
     driveFileId: typeof input.driveFileId === "string" ? input.driveFileId : "",
     profile: normalizeProfile(input.profile),
@@ -4282,7 +4532,8 @@ function normalizeStore(input) {
     devSettings: normalizeDevSettings(input.devSettings),
     categories,
     widgets,
-    retiredWidgets
+    retiredWidgets,
+    recurringBonusSelections: normalizeRecurringBonusSelections(input.recurringBonusSelections)
   };
   normalized.userUpdatedAt = typeof input.userUpdatedAt === "number"
     ? input.userUpdatedAt
@@ -4572,6 +4823,37 @@ function normalizeImportance(value) {
   return value === "low" || value === "high" ? value : DEFAULT_IMPORTANCE;
 }
 
+function normalizeRecurringBonusSelections(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((entry) => typeof entry?.key === "string" && entry.key)
+    .map((entry) => ({
+      key: entry.key,
+      selectedCategoryKey: slugifyCategoryKey(entry.selectedCategoryKey || ""),
+      updatedAt: typeof entry.updatedAt === "number" ? entry.updatedAt : 0
+    }))
+    .filter((entry) => entry.selectedCategoryKey)
+    .sort((left, right) => left.key.localeCompare(right.key));
+}
+
+function mergeRecurringBonusSelections(localSelections = [], remoteSelections = []) {
+  const mergedByKey = new Map();
+
+  for (const entry of normalizeRecurringBonusSelections(remoteSelections)) {
+    mergedByKey.set(entry.key, entry);
+  }
+  for (const entry of normalizeRecurringBonusSelections(localSelections)) {
+    const existing = mergedByKey.get(entry.key);
+    if (!existing || (entry.updatedAt || 0) >= (existing.updatedAt || 0)) {
+      mergedByKey.set(entry.key, entry);
+    }
+  }
+
+  return Array.from(mergedByKey.values()).sort((left, right) => left.key.localeCompare(right.key));
+}
+
 function persistStore({ touchUpdatedAt = true, touchUserUpdatedAt = touchUpdatedAt } = {}) {
   const now = Date.now();
   if (touchUpdatedAt) {
@@ -4591,7 +4873,7 @@ function persistLocalStore(nextStore) {
 function createEmptyStore() {
   const now = Date.now();
   const emptyStore = {
-    version: 14,
+    version: 15,
     updatedAt: now,
     userUpdatedAt: now,
     driveFileId: "",
@@ -4602,7 +4884,8 @@ function createEmptyStore() {
     devSettings: normalizeDevSettings({}),
     categories: normalizeCategoryDefinitions([]),
     widgets: [],
-    retiredWidgets: []
+    retiredWidgets: [],
+    recurringBonusSelections: []
   };
   emptyStore.userFingerprint = computeUserContentFingerprintFromNormalized(emptyStore);
   return emptyStore;
@@ -4644,7 +4927,7 @@ function mergeStores(localStore, remoteStore) {
   }
 
   return {
-    version: 14,
+    version: 15,
     updatedAt: Math.max(localStore.updatedAt || 0, remoteStore.updatedAt || 0),
     userUpdatedAt: preferredUserState.userUpdatedAt,
     userFingerprint: preferredUserState.userFingerprint,
@@ -4658,7 +4941,8 @@ function mergeStores(localStore, remoteStore) {
       : normalizeDevSettings(remoteStore.devSettings),
     categories: mergedCategories,
     widgets: mergedWidgets,
-    retiredWidgets: mergeRetiredWidgets(localStore.retiredWidgets, remoteStore.retiredWidgets, mergedWidgets)
+    retiredWidgets: mergeRetiredWidgets(localStore.retiredWidgets, remoteStore.retiredWidgets, mergedWidgets),
+    recurringBonusSelections: mergeRecurringBonusSelections(localStore.recurringBonusSelections, remoteStore.recurringBonusSelections)
   };
 }
 
@@ -4772,7 +5056,10 @@ function buildComparableStore(normalized) {
       .sort(compareWidgetFingerprints),
     retiredWidgets: (Array.isArray(normalized.retiredWidgets) ? normalized.retiredWidgets : [])
       .map((widget) => sortObjectKeys(widget))
-      .sort(compareWidgetFingerprints)
+      .sort(compareWidgetFingerprints),
+    recurringBonusSelections: normalizeRecurringBonusSelections(normalized.recurringBonusSelections)
+      .map((entry) => sortObjectKeys(entry))
+      .sort((left, right) => left.key.localeCompare(right.key))
   };
   return comparable;
 }
