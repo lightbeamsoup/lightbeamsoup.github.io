@@ -58,6 +58,21 @@ export function computeOccurrenceDate(baseDate, recurrence, offset) {
   return "";
 }
 
+export function describeTaskInstanceLabel(task) {
+  const slotIndex = Number.isInteger(task?.linkedSeries?.slotIndex) ? task.linkedSeries.slotIndex : -1;
+  const slotCount = Number.isInteger(task?.linkedSeries?.slotCount) ? task.linkedSeries.slotCount : 0;
+  if (slotIndex < 0 || slotCount <= 1) {
+    return "";
+  }
+  return `${slotIndex + 1}/${slotCount}`;
+}
+
+export function formatTaskDisplayName(task) {
+  const name = String(task?.name || "Untitled task");
+  const instanceLabel = describeTaskInstanceLabel(task);
+  return instanceLabel ? `${name} · ${instanceLabel}` : name;
+}
+
 export function buildHistoryFeed(tasks, sortMode = "newest", filterType = "all") {
   const entries = [];
 
@@ -75,7 +90,7 @@ export function buildHistoryFeed(tasks, sortMode = "newest", filterType = "all")
       entries.push({
         taskId: task.id,
         historyId: item.id || "",
-        taskName: task.name,
+        taskName: formatTaskDisplayName(task),
         at: item.at,
         type: item.type,
         status: task.status,

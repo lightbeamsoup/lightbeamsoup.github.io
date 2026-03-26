@@ -316,9 +316,18 @@
                   <span>Every</span>
                   <input id="weeklyInterval" name="weeklyInterval" type="number" min="1" value="1" />
                 </label>
-                <label>
-                  <span>Weekday</span>
-                  <select id="weeklyWeekday" name="weeklyWeekday">
+                <div class="weekday-picker-panel">
+                  <span>Days in the week</span>
+                  <div class="weekday-picker" id="weeklyDayPicker">
+                    <label><input type="checkbox" name="weeklyDays" value="0" />Sun</label>
+                    <label><input type="checkbox" name="weeklyDays" value="1" />Mon</label>
+                    <label><input type="checkbox" name="weeklyDays" value="2" />Tue</label>
+                    <label><input type="checkbox" name="weeklyDays" value="3" />Wed</label>
+                    <label><input type="checkbox" name="weeklyDays" value="4" />Thu</label>
+                    <label><input type="checkbox" name="weeklyDays" value="5" />Fri</label>
+                    <label><input type="checkbox" name="weeklyDays" value="6" />Sat</label>
+                  </div>
+                  <select id="weeklyWeekday" name="weeklyWeekday" class="hidden" aria-hidden="true">
                     <option value="0">Sunday</option>
                     <option value="1">Monday</option>
                     <option value="2">Tuesday</option>
@@ -327,7 +336,18 @@
                     <option value="5">Friday</option>
                     <option value="6">Saturday</option>
                   </select>
-                </label>
+                </div>
+              </div>
+
+              <div class="recurrence-extra recurrence-slot-panel" data-show-for="daily">
+                <div class="recurrence-slot-header">
+                  <div>
+                    <span>Additional times in the same day</span>
+                    <p class="sync-status">The main Time of day field is the first instance. Add more times here for instances 2 and beyond.</p>
+                  </div>
+                  <button type="button" class="ghost-button recurrence-slot-add" id="addDailyInstanceTime">Add time</button>
+                </div>
+                <div id="dailyInstanceTimes" class="recurrence-slot-list"></div>
               </div>
 
               <div class="split recurrence-extra" data-show-for="monthly-date">

@@ -96,6 +96,7 @@ body[data-theme="dark"] .sync-meta-card[data-state="info"] {
 body[data-theme="dark"] .hero-status-panel,
 body[data-theme="dark"] .widget-slot.empty .plus,
 body[data-theme="dark"] .widget-slot-choice,
+body[data-theme="dark"] .weekday-picker label,
 body[data-theme="dark"] .canopy-task-main,
 body[data-theme="dark"] .canopy-task-icon,
 body[data-theme="dark"] .canopy-task-undo,
@@ -1901,6 +1902,64 @@ textarea {
 
 .recurrence-extra.visible {
   display: grid;
+}
+
+.weekday-picker-panel,
+.recurrence-slot-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.weekday-picker-panel > span,
+.recurrence-slot-header span {
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.weekday-picker {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.weekday-picker label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(37, 50, 67, 0.12);
+  background: rgba(255, 255, 255, 0.72);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.weekday-picker input {
+  margin: 0;
+}
+
+.recurrence-slot-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: start;
+}
+
+.recurrence-slot-add {
+  white-space: nowrap;
+}
+
+.recurrence-slot-list {
+  display: grid;
+  gap: 10px;
+}
+
+.recurrence-slot-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
 }
 
 .form-actions {

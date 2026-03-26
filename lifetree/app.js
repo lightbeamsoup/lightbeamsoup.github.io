@@ -6,6 +6,7 @@ import {
   computeRecurringNotBeforeAt,
   computeOccurrenceDate,
   createArchivedSeriesRecord,
+  formatTaskDisplayName,
   findNextWidgetCompletionTask,
   getLatestLifecycleEntry,
   nthWeekdayOfMonth,
@@ -103,6 +104,8 @@ const LENGTH_ORDER = {
   long: 4,
   "very-long": 5
 };
+const LINKED_SERIES_KIND_DAILY = "daily-window";
+const LINKED_SERIES_KIND_WEEKLY = "weekly-window";
 
 const WEEKDAY_LABELS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const ORDINAL_LABELS = {
@@ -230,6 +233,9 @@ const dependenciesSelect = document.getElementById("dependencies");
 const recurrenceType = document.getElementById("recurrenceType");
 const recurrenceForeverInput = document.getElementById("recurrenceForever");
 const recurrenceExtras = Array.from(document.querySelectorAll(".recurrence-extra"));
+const weeklyDayPicker = document.getElementById("weeklyDayPicker");
+const addDailyInstanceTimeButton = document.getElementById("addDailyInstanceTime");
+const dailyInstanceTimes = document.getElementById("dailyInstanceTimes");
 const taskGrid = document.getElementById("taskGrid");
 const emptyState = document.getElementById("emptyState");
 const historyList = document.getElementById("historyList");
@@ -298,7 +304,8 @@ const authState = {
 
 const editState = {
   taskId: "",
-  scope: "single"
+  scope: "single",
+  linkedGroupId: ""
 };
 const composerPanelState = {
   categoryOptionsOpen: false,
@@ -430,6 +437,8 @@ updateRecurrenceVisibility();
 updateSkipVisibility();
 applyHeroState(loadHeroCollapsed());
 syncComposerPanelState();
+renderDailyInstanceTimes();
+setWeeklyDaySelection([Number(document.getElementById("weeklyWeekday").value || 0)]);
 taskPointsInput.dataset.auto = "true";
 syncTaskPointsDefault();
 renderTemporalUi();
@@ -478,6 +487,11 @@ editScope.addEventListener("change", () => {
 });
 recurrenceType.addEventListener("change", updateRecurrenceVisibility);
 recurrenceForeverInput.addEventListener("change", updateRecurrenceVisibility);
+addDailyInstanceTimeButton.addEventListener("click", () => {
+  appendDailyInstanceTimeRow("");
+});
+dailyInstanceTimes.addEventListener("click", handleDailyInstanceTimesClick);
+weeklyDayPicker.addEventListener("change", syncWeeklyWeekdayHiddenValue);
 skipRuleTypeInput.addEventListener("change", updateSkipVisibility);
 taskLengthInput.addEventListener("change", syncTaskPointsDefault);
 taskPointsInput.addEventListener("input", syncTaskPointsAutoState);
@@ -1465,13 +1479,36 @@ function handleSubmit(event) {
     return;
   }
 
-  const task = buildTaskFromForm(formData);
-  store.tasks.unshift(task);
+  const skipRule = buildSkipRule(formData);
+  const categorySnapshot = resolveCategorySnapshot(String(formData.get("category") || ""), null);
+  const recurrence = buildRecurrence(formData);
+  const draft = buildTaskDraftFromForm(formData, {
+    skipRule,
+    categorySnapshot,
+    recurrence
+  });
+  const slotConfig = buildLinkedSeriesSlotConfig(formData, draft, recurrence);
 
-  if (task.recurrence.type !== "none") {
-    regenerateSeries(task.id, { preserveClosed: false });
+  if (slotConfig) {
+    const templates = buildLinkedSeriesTemplatesFromDraft({
+      draft,
+      recurrence,
+      categorySnapshot,
+      slotConfig
+    });
+    store.tasks.unshift(...templates);
+    for (const template of templates) {
+      regenerateSeries(template.id, { preserveClosed: false });
+    }
+  } else {
+    const task = buildTaskFromValues(draft, null, categorySnapshot);
+    store.tasks.unshift(task);
+    if (task.recurrence.type !== "none") {
+      regenerateSeries(task.id, { preserveClosed: false });
+    }
   }
 
+  reconcileRecurringSeries();
   trimTasks();
   persistStore();
   resetComposer();
@@ -1519,7 +1556,21 @@ function buildTaskFromForm(formData, originalTask = null) {
     : buildSkipRule(formData, originalTask?.skipRule);
   const categorySnapshot = resolveCategorySnapshot(String(formData.get("category") || ""), originalTask);
   const recurrence = buildRecurrence(formData, originalTask?.recurrence);
-  return buildTaskFromValues({
+  return buildTaskFromValues(buildTaskDraftFromForm(formData, {
+    originalTask,
+    skipRule,
+    categorySnapshot,
+    recurrence
+  }), originalTask, categorySnapshot);
+}
+
+function buildTaskDraftFromForm(formData, { originalTask = null, skipRule, categorySnapshot, recurrence } = {}) {
+  const resolvedSkipRule = skipRule || (originalTask?.skipRule?.type === "widget-lockout"
+    ? normalizeSkipRule(originalTask.skipRule)
+    : buildSkipRule(formData, originalTask?.skipRule));
+  const resolvedCategory = categorySnapshot || resolveCategorySnapshot(String(formData.get("category") || ""), originalTask);
+  const resolvedRecurrence = recurrence || buildRecurrence(formData, originalTask?.recurrence);
+  return {
     name: String(formData.get("name") || "").trim(),
     details: String(formData.get("details") || "").trim(),
     startDate: String(formData.get("startDate") || ""),
@@ -1528,12 +1579,12 @@ function buildTaskFromForm(formData, originalTask = null) {
     lateGraceMinutes: parsePositiveOrZeroNumber(formData.get("lateGraceMinutes")) ?? originalTask?.lateGraceMinutes ?? DEFAULT_LATE_GRACE_MINUTES,
     points: formData.get("points"),
     length: String(formData.get("length") || "medium"),
-    category: categorySnapshot.key,
+    category: resolvedCategory.key,
     importance: String(formData.get("importance") || originalTask?.importance || DEFAULT_IMPORTANCE),
-    skipRule,
+    skipRule: resolvedSkipRule,
     dependencies: Array.from(dependenciesSelect.selectedOptions).map((option) => option.value),
-    recurrence
-  }, originalTask, categorySnapshot);
+    recurrence: resolvedRecurrence
+  };
 }
 
 function buildTaskFromValues(values, originalTask = null, categorySnapshot = null) {
@@ -1582,12 +1633,76 @@ function buildTaskFromValues(values, originalTask = null, categorySnapshot = nul
     ownerWidgetId: originalTask?.ownerWidgetId || "",
     ownerWidgetType: originalTask?.ownerWidgetType || "",
     ownerTaskKey: originalTask?.ownerTaskKey || "",
+    linkedSeries: normalizeLinkedSeries(values?.linkedSeries || originalTask?.linkedSeries),
+    sequenceDependencyId: typeof values?.sequenceDependencyId === "string"
+      ? values.sequenceDependencyId
+      : (typeof originalTask?.sequenceDependencyId === "string" ? originalTask.sequenceDependencyId : ""),
     widgetCompletion: normalizeWidgetCompletion(originalTask?.widgetCompletion),
     skipRule: normalizeSkipRule(values?.skipRule),
     dependencies: normalizedDependencies,
     recurrence: normalizedRecurrence,
     history: Array.isArray(originalTask?.history) ? originalTask.history : []
   };
+}
+
+function renderDailyInstanceTimes(times = []) {
+  if (!dailyInstanceTimes) {
+    return;
+  }
+  dailyInstanceTimes.innerHTML = "";
+  times.forEach((time) => appendDailyInstanceTimeRow(time));
+}
+
+function appendDailyInstanceTimeRow(value = "") {
+  if (!dailyInstanceTimes) {
+    return;
+  }
+  const row = document.createElement("div");
+  row.className = "recurrence-slot-row";
+  row.innerHTML = `
+    <input type="time" value="${escapeHtml(value)}" data-daily-instance-time />
+    <button type="button" class="ghost-button" data-remove-daily-instance-time>Remove</button>
+  `;
+  dailyInstanceTimes.appendChild(row);
+}
+
+function handleDailyInstanceTimesClick(event) {
+  const removeButton = event.target.closest("[data-remove-daily-instance-time]");
+  if (!removeButton) {
+    return;
+  }
+  removeButton.closest(".recurrence-slot-row")?.remove();
+}
+
+function collectDailyInstanceTimes(primaryTime) {
+  const times = [String(primaryTime || "").trim()]
+    .concat(Array.from(dailyInstanceTimes.querySelectorAll("[data-daily-instance-time]")).map((input) => String(input.value || "").trim()))
+    .filter(Boolean);
+  return [...new Set(times)].sort();
+}
+
+function setWeeklyDaySelection(days) {
+  const selected = new Set((Array.isArray(days) ? days : []).map((value) => Number(value)));
+  Array.from(weeklyDayPicker.querySelectorAll('input[name="weeklyDays"]')).forEach((input) => {
+    input.checked = selected.has(Number(input.value));
+  });
+  syncWeeklyWeekdayHiddenValue();
+}
+
+function getWeeklyDaySelection(defaultWeekday = 0) {
+  const selected = Array.from(weeklyDayPicker.querySelectorAll('input[name="weeklyDays"]:checked'))
+    .map((input) => Number(input.value))
+    .filter((value) => Number.isInteger(value))
+    .sort((left, right) => left - right);
+  if (selected.length > 0) {
+    return selected;
+  }
+  return [Number.isInteger(defaultWeekday) ? defaultWeekday : 0];
+}
+
+function syncWeeklyWeekdayHiddenValue() {
+  const selected = getWeeklyDaySelection(Number(document.getElementById("weeklyWeekday").value || 0));
+  document.getElementById("weeklyWeekday").value = String(selected[0] ?? 0);
 }
 
 function buildSkipRule(formData, originalSkipRule = null) {
@@ -1655,6 +1770,145 @@ function buildRecurrence(formData, originalRecurrence = null) {
   return recurrence;
 }
 
+function buildLinkedSeriesSlotConfig(formData, draft, recurrence) {
+  if (recurrence.type === "daily") {
+    const times = collectDailyInstanceTimes(draft.timeOfDay || "23:59");
+    if (times.length > 1) {
+      return {
+        kind: LINKED_SERIES_KIND_DAILY,
+        slots: times.map((time) => ({ timeOfDay: time }))
+      };
+    }
+    return null;
+  }
+
+  if (recurrence.type === "weekly") {
+    const weekdays = getWeeklyDaySelection(Number(formData.get("weeklyWeekday") || recurrence.weekday || 0));
+    if (weekdays.length > 1) {
+      return {
+        kind: LINKED_SERIES_KIND_WEEKLY,
+        slots: weekdays.map((weekday) => ({ weekday }))
+      };
+    }
+  }
+
+  return null;
+}
+
+function buildLinkedSeriesTemplatesFromDraft({
+  draft,
+  recurrence,
+  categorySnapshot,
+  slotConfig,
+  existingTemplates = []
+}) {
+  if (!slotConfig || !Array.isArray(slotConfig.slots) || slotConfig.slots.length <= 1) {
+    return [];
+  }
+
+  const groupId = existingTemplates[0]?.linkedSeries?.groupId || createId();
+  const assignments = matchLinkedSeriesTemplates(existingTemplates, slotConfig);
+
+  return slotConfig.slots.map((slot, slotIndex) => {
+    const existingTask = assignments.get(slotIndex) || null;
+    const slotRecurrence = slotConfig.kind === LINKED_SERIES_KIND_WEEKLY
+      ? { ...recurrence, weekday: slot.weekday }
+      : { ...recurrence };
+
+    const baseStartDate = draft.startDate || draft.dueDate || todayString();
+    const baseDueDate = draft.dueDate || draft.startDate || todayString();
+    const slotStartDate = slotConfig.kind === LINKED_SERIES_KIND_WEEKLY
+      ? alignDateToWeekdayOnOrAfter(baseStartDate, slot.weekday)
+      : (draft.startDate || "");
+    const slotDueDate = slotConfig.kind === LINKED_SERIES_KIND_WEEKLY
+      ? alignDateToWeekdayOnOrAfter(baseDueDate, slot.weekday)
+      : draft.dueDate;
+
+    return buildTaskFromValues({
+      ...draft,
+      startDate: slotStartDate,
+      dueDate: slotDueDate,
+      timeOfDay: slot.timeOfDay || draft.timeOfDay,
+      recurrence: slotRecurrence,
+      linkedSeries: {
+        groupId,
+        kind: slotConfig.kind,
+        slotIndex,
+        slotCount: slotConfig.slots.length
+      },
+      sequenceDependencyId: ""
+    }, existingTask, categorySnapshot);
+  });
+}
+
+function matchLinkedSeriesTemplates(existingTemplates, slotConfig) {
+  const assignments = new Map();
+  const unusedTemplates = [...existingTemplates];
+
+  slotConfig.slots.forEach((slot, slotIndex) => {
+    const matchIndex = unusedTemplates.findIndex((template) => {
+      if (slotConfig.kind === LINKED_SERIES_KIND_DAILY) {
+        return template.timeOfDay === slot.timeOfDay;
+      }
+      return Number(template.recurrence?.weekday) === Number(slot.weekday);
+    });
+    if (matchIndex !== -1) {
+      assignments.set(slotIndex, unusedTemplates.splice(matchIndex, 1)[0]);
+    }
+  });
+
+  slotConfig.slots.forEach((_, slotIndex) => {
+    if (assignments.has(slotIndex)) {
+      return;
+    }
+    if (unusedTemplates.length > 0) {
+      assignments.set(slotIndex, unusedTemplates.shift());
+    }
+  });
+
+  return assignments;
+}
+
+function alignDateToWeekdayOnOrAfter(baseDate, weekday) {
+  const date = new Date(`${baseDate}T12:00:00`);
+  if (Number.isNaN(date.getTime())) {
+    return baseDate;
+  }
+  const normalizedWeekday = Number.isInteger(weekday) ? weekday : 0;
+  const diff = (normalizedWeekday - date.getDay() + 7) % 7;
+  date.setDate(date.getDate() + diff);
+  return toDateString(date);
+}
+
+function applyLinkedSeriesTemplateUpdate(nextTemplates, existingTemplates) {
+  const nextTemplateIds = new Set(nextTemplates.map((task) => task.id));
+  const matchedExistingIds = new Set();
+
+  for (const nextTemplate of nextTemplates) {
+    const existing = existingTemplates.find((task) => task.id === nextTemplate.id) || null;
+    if (existing) {
+      matchedExistingIds.add(existing.id);
+      nextTemplate.templateId = "";
+      nextTemplate.occurrenceIndex = 0;
+      nextTemplate.status = existing.status;
+      nextTemplate.history = [...existing.history];
+      replaceTask(nextTemplate);
+      regenerateSeries(existing.id, { preserveClosed: true });
+      continue;
+    }
+
+    store.tasks.unshift(nextTemplate);
+    regenerateSeries(nextTemplate.id, { preserveClosed: false });
+  }
+
+  for (const existingTemplate of existingTemplates) {
+    if (matchedExistingIds.has(existingTemplate.id) || nextTemplateIds.has(existingTemplate.id)) {
+      continue;
+    }
+    deleteSeriesTemplate(existingTemplate);
+  }
+}
+
 function applyTaskEdit(formData) {
   const task = store.tasks.find((item) => item.id === editState.taskId);
   if (!task) {
@@ -1669,14 +1923,58 @@ function applyTaskEdit(formData) {
       clearEditState();
       return;
     }
+    const existingTemplates = getLinkedSeriesTemplates(template);
+    const skipRule = template?.skipRule?.type === "widget-lockout"
+      ? normalizeSkipRule(template.skipRule)
+      : buildSkipRule(formData, template?.skipRule);
+    const categorySnapshot = resolveCategorySnapshot(String(formData.get("category") || ""), template);
+    const recurrence = buildRecurrence(formData, template?.recurrence);
+    const draft = buildTaskDraftFromForm(formData, {
+      originalTask: template,
+      skipRule,
+      categorySnapshot,
+      recurrence
+    });
+    const slotConfig = buildLinkedSeriesSlotConfig(formData, draft, recurrence);
 
-    const updatedTemplate = buildTaskFromForm(formData, template);
-    updatedTemplate.templateId = "";
-    updatedTemplate.occurrenceIndex = 0;
-    updatedTemplate.status = template.status;
-    updatedTemplate.history = [...template.history];
-    replaceTask(updatedTemplate);
-    regenerateSeries(template.id, { preserveClosed: true });
+    if (slotConfig) {
+      const nextTemplates = buildLinkedSeriesTemplatesFromDraft({
+        draft,
+        recurrence,
+        categorySnapshot,
+        slotConfig,
+        existingTemplates
+      });
+      applyLinkedSeriesTemplateUpdate(nextTemplates, existingTemplates);
+    } else if (existingTemplates.length > 1) {
+      const primaryTemplate = existingTemplates[0];
+      const updatedTemplate = buildTaskFromValues({
+        ...draft,
+        linkedSeries: { groupId: "", kind: "", slotIndex: 0, slotCount: 1 },
+        sequenceDependencyId: ""
+      }, primaryTemplate, categorySnapshot);
+      updatedTemplate.templateId = "";
+      updatedTemplate.occurrenceIndex = 0;
+      updatedTemplate.status = primaryTemplate.status;
+      updatedTemplate.history = [...primaryTemplate.history];
+      replaceTask(updatedTemplate);
+      regenerateSeries(updatedTemplate.id, { preserveClosed: true });
+      for (const sibling of existingTemplates.slice(1)) {
+        deleteSeriesTemplate(sibling);
+      }
+    } else {
+      const updatedTemplate = buildTaskFromValues({
+        ...draft,
+        linkedSeries: normalizeLinkedSeries(template.linkedSeries),
+        sequenceDependencyId: template.sequenceDependencyId || ""
+      }, template, categorySnapshot);
+      updatedTemplate.templateId = "";
+      updatedTemplate.occurrenceIndex = 0;
+      updatedTemplate.status = template.status;
+      updatedTemplate.history = [...template.history];
+      replaceTask(updatedTemplate);
+      regenerateSeries(template.id, { preserveClosed: true });
+    }
   } else {
     const updatedTask = buildTaskFromForm(formData, task);
     updatedTask.recurrence = task.templateId ? { type: "generated" } : updatedTask.recurrence;
@@ -1684,6 +1982,7 @@ function applyTaskEdit(formData) {
     replaceTask(updatedTask);
   }
 
+  reconcileRecurringSeries();
   trimTasks();
   persistStore();
   clearEditState();
@@ -1855,7 +2154,7 @@ function renderCanopy() {
     .map((task) => ({
       key: task.id,
       task,
-      displayName: task.name,
+      displayName: formatTaskDisplayName(task),
       blocked: isBlocked(task),
       blockedNote: describeCompletionGate(task)
     }));
@@ -2695,7 +2994,7 @@ function renderDependencyOptions() {
     }
     const option = document.createElement("option");
     option.value = task.id;
-    option.textContent = task.name;
+    option.textContent = formatTaskDisplayName(task);
     option.selected = currentSelection.has(task.id);
     dependenciesSelect.appendChild(option);
   }
@@ -3097,7 +3396,7 @@ function getVisibleCards() {
         task,
         template: null,
         status: task.status,
-        displayName: task.name
+        displayName: formatTaskDisplayName(task)
       });
       continue;
     }
@@ -3110,7 +3409,7 @@ function getVisibleCards() {
       task: active,
       template: task,
       status: active.status,
-      displayName: active.name
+      displayName: formatTaskDisplayName(active)
     });
   }
   return cards;
@@ -3371,6 +3670,7 @@ function populateComposerFromHistory(task) {
   clearPendingDelete();
   editState.taskId = "";
   editState.scope = "single";
+  editState.linkedGroupId = "";
   setActiveTaskDeskPane("composer");
   form.reset();
   taskNameInput.value = task.name;
@@ -3387,6 +3687,8 @@ function populateComposerFromHistory(task) {
   skipGraceMinutesInput.value = 15;
   recurrenceType.value = "none";
   recurrenceForeverInput.checked = false;
+  renderDailyInstanceTimes([]);
+  setWeeklyDaySelection([0]);
   Array.from(dependenciesSelect.options).forEach((option) => {
     option.selected = false;
   });
@@ -3406,27 +3708,9 @@ function deleteTask(task, scope) {
     if (!template) {
       return;
     }
-    rememberDeletedSeries(template.id);
-    const removedIds = new Set([template.id]);
-    const templateNeedsArchive = template.status !== "open" || (template.history?.length || 0) > 0;
-    if (templateNeedsArchive) {
-      upsertArchivedSeriesRecord(template);
-    }
-    store.tasks = store.tasks.filter((item) => {
-      if (item.id === template.id) {
-        return false;
-      }
-      if (item.templateId !== template.id) {
-        return true;
-      }
-      if (item.status === "open") {
-        removedIds.add(item.id);
-        return false;
-      }
-      return true;
-    });
-    for (const item of store.tasks) {
-      item.dependencies = item.dependencies.filter((dependencyId) => !removedIds.has(dependencyId));
+    const templates = getLinkedSeriesTemplates(template);
+    for (const linkedTemplate of templates) {
+      deleteSeriesTemplate(linkedTemplate);
     }
     return;
   }
@@ -3435,6 +3719,34 @@ function deleteTask(task, scope) {
   store.tasks = store.tasks.filter((item) => item.id !== task.id);
   for (const item of store.tasks) {
     item.dependencies = item.dependencies.filter((dependencyId) => dependencyId !== task.id);
+  }
+}
+
+function deleteSeriesTemplate(template) {
+  rememberDeletedSeries(template.id);
+  const removedIds = new Set([template.id]);
+  const templateNeedsArchive = template.status !== "open" || (template.history?.length || 0) > 0;
+  if (templateNeedsArchive) {
+    upsertArchivedSeriesRecord(template);
+  }
+  store.tasks = store.tasks.filter((item) => {
+    if (item.id === template.id) {
+      return false;
+    }
+    if (item.templateId !== template.id) {
+      return true;
+    }
+    if (item.status === "open") {
+      removedIds.add(item.id);
+      return false;
+    }
+    return true;
+  });
+  for (const item of store.tasks) {
+    item.dependencies = item.dependencies.filter((dependencyId) => !removedIds.has(dependencyId));
+    if (removedIds.has(item.sequenceDependencyId)) {
+      item.sequenceDependencyId = "";
+    }
   }
 }
 
@@ -3473,28 +3785,40 @@ function beginEdit(task, scope) {
   if (!target) {
     return;
   }
+  const linkedTemplates = scope === "series" ? getLinkedSeriesTemplates(target) : [target];
+  const primaryTemplate = linkedTemplates[0] || target;
 
   setActiveTaskDeskPane("composer");
   editState.taskId = task.id;
   editState.scope = scope;
+  editState.linkedGroupId = scope === "series" && hasLinkedSeriesGroup(target) ? target.linkedSeries.groupId : "";
   editScope.value = scope;
-  taskNameInput.value = target.name;
-  taskDetailsInput.value = target.details;
-  startDateInput.value = target.startDate;
-  dueDateInput.value = target.dueDate;
-  timeOfDayInput.value = target.timeOfDay || "";
-  lateGraceMinutesInput.value = String(target.lateGraceMinutes ?? DEFAULT_LATE_GRACE_MINUTES);
-  setTaskPointsInput(target.pointsValue ?? defaultPointsForLength(target.length));
-  taskLengthInput.value = target.length;
+  taskNameInput.value = primaryTemplate.name;
+  taskDetailsInput.value = primaryTemplate.details;
+  startDateInput.value = primaryTemplate.startDate;
+  dueDateInput.value = primaryTemplate.dueDate;
+  timeOfDayInput.value = primaryTemplate.timeOfDay || "";
+  lateGraceMinutesInput.value = String(primaryTemplate.lateGraceMinutes ?? DEFAULT_LATE_GRACE_MINUTES);
+  setTaskPointsInput(primaryTemplate.pointsValue ?? defaultPointsForLength(primaryTemplate.length));
+  taskLengthInput.value = primaryTemplate.length;
   renderCategoryOptions();
-  taskCategoryInput.value = target.categoryKey || DEFAULT_CATEGORY_KEY;
-  taskImportanceInput.value = normalizeImportance(target.importance || DEFAULT_IMPORTANCE);
-  const dependencySet = new Set(target.dependencies || []);
+  taskCategoryInput.value = primaryTemplate.categoryKey || DEFAULT_CATEGORY_KEY;
+  taskImportanceInput.value = normalizeImportance(primaryTemplate.importance || DEFAULT_IMPORTANCE);
+  const dependencySet = new Set(primaryTemplate.dependencies || []);
   Array.from(dependenciesSelect.options).forEach((option) => {
     option.selected = dependencySet.has(option.value);
   });
-  applySkipRuleToForm(target.skipRule);
-  applyRecurrenceToForm(scope === "series" ? target.recurrence : { type: "none" });
+  applySkipRuleToForm(primaryTemplate.skipRule);
+  applyRecurrenceToForm(scope === "series" ? primaryTemplate.recurrence : { type: "none" });
+  if (scope === "series" && hasLinkedSeriesGroup(primaryTemplate)) {
+    if (primaryTemplate.linkedSeries.kind === LINKED_SERIES_KIND_DAILY) {
+      const sortedTemplates = [...linkedTemplates].sort((left, right) => (left.linkedSeries?.slotIndex || 0) - (right.linkedSeries?.slotIndex || 0));
+      timeOfDayInput.value = sortedTemplates[0]?.timeOfDay || "";
+      renderDailyInstanceTimes(sortedTemplates.slice(1).map((item) => item.timeOfDay || ""));
+    } else if (primaryTemplate.linkedSeries.kind === LINKED_SERIES_KIND_WEEKLY) {
+      setWeeklyDaySelection(linkedTemplates.map((item) => item.recurrence?.weekday));
+    }
+  }
   updateSkipVisibility();
   updateRecurrenceVisibility();
   syncEditPanel();
@@ -3509,6 +3833,7 @@ function applyRecurrenceToForm(recurrence) {
   recurrenceType.value = recurrence?.type || "none";
   document.getElementById("weeklyInterval").value = recurrence?.interval || 1;
   document.getElementById("weeklyWeekday").value = String(recurrence?.weekday ?? 0);
+  setWeeklyDaySelection([recurrence?.weekday ?? 0]);
   document.getElementById("monthlyDay").value = recurrence?.day || 1;
   document.getElementById("monthlyInterval").value = recurrence?.interval || 1;
   document.getElementById("monthlyOrdinal").value = recurrence?.ordinal || "first";
@@ -3516,6 +3841,7 @@ function applyRecurrenceToForm(recurrence) {
   document.getElementById("recurrenceEndDate").value = recurrence?.endDate || "";
   document.getElementById("recurrenceCount").value = recurrence?.count || "";
   recurrenceForeverInput.checked = Boolean(recurrence?.forever);
+  renderDailyInstanceTimes([]);
 }
 
 function syncEditPanel() {
@@ -3539,6 +3865,7 @@ function syncEditPanel() {
 function clearEditState() {
   editState.taskId = "";
   editState.scope = "single";
+  editState.linkedGroupId = "";
   resetComposer();
   renderAll();
 }
@@ -3551,6 +3878,8 @@ function resetComposer() {
   taskCategoryInput.value = DEFAULT_CATEGORY_KEY;
   taskImportanceInput.value = DEFAULT_IMPORTANCE;
   newCategoryColorInput.value = DEFAULT_CATEGORY_COLOR;
+  renderDailyInstanceTimes([]);
+  setWeeklyDaySelection([0]);
   updateRecurrenceVisibility();
   updateSkipVisibility();
   Array.from(dependenciesSelect.options).forEach((option) => {
@@ -3576,6 +3905,19 @@ function getSeriesTemplate(task) {
     return null;
   }
   return task.templateId ? store.tasks.find((item) => item.id === task.templateId) : task;
+}
+
+function getLinkedSeriesTemplates(task) {
+  const template = getSeriesTemplate(task);
+  if (!template) {
+    return [];
+  }
+  if (!hasLinkedSeriesGroup(template)) {
+    return [template];
+  }
+  return store.tasks
+    .filter((item) => !item.templateId && item.linkedSeries?.groupId === template.linkedSeries.groupId)
+    .sort((left, right) => (left.linkedSeries?.slotIndex || 0) - (right.linkedSeries?.slotIndex || 0));
 }
 
 function statusLabel(status) {
@@ -3740,10 +4082,11 @@ function isBlocked(task) {
   if (isTaskNotYetAvailable(task)) {
     return true;
   }
-  if (!Array.isArray(task.dependencies) || task.dependencies.length === 0) {
+  const dependencyIds = getTaskDependencyIds(task);
+  if (dependencyIds.length === 0) {
     return false;
   }
-  return task.dependencies.some((dependencyId) => {
+  return dependencyIds.some((dependencyId) => {
     const dependency = store.tasks.find((item) => item.id === dependencyId);
     if (!dependency) {
       return false;
@@ -3759,15 +4102,16 @@ function isBlocked(task) {
 
 function renderDependencies(task) {
   const availabilityLabel = formatTaskAvailability(task);
-  if ((!task.dependencies || task.dependencies.length === 0) && !availabilityLabel) {
+  const dependencyIds = getTaskDependencyIds(task);
+  if (dependencyIds.length === 0 && !availabilityLabel) {
     return "No prerequisite tasks.";
   }
-  if ((!task.dependencies || task.dependencies.length === 0) && availabilityLabel) {
+  if (dependencyIds.length === 0 && availabilityLabel) {
     return `Not before ${availabilityLabel}.`;
   }
-  const names = task.dependencies.map((dependencyId) => {
+  const names = dependencyIds.map((dependencyId) => {
     const dependency = store.tasks.find((item) => item.id === dependencyId);
-    return dependency ? dependency.name : "missing task";
+    return dependency ? formatTaskDisplayName(dependency) : "missing task";
   });
   return availabilityLabel
     ? `Depends on: ${escapeHtml(names.join(", "))}. Not before ${availabilityLabel}.`
@@ -3779,7 +4123,7 @@ function describeCompletionGate(task) {
   if (availabilityLabel) {
     return `Not available until ${availabilityLabel}.`;
   }
-  if (!task.dependencies || task.dependencies.length === 0) {
+  if (getTaskDependencyIds(task).length === 0) {
     if (task.status === "done") {
       return "Completed.";
     }
@@ -3793,6 +4137,14 @@ function describeCompletionGate(task) {
 
 function isTaskNotYetAvailable(task, now = Date.now()) {
   return typeof task?.notBeforeAt === "number" && task.notBeforeAt > 0 && now < task.notBeforeAt;
+}
+
+function getTaskDependencyIds(task) {
+  const ids = Array.isArray(task?.dependencies) ? [...task.dependencies] : [];
+  if (typeof task?.sequenceDependencyId === "string" && task.sequenceDependencyId) {
+    ids.push(task.sequenceDependencyId);
+  }
+  return [...new Set(ids)];
 }
 
 function formatTaskAvailability(task) {
@@ -3960,6 +4312,8 @@ function normalizeTask(task) {
     ownerWidgetId: typeof task.ownerWidgetId === "string" ? task.ownerWidgetId : "",
     ownerWidgetType: typeof task.ownerWidgetType === "string" ? task.ownerWidgetType : "",
     ownerTaskKey: typeof task.ownerTaskKey === "string" ? task.ownerTaskKey : "",
+    linkedSeries: normalizeLinkedSeries(task.linkedSeries),
+    sequenceDependencyId: typeof task.sequenceDependencyId === "string" ? task.sequenceDependencyId : "",
     widgetCompletion: normalizeWidgetCompletion(task.widgetCompletion),
     skipRule: normalizeSkipRule(task.skipRule),
     dependencies: Array.isArray(task.dependencies) ? task.dependencies.filter((id) => typeof id === "string") : [],
@@ -4005,6 +4359,31 @@ function normalizeRecurrence(recurrence) {
     count: typeof recurrence.count === "number" ? recurrence.count : null,
     forever: recurrence.forever === true
   };
+}
+
+function normalizeLinkedSeries(linkedSeries) {
+  if (!linkedSeries || typeof linkedSeries !== "object") {
+    return { groupId: "", kind: "", slotIndex: 0, slotCount: 1 };
+  }
+  const groupId = typeof linkedSeries.groupId === "string" ? linkedSeries.groupId : "";
+  const kind = linkedSeries.kind === LINKED_SERIES_KIND_DAILY || linkedSeries.kind === LINKED_SERIES_KIND_WEEKLY
+    ? linkedSeries.kind
+    : "";
+  const slotIndex = Number.isInteger(linkedSeries.slotIndex) ? linkedSeries.slotIndex : 0;
+  const slotCount = Number.isInteger(linkedSeries.slotCount) ? linkedSeries.slotCount : 1;
+  if (!groupId || !kind || slotCount <= 1 || slotIndex < 0 || slotIndex >= slotCount) {
+    return { groupId: "", kind: "", slotIndex: 0, slotCount: 1 };
+  }
+  return {
+    groupId,
+    kind,
+    slotIndex,
+    slotCount
+  };
+}
+
+function hasLinkedSeriesGroup(task) {
+  return Boolean(task?.linkedSeries?.groupId && task.linkedSeries.slotCount > 1);
 }
 
 function normalizeCategoryDefinitions(value) {
@@ -4334,6 +4713,8 @@ function buildComparableStore(normalized) {
         ownerWidgetId: task.ownerWidgetId,
         ownerWidgetType: task.ownerWidgetType,
         ownerTaskKey: task.ownerTaskKey,
+        linkedSeries: normalizeLinkedSeries(task.linkedSeries),
+        sequenceDependencyId: task.sequenceDependencyId || "",
         widgetCompletion: {
           mechanism: task.widgetCompletion?.mechanism || "",
           lockout: task.widgetCompletion?.lockout || "none"
@@ -5212,6 +5593,8 @@ function buildGeneratedInstance(template, occurrenceIndex, startDate, dueDate, e
     ownerWidgetId: existingTask?.ownerWidgetId || template.ownerWidgetId || "",
     ownerWidgetType: existingTask?.ownerWidgetType || template.ownerWidgetType || "",
     ownerTaskKey: existingTask?.ownerTaskKey || template.ownerTaskKey || "",
+    linkedSeries: normalizeLinkedSeries(existingTask?.linkedSeries || template.linkedSeries),
+    sequenceDependencyId: existingTask?.sequenceDependencyId || "",
     widgetCompletion: normalizeWidgetCompletion(existingTask?.widgetCompletion || template.widgetCompletion),
     skipRule: normalizeSkipRule(existingTask?.skipRule || template.skipRule),
     dependencies: [],
@@ -5227,11 +5610,62 @@ function reconcileRecurringSeries() {
     }
   }
   syncWidgetOwnedTasks();
+  syncLinkedSeriesGroups();
   trimTasks();
 }
 
 function isDeveloperUser() {
   return authState.authenticated && authState.user?.email === DEV_EMAIL;
+}
+
+function syncLinkedSeriesGroups() {
+  const groupIds = new Set();
+
+  for (const task of store.tasks) {
+    if (hasLinkedSeriesGroup(task) && !task.archived) {
+      groupIds.add(task.linkedSeries.groupId);
+      continue;
+    }
+    if (task.sequenceDependencyId) {
+      task.sequenceDependencyId = "";
+    }
+  }
+
+  for (const groupId of groupIds) {
+    syncLinkedSeriesGroup(groupId);
+  }
+}
+
+function syncLinkedSeriesGroup(groupId) {
+  const groupedTasks = store.tasks
+    .filter((task) => !task.archived && task.linkedSeries?.groupId === groupId)
+    .sort((left, right) => {
+      const scheduleComparison = compareTaskSchedule(left, right);
+      if (scheduleComparison !== 0) {
+        return scheduleComparison;
+      }
+      const leftSlot = left.linkedSeries?.slotIndex ?? 0;
+      const rightSlot = right.linkedSeries?.slotIndex ?? 0;
+      if (leftSlot !== rightSlot) {
+        return leftSlot - rightSlot;
+      }
+      return (left.occurrenceIndex || 0) - (right.occurrenceIndex || 0);
+    });
+
+  if (groupedTasks.length === 0) {
+    return;
+  }
+
+  const slotCount = groupedTasks.reduce((max, task) => Math.max(max, task.linkedSeries?.slotCount || 1), 1);
+  let previous = null;
+  for (const task of groupedTasks) {
+    task.linkedSeries = {
+      ...task.linkedSeries,
+      slotCount
+    };
+    task.sequenceDependencyId = previous ? previous.id : "";
+    previous = task;
+  }
 }
 
 async function clearDriveData() {

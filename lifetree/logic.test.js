@@ -8,6 +8,7 @@ import {
   computeRecurringNotBeforeAt,
   computeOccurrenceDate,
   createArchivedSeriesRecord,
+  formatTaskDisplayName,
   findNextWidgetCompletionTask,
   getLatestLifecycleEntry,
   isTaskEligibleForWidgetCompletion,
@@ -64,6 +65,17 @@ test("builds history feed with sorting and filtering while ignoring edit-only re
   const filtered = buildHistoryFeed(tasks, "newest", "skipped");
   assert.equal(filtered.length, 1);
   assert.equal(filtered[0].taskName, "Beta");
+});
+
+test("formats linked series task display names with instance counts", () => {
+  assert.equal(
+    formatTaskDisplayName({
+      name: "Energy check-in",
+      linkedSeries: { groupId: "energy", kind: "daily-window", slotIndex: 1, slotCount: 3 }
+    }),
+    "Energy check-in · 2/3"
+  );
+  assert.equal(formatTaskDisplayName({ name: "One-off task" }), "One-off task");
 });
 
 test("history feed includes due timing details", () => {
@@ -435,7 +447,7 @@ test("energy task chain blocks tomorrow morning until today evening is cleared",
   tasks.find((task) => task.id === "evening-today").status = "skipped";
   const morningNextDay = findActiveEnergyCompletionTask(tasks, "energy-1", "energy-vote", new Date("2026-03-23T08:00:00"));
   assert.equal(morningNextDay?.id, "morning-tomorrow");
-  assert.deepEqual(tasks.find((task) => task.id === "morning-tomorrow").dependencies, ["evening-today"]);
+  assert.equal(tasks.find((task) => task.id === "morning-tomorrow").sequenceDependencyId, "evening-today");
 });
 
 test("energy completion does not allow tomorrow's reminder before midnight", () => {
