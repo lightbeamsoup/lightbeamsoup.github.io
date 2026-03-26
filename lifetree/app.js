@@ -2,6 +2,7 @@ import {
   buildLogicalWidgetTaskKey,
   buildHistoryFeed,
   compareTaskResolutionPreference,
+  compareTaskSchedule,
   compactTaskHistory,
   computeRecurringNotBeforeAt,
   computeOccurrenceDate,
