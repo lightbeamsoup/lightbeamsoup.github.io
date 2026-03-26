@@ -9,8 +9,10 @@ export function resolveApiBase(configuredValue, locationObject = window.location
     return normalized;
   }
 
-  if (isLocalhostHost(locationObject.hostname) && locationObject.port !== "3000") {
-    return `${locationObject.protocol}//${locationObject.hostname}:3000`;
+  if (isLocalhostHost(locationObject.hostname)) {
+    if (locationObject.hostname === "127.0.0.1" || locationObject.port !== "3000") {
+      return `${locationObject.protocol}//localhost:3000`;
+    }
   }
 
   return "";
