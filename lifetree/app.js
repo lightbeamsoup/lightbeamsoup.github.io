@@ -5133,8 +5133,15 @@ function removeSelectedTreeSkin() {
 
 function getReturnToTarget() {
   if (!API_BASE || API_BASE === window.location.origin) {
-    return window.location.pathname;
+    return `${window.location.pathname}${window.location.search}${window.location.hash}`;
   }
+
+  try {
+    const apiUrl = new URL(API_BASE);
+    if (apiUrl.protocol === "http:" && (apiUrl.hostname === "localhost" || apiUrl.hostname === "127.0.0.1")) {
+      return `${apiUrl.origin}${window.location.pathname}${window.location.search}${window.location.hash}`;
+    }
+  } catch {}
 
   return window.location.href;
 }

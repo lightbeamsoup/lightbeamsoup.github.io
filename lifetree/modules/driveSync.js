@@ -81,6 +81,13 @@ export function createDriveSyncController({
     return authState.authenticated;
   }
 
+  async function ensureAuthenticated({ suppressUnavailableError = false, signal } = {}) {
+    if (authState.authenticated) {
+      return true;
+    }
+    return refreshAuthStatus({ suppressUnavailableError, signal });
+  }
+
   function connectGoogle() {
     const returnTo = encodeURIComponent(getReturnToTarget());
     window.location.href = `${apiBase}/api/auth/google/start?returnTo=${returnTo}`;
@@ -103,7 +110,11 @@ export function createDriveSyncController({
     signal,
     conflictStrategy = "prompt"
   } = {}) {
-    if (!authState.authenticated) {
+    const authenticated = await ensureAuthenticated({
+      suppressUnavailableError: suppressAuthError,
+      signal
+    });
+    if (!authenticated) {
       if (!suppressAuthError) {
         setSyncStatus("Connect Google first to load from Drive.", "error");
       }
@@ -254,7 +265,11 @@ export function createDriveSyncController({
   }
 
   async function saveToDrive({ suppressAuthError = false, quiet = false, signal, force = false } = {}) {
-    if (!authState.authenticated) {
+    const authenticated = await ensureAuthenticated({
+      suppressUnavailableError: suppressAuthError || quiet,
+      signal
+    });
+    if (!authenticated) {
       if (!suppressAuthError) {
         setSyncStatus("Connect Google first to save to Drive.", "error");
       }
