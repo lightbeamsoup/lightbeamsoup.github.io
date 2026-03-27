@@ -3677,12 +3677,41 @@ function renderEmailReminderPreview(preview) {
         <section class="notifications-preview-section">
           <strong>${escapeHtml(section.title)}</strong>
           <ul>
-            ${section.items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
+            ${section.items.map((item) => renderReminderPreviewListItem(item)).join("")}
           </ul>
         </section>
-      `).join("") : `<p class="sync-status">No reminder items are due right now. Daily agenda entries will appear here on days that have open reminder-enabled tasks.</p>`}
+      `).join("") : `<p class="sync-status">No reminder items are due right now. Daily agenda entries will appear here on days that have tasks due, even if some were already completed or skipped.</p>`}
     </article>
   `;
+}
+
+function renderReminderPreviewListItem(item) {
+  const normalized = normalizeReminderPreviewItem(item);
+  const closed = normalized.status === "completed" || normalized.status === "skipped";
+  const statusCopy = normalized.status === "completed"
+    ? "Completed"
+    : normalized.status === "skipped"
+      ? "Skipped"
+      : "";
+  return `
+    <li class="${closed ? "notifications-preview-item-closed" : ""}">
+      <span>${escapeHtml(normalized.label)}</span>
+      ${statusCopy ? `<span class="notifications-preview-item-status ${normalized.status}">${escapeHtml(statusCopy)}</span>` : ""}
+    </li>
+  `;
+}
+
+function normalizeReminderPreviewItem(item) {
+  if (item && typeof item === "object" && !Array.isArray(item)) {
+    return {
+      label: String(item.label || ""),
+      status: item.status === "completed" || item.status === "skipped" ? item.status : "open"
+    };
+  }
+  return {
+    label: String(item || ""),
+    status: "open"
+  };
 }
 
 function renderEmailSummaryBodyHtml(preview) {

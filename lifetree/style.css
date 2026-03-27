@@ -1594,6 +1594,32 @@ body.developer-open {
   margin-top: 6px;
 }
 
+.notifications-preview-section li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.notifications-preview-item-closed span:first-child {
+  text-decoration: line-through;
+  opacity: 0.72;
+}
+
+.notifications-preview-item-status {
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.notifications-preview-item-status.completed {
+  color: #4a8157;
+}
+
+.notifications-preview-item-status.skipped {
+  color: #b56f4a;
+}
+
 .notifications-history-list {
   display: grid;
   gap: 10px;

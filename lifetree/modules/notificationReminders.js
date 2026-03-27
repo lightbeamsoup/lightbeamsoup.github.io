@@ -9,6 +9,8 @@ import {
   normalizeReminderMinutes
 } from "./notifications.js";
 
+const LIFETREE_APP_URL = "https://www.joshcodes.ai/lifetree";
+
 export function buildEmailReminderPreview({
   store,
   emailConfig,
@@ -42,19 +44,19 @@ export function buildEmailReminderPreview({
   if (reminders.enabled === true && candidates.dueSoon.length > 0) {
     sections.push({
       title: "Due soon",
-      items: candidates.dueSoon.map((candidate) => formatReminderTaskLine(candidate.task, timeZone))
+      items: candidates.dueSoon.map((candidate) => buildReminderPreviewItem(candidate.task, timeZone))
     });
   }
   if (reminders.enabled === true && candidates.overdue.length > 0) {
     sections.push({
       title: "Overdue",
-      items: candidates.overdue.map((candidate) => formatReminderTaskLine(candidate.task, timeZone))
+      items: candidates.overdue.map((candidate) => buildReminderPreviewItem(candidate.task, timeZone))
     });
   }
   if (reminders.enabled === true && candidates.dailyAgenda.length > 0) {
     sections.push({
       title: "Today's agenda",
-      items: candidates.dailyAgenda.map((candidate) => formatReminderTaskLine(candidate.task, timeZone))
+      items: candidates.dailyAgenda.map((candidate) => buildReminderPreviewItem(candidate.task, timeZone))
     });
   }
 
@@ -180,13 +182,10 @@ export function collectEmailReminderCandidates({
       }
     }
 
-    if (
-      dailyAgendaAllowed
-      && dueDate === currentDate
-      && (!requireDailyAgendaTime || localTime >= normalizeNotificationTime(reminders.dailyAgendaTime, "07:00"))
-    ) {
-      dailyAgenda.push({ key: dailyAgendaKey, task, dueTimestamp });
-    }
+  }
+
+  if (dailyAgendaAllowed && (!requireDailyAgendaTime || localTime >= normalizeNotificationTime(reminders.dailyAgendaTime, "07:00"))) {
+    dailyAgenda.push(...collectDailyAgendaCandidates(tasks, currentDate, timeZone));
   }
 
   const sortCandidates = (left, right) => left.dueTimestamp - right.dueTimestamp
@@ -244,7 +243,7 @@ export function renderEmailReminderBodyHtml(preview) {
       <section style="margin: 0 0 20px;">
         <h2 style="margin: 0 0 10px; font-size: 18px; color: #253243;">${escapeHtml(section.title)}</h2>
         <ul style="margin: 0; padding-left: 20px; color: #4f637a; line-height: 1.55;">
-          ${section.items.map((item) => `<li style="margin-bottom: 6px;">${escapeHtml(item)}</li>`).join("")}
+          ${section.items.map((item) => renderReminderHtmlItem(item)).join("")}
         </ul>
       </section>
     `).join("")
@@ -258,6 +257,7 @@ export function renderEmailReminderBodyHtml(preview) {
       <h1 style="margin: 0 0 10px; font-size: 28px; line-height: 1.2; color: #253243;">${escapeHtml(preview.subject)}</h1>
       <p style="margin: 0 0 24px; color: #4f637a;">${escapeHtml(preview.scheduleLabel)}${preview.recipientEmail ? ` · Sent to ${escapeHtml(preview.recipientEmail)}` : ""}</p>
       ${sectionsHtml}
+      <p style="margin: 24px 0 0; color: #4f637a;">Open Lifetree: <a href="${LIFETREE_APP_URL}" style="color: #e57b4b;">${LIFETREE_APP_URL}</a></p>
     </main>
   </body>
 </html>`;
@@ -274,10 +274,11 @@ export function renderEmailReminderBodyText(preview) {
   } else {
     for (const section of preview.sections) {
       lines.push(section.title);
-      lines.push(...section.items.map((item) => `- ${item}`));
+      lines.push(...section.items.map((item) => `- ${formatReminderTextItem(item)}`));
       lines.push("");
     }
   }
+  lines.push(`Open Lifetree: ${LIFETREE_APP_URL}`);
   return lines.join("\n").trim();
 }
 
@@ -321,19 +322,19 @@ function buildEmailReminderPreviewFromCandidates({
   if (reminders.enabled === true && candidates.dueSoon.length > 0) {
     sections.push({
       title: "Due soon",
-      items: candidates.dueSoon.map((candidate) => formatReminderTaskLine(candidate.task, timeZone))
+      items: candidates.dueSoon.map((candidate) => buildReminderPreviewItem(candidate.task, timeZone))
     });
   }
   if (reminders.enabled === true && candidates.overdue.length > 0) {
     sections.push({
       title: "Overdue",
-      items: candidates.overdue.map((candidate) => formatReminderTaskLine(candidate.task, timeZone))
+      items: candidates.overdue.map((candidate) => buildReminderPreviewItem(candidate.task, timeZone))
     });
   }
   if (reminders.enabled === true && candidates.dailyAgenda.length > 0) {
     sections.push({
       title: "Today's agenda",
-      items: candidates.dailyAgenda.map((candidate) => formatReminderTaskLine(candidate.task, timeZone))
+      items: candidates.dailyAgenda.map((candidate) => buildReminderPreviewItem(candidate.task, timeZone))
     });
   }
   return {
@@ -391,14 +392,77 @@ function getReminderTaskDueTimestamp(task, timeZone) {
   return zonedDateTimeToTimestamp(dueDate, task?.timeOfDay || "23:59", timeZone);
 }
 
-function formatReminderTaskLine(task, timeZone) {
+function buildReminderPreviewItem(task, timeZone) {
   const dueDate = task?.dueDate || task?.startDate || "";
   const timeOfDay = task?.timeOfDay || "23:59";
   const dueTimestamp = zonedDateTimeToTimestamp(dueDate, timeOfDay, timeZone);
   const dueCopy = Number.isFinite(dueTimestamp)
     ? formatDateTimeInTimeZone(dueTimestamp, timeZone)
     : `${dueDate} ${timeOfDay}`.trim();
-  return `${formatTaskDisplayName(task)} · Due ${dueCopy}`;
+  const status = task?.status === "done" ? "completed" : (task?.status === "skipped" ? "skipped" : "open");
+  return {
+    label: `${formatTaskDisplayName(task)} · Due ${dueCopy}`,
+    status
+  };
+}
+
+function collectDailyAgendaCandidates(tasks, currentDate, timeZone) {
+  return (Array.isArray(tasks) ? tasks : [])
+    .filter((task) => {
+      if (!task || task.archived) {
+        return false;
+      }
+      const dueDate = task?.dueDate || task?.startDate || "";
+      if (dueDate !== currentDate) {
+        return false;
+      }
+      return task.status === "open" || task.status === "done" || task.status === "skipped";
+    })
+    .map((task) => ({
+      key: `agenda:${currentDate}:${task.id}`,
+      task,
+      dueTimestamp: getReminderTaskDueTimestamp(task, timeZone)
+    }));
+}
+
+function renderReminderHtmlItem(item) {
+  const normalized = normalizeReminderPreviewItem(item);
+  const statusCopy = normalized.status === "completed"
+    ? "Completed"
+    : normalized.status === "skipped"
+      ? "Skipped"
+      : "";
+  const labelHtml = normalized.status === "open"
+    ? escapeHtml(normalized.label)
+    : `<span style="text-decoration: line-through; color: #7c8ba1;">${escapeHtml(normalized.label)}</span>`;
+  const badgeHtml = statusCopy
+    ? ` <span style="display: inline-block; margin-left: 8px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: ${normalized.status === "completed" ? "#40734c" : "#9a5a33"};">${statusCopy}</span>`
+    : "";
+  return `<li style="margin-bottom: 6px;">${labelHtml}${badgeHtml}</li>`;
+}
+
+function formatReminderTextItem(item) {
+  const normalized = normalizeReminderPreviewItem(item);
+  if (normalized.status === "completed") {
+    return `[Completed] ${normalized.label}`;
+  }
+  if (normalized.status === "skipped") {
+    return `[Skipped] ${normalized.label}`;
+  }
+  return normalized.label;
+}
+
+function normalizeReminderPreviewItem(item) {
+  if (item && typeof item === "object" && !Array.isArray(item)) {
+    return {
+      label: String(item.label || ""),
+      status: item.status === "completed" || item.status === "skipped" ? item.status : "open"
+    };
+  }
+  return {
+    label: String(item || ""),
+    status: "open"
+  };
 }
 
 function zonedDateTimeToTimestamp(dateString, timeString, timeZone) {

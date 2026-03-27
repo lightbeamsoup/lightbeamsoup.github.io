@@ -8,6 +8,8 @@ import {
   normalizeRecipientEmail
 } from "./notifications.js";
 
+const LIFETREE_APP_URL = "https://www.joshcodes.ai/lifetree";
+
 const BASE_CATEGORIES = [
   { key: "fun", label: "Fun", color: "#f4b64e", builtin: true, active: true },
   { key: "friends", label: "Friends", color: "#5ca8f5", builtin: true, active: true },
@@ -121,6 +123,7 @@ export function renderEmailSummaryBodyHtml(preview) {
       <h1 style="margin: 0 0 10px; font-size: 28px; line-height: 1.2; color: #253243;">${escapeHtml(preview.subject)}</h1>
       <p style="margin: 0 0 24px; color: #4f637a;">${escapeHtml(preview.scheduleLabel)}${preview.recipientEmail ? ` · Sent to ${escapeHtml(preview.recipientEmail)}` : ""}</p>
       ${sectionsHtml}
+      <p style="margin: 24px 0 0; color: #4f637a;">Open Lifetree: <a href="${LIFETREE_APP_URL}" style="color: #e57b4b;">${LIFETREE_APP_URL}</a></p>
     </main>
   </body>
 </html>`;
@@ -141,6 +144,7 @@ export function renderEmailSummaryBodyText(preview) {
       lines.push("");
     }
   }
+  lines.push(`Open Lifetree: ${LIFETREE_APP_URL}`);
   return lines.join("\n").trim();
 }
 
