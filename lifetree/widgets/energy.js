@@ -456,6 +456,13 @@ function buildReminderTemplate({ widget, helpers, store, reminderTimes, index, t
     ownerWidgetId: widget.id,
     ownerWidgetType: widget.type,
     ownerTaskKey,
+    widgetTaskKind: "energy-checkin",
+    widgetTaskMeta: buildEnergyTaskMeta({
+      ownerTaskKey,
+      reminderIndex: index,
+      timeOfDay: time,
+      slotCount: reminderTimes.length
+    }),
     linkedSeries: {
       groupId: `${widget.id}:energy-checkins`,
       kind: "daily-window",
@@ -644,6 +651,13 @@ function applyReminderSettings(widget, nextReminderTimes, helpers) {
       template.lateGraceMinutes = ENERGY_LATE_GRACE_MINUTES;
       template.notBeforeAt = startOfDayTimestamp(template.dueDate || template.startDate || helpers.todayString());
       template.ownerTaskKey = `energy-reminder-${index}`;
+      template.widgetTaskKind = "energy-checkin";
+      template.widgetTaskMeta = buildEnergyTaskMeta({
+        ownerTaskKey: template.ownerTaskKey,
+        reminderIndex: index,
+        timeOfDay: time,
+        slotCount: reminderTimes.length
+      });
       template.linkedSeries = {
         groupId: `${widget.id}:energy-checkins`,
         kind: "daily-window",
@@ -736,6 +750,13 @@ export function syncEnergyTaskChain(tasks, widgetId) {
       task.lateGraceMinutes = ENERGY_LATE_GRACE_MINUTES;
       task.notBeforeAt = startOfDayTimestamp(task.dueDate || task.startDate || toDateString(new Date()));
       task.name = "Energy check-in";
+      task.widgetTaskKind = "energy-checkin";
+      task.widgetTaskMeta = buildEnergyTaskMeta({
+        ownerTaskKey: task.ownerTaskKey || `energy-reminder-${slotIndex}`,
+        reminderIndex: slotIndex,
+        timeOfDay: task.timeOfDay || "",
+        slotCount
+      });
       task.linkedSeries = {
         groupId: `${widgetId}:energy-checkins`,
         kind: "daily-window",
@@ -909,6 +930,19 @@ function taskDueTimestamp(task) {
 function parseReminderIndex(ownerTaskKey) {
   const match = String(ownerTaskKey || "").match(/energy-reminder-(\d+)/);
   return match ? Number(match[1]) : -1;
+}
+
+function buildEnergyTaskMeta({ ownerTaskKey, reminderIndex, timeOfDay, slotCount }) {
+  const normalizedIndex = Number.isInteger(reminderIndex) && reminderIndex >= 0 ? reminderIndex : 0;
+  const reminderLabel = reminderLabelForIndex(normalizedIndex);
+  return {
+    reminderIndex: normalizedIndex,
+    reminderLabel,
+    timeOfDay: typeof timeOfDay === "string" ? timeOfDay : "",
+    slotCount: Number.isInteger(slotCount) && slotCount > 0 ? slotCount : 1,
+    recurrenceType: "daily",
+    slotKey: typeof ownerTaskKey === "string" ? ownerTaskKey : `energy-reminder-${normalizedIndex}`
+  };
 }
 
 function startOfDayTimestamp(dateString) {

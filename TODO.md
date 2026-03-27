@@ -7,15 +7,13 @@
   - [ ] Add email reminders.
   - [ ] Add email summaries.
 - Energy:
-  - [ ] Add matching widget-owned task metadata to Energy tasks.
   - [ ] Update the Energy shell to surface the richer widget task state more clearly.
-- Canopy:
-  - [x] Visually reflect when a recurring bonus has already been claimed for the current period.
 
 ## Recently completed
 
 - 2026-03-26: Widgets: Make `Remove widget` less prominent and move it to an `x` in the upper-right corner of the widget shell.
 - 2026-03-26: Canopy: Visually reflect when a recurring bonus has already been claimed for the current period.
+- 2026-03-26: Energy: Add matching widget-owned task metadata to Energy tasks.
 - 2026-03-26: Workout Coach: Scaffold the widget and register it in the widget menu.
 - 2026-03-26: Workout Coach: Add workout plans with workout type, duration, intensity, and daily/weekly linked schedules.
 - 2026-03-26: Workout Coach: Add widget-owned task metadata for workout sessions and weight check-ins.
