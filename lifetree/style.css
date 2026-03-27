@@ -1483,6 +1483,8 @@ body.developer-open {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
   padding-right: 6px;
   scrollbar-gutter: stable;
 }
@@ -2166,6 +2168,8 @@ body.developer-open {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
   padding-right: 6px;
   scrollbar-gutter: stable;
 }
@@ -2203,14 +2207,16 @@ body.developer-open {
 
 .developer-modal-panel {
   width: min(980px, calc(100vw - 24px));
-  height: auto;
-  max-height: calc(100vh - 24px);
+  height: calc(100dvh - 24px);
 }
 
 .widget-detail-body {
   flex: 1;
   min-height: 0;
   overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .task-desk-header {
@@ -3065,12 +3071,19 @@ textarea {
 .developer-panel {
   display: flex;
   flex-direction: column;
+  flex: 1;
   gap: 16px;
   align-items: stretch;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
   padding: 18px 20px;
+  padding-right: 14px;
   border-radius: 24px;
   border: 1px dashed rgba(37, 50, 67, 0.24);
   background: rgba(255, 249, 240, 0.9);
+  scrollbar-gutter: stable;
 }
 
 .developer-inline-actions {
