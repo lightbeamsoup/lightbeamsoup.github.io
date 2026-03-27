@@ -114,7 +114,7 @@ export const workoutWidgetDefinition = {
           <h3>Workout Coach</h3>
           <p>Track workout plans, daily or weekly progress, and optional weight logs.</p>
         </div>
-        <span class="widget-badge">Scaffold</span>
+        <span class="widget-badge">Live</span>
       </div>
       <p>Workout plans: <strong>${planCount}</strong> (${dailyPlans} daily, ${weeklyPlans} weekly)</p>
       <p>${latestWorkout ? `Latest workout: ${escapeHtml(latestWorkout.workoutType || "Workout")} at ${formatDateTime(latestWorkout.at)}` : "No workout logs yet."}</p>

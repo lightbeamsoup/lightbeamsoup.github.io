@@ -6,6 +6,12 @@
 - Notifications:
   - [ ] Add email reminders.
   - [ ] Add email summaries.
+  - Email summary implementation plan:
+    - [ ] Add a top-bar `Notifications` modal with delivery settings, content toggles, preview, and send history.
+    - [ ] Store notification settings in Drive-synced Lifetree data under a dedicated `notifications.email` block instead of `profile`.
+    - [ ] Build reusable summary-generation logic for overdue tasks, due-soon tasks, recurring progress, widget highlights, and tree/point status.
+    - [ ] Add backend email sending and send-history logging using the authenticated account or a configured mail provider.
+    - [ ] Add a scheduler/dedupe layer so summaries send automatically and can later be reused for reminder emails.
 
 ## Recently completed
 
