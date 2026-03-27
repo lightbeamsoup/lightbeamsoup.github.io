@@ -93,10 +93,9 @@ export const energyWidgetDefinition = {
   render({ widget, tasks, escapeHtml, formatDateTime, getPendingActionForWidget }) {
     const latest = widget.data.entries[widget.data.entries.length - 1] || null;
     const reminderSummary = widget.settings.reminderTimes.map(formatReminderTime).join(", ");
-    const nextCheckIn = describeNextCheckIn(tasks, widget.id, formatDateTime);
-    const reminderState = describeReminderState(tasks, widget.id, formatDateTime);
-    const voteIntent = describeVoteIntent(tasks, widget.id, formatDateTime);
     const pendingVote = getPendingActionForWidget(widget.id, "energy-vote");
+    const shellSummary = describeEnergyShellSummary(tasks, widget.id, formatDateTime);
+    const trendEntries = filterEntriesByRange(widget.data.entries, "3d");
 
     return `
       <div class="widget-slot-header">
@@ -113,11 +112,19 @@ export const energyWidgetDefinition = {
           extraClassName: ""
         })}
       </div>
-      <p>${pendingVote ? `Pending vote: ${pendingVote.level}/5` : `Latest vote: ${latest ? `${latest.level}/5 at ${formatDateTime(latest.at)}` : "none yet"}`}</p>
-      <p>${escapeHtml(reminderState)}</p>
-      <p>${escapeHtml(voteIntent)}</p>
-      <p>Next check-in: <strong>${escapeHtml(nextCheckIn)}</strong></p>
-      <p>Reminder tasks: ${escapeHtml(reminderSummary)}</p>
+      <div class="energy-widget-summary">
+        <p class="energy-widget-current">${pendingVote ? `Pending vote: ${pendingVote.level}/5` : `Latest vote: ${latest ? `${latest.level}/5 at ${formatDateTime(latest.at)}` : "No votes yet"}`}</p>
+        <p class="energy-widget-next"><strong>${escapeHtml(shellSummary.primary)}</strong></p>
+        <p class="energy-widget-note">${escapeHtml(shellSummary.secondary)}</p>
+      </div>
+      <section class="energy-widget-trend" aria-label="Energy trend for the last 3 days">
+        <div class="energy-widget-trend-header">
+          <span>Last 3 days</span>
+          <span>${trendEntries.length > 0 ? `${trendEntries.length} vote${trendEntries.length === 1 ? "" : "s"}` : "No votes yet"}</span>
+        </div>
+        ${renderEnergyShellTrend(trendEntries, escapeHtml, formatDateTime)}
+      </section>
+      <p class="energy-widget-schedule">Check-ins: ${escapeHtml(reminderSummary)}</p>
       <div class="widget-actions">
         <button type="button" class="ghost-button" data-widget-action="open-widget-detail">Open panel</button>
       </div>
@@ -851,15 +858,6 @@ function hasActiveReminderTask(tasks, widgetId, at = Date.now()) {
   return Boolean(findActiveEnergyCompletionTask(tasks, widgetId, "energy-vote", at));
 }
 
-function describeNextCheckIn(tasks, widgetId, formatDateTime) {
-  const sequence = listEnergyScheduledTasks(Array.isArray(tasks) ? tasks : [], widgetId, { openOnly: false });
-  const nextOpenTask = sequence.find((task) => task.status === "open");
-  if (!nextOpenTask) {
-    return "No future reminder queued";
-  }
-  return formatDateTime(taskDueTimestamp(nextOpenTask));
-}
-
 function describeReminderState(tasks, widgetId, formatDateTime) {
   const sequence = listEnergyScheduledTasks(Array.isArray(tasks) ? tasks : [], widgetId, { openOnly: false });
   const activeTask = findActiveEnergyCompletionTask(sequence, widgetId, "energy-vote", Date.now());
@@ -882,6 +880,38 @@ function describeVoteIntent(tasks, widgetId, formatDateTime) {
     return `This vote will complete ${activeTask.name}, due at ${formatDateTime(taskDueTimestamp(activeTask))}.`;
   }
   return "No reminder is due right now. This vote will be stored independently of the reminder chain.";
+}
+
+function describeEnergyShellSummary(tasks, widgetId, formatDateTime) {
+  const sequence = listEnergyScheduledTasks(Array.isArray(tasks) ? tasks : [], widgetId, { openOnly: false });
+  const activeTask = findActiveEnergyCompletionTask(sequence, widgetId, "energy-vote", Date.now());
+  if (activeTask) {
+    return {
+      primary: `Due now: ${formatEnergyReminderLabel(activeTask)} · ${formatDateTime(taskDueTimestamp(activeTask))}`,
+      secondary: "Vote now to complete this check-in."
+    };
+  }
+
+  const nextOpenTask = sequence.find((task) => task.status === "open");
+  if (nextOpenTask) {
+    return {
+      primary: `Next due: ${formatEnergyReminderLabel(nextOpenTask)} · ${formatDateTime(taskDueTimestamp(nextOpenTask))}`,
+      secondary: "Votes right now will be stored as extra readings."
+    };
+  }
+
+  return {
+    primary: "No future check-ins queued",
+    secondary: "Votes right now will be stored as extra readings."
+  };
+}
+
+function formatEnergyReminderLabel(task) {
+  const label = task?.widgetTaskMeta?.reminderLabel;
+  if (typeof label === "string" && label.trim()) {
+    return `${label} check-in`;
+  }
+  return task?.name || "Energy check-in";
 }
 
 function formatReminderTime(value) {
@@ -962,6 +992,67 @@ function filterEntriesByRange(entries, range) {
   };
   const cutoff = Date.now() - (rangeMs[range] || rangeMs["7d"]);
   return entries.filter((entry) => entry.at >= cutoff);
+}
+
+function renderEnergyShellTrend(entries, escapeHtml, formatDateTime) {
+  if (!Array.isArray(entries) || entries.length === 0) {
+    return `
+      <div class="energy-widget-trend-empty">
+        Log a few votes to see your recent energy trend here.
+      </div>
+    `;
+  }
+
+  const width = 240;
+  const height = 92;
+  const padding = { top: 10, right: 10, bottom: 14, left: 10 };
+  const chartWidth = width - padding.left - padding.right;
+  const chartHeight = height - padding.top - padding.bottom;
+  const minTime = entries[0].at;
+  const maxTime = entries[entries.length - 1].at;
+  const timeSpan = Math.max(maxTime - minTime, 1);
+
+  const points = entries.map((entry) => {
+    const x = padding.left + ((entry.at - minTime) / timeSpan) * chartWidth;
+    const y = padding.top + chartHeight - ((entry.level - 1) / 4) * chartHeight;
+    return { entry, x, y };
+  });
+  const pathPoints = points.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ");
+  const latest = entries[entries.length - 1];
+
+  return `
+    <div class="energy-widget-trend-graphic">
+      <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(`Energy levels over the last 3 days, latest ${latest.level} at ${formatDateTime(latest.at)}.`)}">
+        <defs>
+          <linearGradient id="energy-shell-fill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="rgba(255, 140, 66, 0.24)" />
+            <stop offset="100%" stop-color="rgba(255, 140, 66, 0.02)" />
+          </linearGradient>
+        </defs>
+        <path d="M ${points.map((point) => `${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(" L ")} L ${points[points.length - 1].x.toFixed(1)} ${(height - padding.bottom).toFixed(1)} L ${points[0].x.toFixed(1)} ${(height - padding.bottom).toFixed(1)} Z" fill="url(#energy-shell-fill)" />
+        <polyline fill="none" stroke="#ff8c42" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" points="${pathPoints}" />
+        ${points.map(({ entry, x, y }) => {
+          const option = ENERGY_LEVELS.find((item) => item.level === entry.level);
+          return `
+            <circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${entry.source === "extra" ? "4" : "5.5"}" fill="${option?.accent || "#ff8c42"}" stroke="${entry.source === "extra" ? "#20344a" : "rgba(255,255,255,0.86)"}" stroke-width="${entry.source === "extra" ? "1.5" : "2"}">
+              <title>${escapeHtml(`${entry.level}/5 at ${formatDateTime(entry.at)}${entry.source === "extra" ? " • extra log" : ""}`)}</title>
+            </circle>
+          `;
+        }).join("")}
+      </svg>
+      <div class="energy-widget-trend-footer">
+        <span>${escapeHtml(formatCompactEnergyDate(entries[0].at))}</span>
+        <span>${escapeHtml(formatCompactEnergyDate(latest.at))}</span>
+      </div>
+    </div>
+  `;
+}
+
+function formatCompactEnergyDate(timestamp) {
+  return new Date(timestamp).toLocaleDateString([], {
+    month: "short",
+    day: "numeric"
+  });
 }
 
 function drawEnergyChart(canvas, emptyState, entries) {
