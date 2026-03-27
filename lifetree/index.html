@@ -719,7 +719,7 @@
         <div>
           <p class="eyebrow">Notifications</p>
           <h2 id="notificationsTitle">Email notifications</h2>
-          <p class="sync-status">Configure summary delivery now and save reminder preferences for the next email-reminder phase, all through the connected Google account.</p>
+          <p class="sync-status">Configure summary delivery and reminder emails through the connected Google account.</p>
         </div>
         <button type="button" class="ghost-button" id="closeNotifications">Close</button>
       </div>
@@ -773,7 +773,7 @@
           <div class="notifications-section-header">
             <div>
               <p class="eyebrow">Reminders</p>
-              <h3>Save reminder preferences</h3>
+              <h3>Reminder preferences</h3>
               <p class="sync-status">Per-task reminder timing is controlled on the task itself or by a widget. If a task leaves it blank, Lifetree will use 15 minutes before due and the task grace period after due.</p>
             </div>
           </div>
@@ -781,7 +781,7 @@
             <input id="notificationsRemindersEnabled" name="notificationsRemindersEnabled" type="checkbox" />
             <span class="settings-option-copy">
               <strong>Enable email reminders</strong>
-              <small>Save your reminder preferences now. Delivery wiring will build on these settings.</small>
+              <small>Send due-soon, overdue, and daily agenda emails using the saved task reminder rules.</small>
             </span>
           </label>
           <div class="notifications-toggles">
@@ -860,7 +860,7 @@
           <div class="notifications-section-header">
             <div>
               <p class="eyebrow">Preview</p>
-              <h3>Current email preview</h3>
+              <h3>Current email previews</h3>
             </div>
           </div>
           <div id="notificationsPreview" class="notifications-preview"></div>
@@ -879,6 +879,7 @@
         <div class="form-actions">
           <button type="submit" class="primary-button">Save notifications</button>
           <button type="button" class="ghost-button" id="sendNotificationSummary">Send summary now</button>
+          <button type="button" class="ghost-button" id="sendNotificationReminder">Send reminders now</button>
           <button type="button" class="ghost-button" id="cancelNotifications">Cancel</button>
         </div>
       </form>

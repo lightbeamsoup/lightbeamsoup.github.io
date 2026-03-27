@@ -45,8 +45,13 @@ import {
   renderEmailSummaryBodyText as renderEmailSummaryBodyTextShared
 } from "./modules/notificationSummary.js";
 import {
+  buildEmailReminderPreview as buildEmailReminderPreviewShared,
+  renderEmailReminderBodyHtml as renderEmailReminderBodyHtmlShared,
+  renderEmailReminderBodyText as renderEmailReminderBodyTextShared
+} from "./modules/notificationReminders.js";
+import {
   DEFAULT_TASK_DUE_SOON_REMINDER_MINUTES,
-  appendEmailSummaryHistoryEntry,
+  appendNotificationHistoryEntry,
   choosePreferredNotifications,
   normalizeEmailReminderConfig,
   normalizeEmailSummaryConfig,
@@ -237,6 +242,7 @@ const notificationsIncludeWidgetHighlightsInput = document.getElementById("notif
 const notificationsPreview = document.getElementById("notificationsPreview");
 const notificationsHistory = document.getElementById("notificationsHistory");
 const sendNotificationSummaryButton = document.getElementById("sendNotificationSummary");
+const sendNotificationReminderButton = document.getElementById("sendNotificationReminder");
 const taskDeskModal = document.getElementById("taskDeskModal");
 const openTaskDeskButton = document.getElementById("openTaskDesk");
 const closeTaskDeskButton = document.getElementById("closeTaskDesk");
@@ -438,7 +444,8 @@ const driveSaveState = {
   mode: ""
 };
 const notificationSendState = {
-  inFlight: false
+  inFlight: false,
+  kind: ""
 };
 const localFingerprintCache = {
   storeRef: null,
@@ -661,6 +668,7 @@ notificationsForm.addEventListener("submit", handleNotificationsSubmit);
 notificationsForm.addEventListener("input", renderNotificationsIfOpen);
 notificationsForm.addEventListener("change", handleNotificationsFormChange);
 sendNotificationSummaryButton.addEventListener("click", handleSendNotificationSummary);
+sendNotificationReminderButton.addEventListener("click", handleSendNotificationReminder);
 closeTreeDetailButton.addEventListener("click", closeTreeDetail);
 closeTreeDetailBackdrop.addEventListener("click", closeTreeDetail);
 closeTreeStyleButton.addEventListener("click", closeTreeStyle);
@@ -1185,14 +1193,33 @@ function syncNotificationsInputs() {
 
 function syncNotificationActionState(draft = null) {
   const nextDraft = draft || readNotificationsDraft();
-  const canSend = Boolean(authState.authenticated && nextDraft.recipientEmail && !notificationSendState.inFlight);
-  sendNotificationSummaryButton.disabled = !canSend;
-  sendNotificationSummaryButton.textContent = notificationSendState.inFlight ? "Sending…" : "Send summary now";
+  const reminderPreview = buildEmailReminderPreviewShared({
+    store,
+    emailConfig: nextDraft,
+    now: new Date(),
+    fallbackRecipientEmail: authState.user?.email || ""
+  });
+  const canSendBase = Boolean(authState.authenticated && nextDraft.recipientEmail && !notificationSendState.inFlight);
+  sendNotificationSummaryButton.disabled = !canSendBase;
+  sendNotificationSummaryButton.textContent = notificationSendState.inFlight && notificationSendState.kind === "summary"
+    ? "Sending…"
+    : "Send summary now";
   sendNotificationSummaryButton.title = !authState.authenticated
     ? "Connect Google to send summaries from the authenticated Gmail account."
     : !nextDraft.recipientEmail
       ? "Choose a recipient email before sending a summary."
       : "";
+  sendNotificationReminderButton.disabled = !canSendBase || reminderPreview.sections.length === 0;
+  sendNotificationReminderButton.textContent = notificationSendState.inFlight && notificationSendState.kind === "reminder"
+    ? "Sending…"
+    : "Send reminders now";
+  sendNotificationReminderButton.title = !authState.authenticated
+    ? "Connect Google to send reminders from the authenticated Gmail account."
+    : !nextDraft.recipientEmail
+      ? "Choose a recipient email before sending reminders."
+      : reminderPreview.sections.length === 0
+        ? "No reminder emails are due right now."
+        : "";
 }
 
 function handleNotificationsFormChange() {
@@ -1278,45 +1305,56 @@ function buildSummarySendDraft(baseDraft, { frequencyOverride = "" } = {}) {
   };
 }
 
-async function sendNotificationSummaryDraft({
+async function sendNotificationEmailDraft({
+  kind = "summary",
   draft = readNotificationsDraft(),
-  frequencyOverride = "",
+  buildPreview,
+  renderHtml,
+  renderText,
+  endpoint,
+  requireContent = false,
   successMessage = "",
-  failurePrefix = "Summary send failed"
+  missingRecipientMessage = "",
+  missingAuthMessage = "",
+  failurePrefix = "Notification send failed",
+  historyEntry = () => ({})
 } = {}) {
-  const sendDraft = buildSummarySendDraft(draft, { frequencyOverride });
-  if (!sendDraft.recipientEmail) {
-    setSyncStatus("Choose a recipient email before sending a summary.", "error");
+  const kindLabel = kind ? `${kind.charAt(0).toUpperCase()}${kind.slice(1)}` : "Notification";
+  if (!draft.recipientEmail) {
+    setSyncStatus(missingRecipientMessage, "error");
     return { success: false };
   }
 
   if (!authState.authenticated) {
     const authenticated = await refreshAuthStatus({ suppressUnavailableError: false });
     if (!authenticated) {
-      setSyncStatus("Connect Google first to send email summaries.", "error");
+      setSyncStatus(missingAuthMessage, "error");
       renderNotificationsIfOpen();
       return { success: false };
     }
   }
 
   const now = new Date();
-  const preview = buildEmailSummaryPreviewShared({
-    store,
-    emailConfig: sendDraft,
-    now,
-    fallbackRecipientEmail: authState.user?.email || ""
-  });
-  const summaryKey = buildEmailSummaryKeyShared(sendDraft.summaries, now);
+  const preview = buildPreview(now);
+  if (!preview.recipientEmail) {
+    setSyncStatus(missingRecipientMessage, "error");
+    return { success: false };
+  }
+  if (requireContent && preview.sections.length === 0) {
+    setSyncStatus("No matching notification items are due right now.", "info");
+    return { success: false };
+  }
+
   const requestBody = {
     recipientEmail: preview.recipientEmail,
     subject: preview.subject,
-    html: renderEmailSummaryBodyHtmlShared(preview),
-    text: renderEmailSummaryBodyTextShared(preview)
+    html: renderHtml(preview),
+    text: renderText(preview)
   };
 
-  setNotificationSendInFlight(true);
+  setNotificationSendInFlight(true, kind);
   try {
-    const response = await fetch(`${API_BASE}/api/notifications/send-summary`, {
+    const response = await fetch(`${API_BASE}${endpoint}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
@@ -1326,55 +1364,87 @@ async function sendNotificationSummaryDraft({
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-      throw new Error(payload.error || "Summary send failed");
+      throw new Error(payload.error || `${kindLabel} send failed`);
     }
 
-    const history = appendEmailSummaryHistoryEntry(
+    const history = appendNotificationHistoryEntry(
       normalizeNotifications(store.notifications).email.history,
       {
         id: createId(),
         at: typeof payload.sentAt === "number" ? payload.sentAt : Date.now(),
         status: "sent",
+        kind,
         recipientEmail: preview.recipientEmail,
         subject: preview.subject,
-        summaryKey
+        ...historyEntry(preview, now)
       }
     );
-    persistNotificationsDraft({ ...sendDraft, history }, {
+    persistNotificationsDraft({ ...draft, history }, {
       history,
       updatedAt: Date.now()
     });
     await saveCurrentStoreToDrive({ quiet: true, force: true, mode: "manual" });
-    setSyncStatus(successMessage || `Sent summary to ${preview.recipientEmail}.`, "success");
+    setSyncStatus(successMessage || `Sent ${kind} email to ${preview.recipientEmail}.`, "success");
     return { success: true, preview, history };
   } catch (error) {
-    const message = String(error?.message || "Summary send failed");
-    const history = appendEmailSummaryHistoryEntry(
+    const message = String(error?.message || `${kindLabel} send failed`);
+    const history = appendNotificationHistoryEntry(
       normalizeNotifications(store.notifications).email.history,
       {
         id: createId(),
         at: Date.now(),
         status: "error",
+        kind,
         recipientEmail: preview.recipientEmail,
         subject: preview.subject,
-        summaryKey
+        ...historyEntry(preview, now)
       }
     );
-    persistNotificationsDraft({ ...sendDraft, history }, {
+    persistNotificationsDraft({ ...draft, history }, {
       history,
       updatedAt: Date.now()
     });
     if (message.includes("insufficientPermissions")) {
-      setSyncStatus("Reconnect Google and grant Gmail send access, then try sending the summary again.", "error");
+      setSyncStatus("Reconnect Google and grant Gmail send access, then try sending the notification again.", "error");
     } else if (message === "Not authenticated") {
-      setSyncStatus("Connect Google first to send email summaries.", "error");
+      setSyncStatus(missingAuthMessage, "error");
     } else {
       setSyncStatus(`${failurePrefix}: ${message}`, "error");
     }
     return { success: false, error: message };
   } finally {
-    setNotificationSendInFlight(false);
+    setNotificationSendInFlight(false, "");
   }
+}
+
+async function sendNotificationSummaryDraft({
+  draft = readNotificationsDraft(),
+  frequencyOverride = "",
+  successMessage = "",
+  failurePrefix = "Summary send failed"
+} = {}) {
+  const sendDraft = buildSummarySendDraft(draft, { frequencyOverride });
+  return sendNotificationEmailDraft({
+    kind: "summary",
+    draft: sendDraft,
+    endpoint: "/api/notifications/send-summary",
+    requireContent: false,
+    successMessage: successMessage || `Sent summary to ${sendDraft.recipientEmail}.`,
+    missingRecipientMessage: "Choose a recipient email before sending a summary.",
+    missingAuthMessage: "Connect Google first to send email summaries.",
+    failurePrefix,
+    buildPreview: (now) => buildEmailSummaryPreviewShared({
+      store,
+      emailConfig: sendDraft,
+      now,
+      fallbackRecipientEmail: authState.user?.email || ""
+    }),
+    renderHtml: renderEmailSummaryBodyHtmlShared,
+    renderText: renderEmailSummaryBodyTextShared,
+    historyEntry: (_preview, now) => ({
+      summaryKey: buildEmailSummaryKeyShared(sendDraft.summaries, now)
+    })
+  });
 }
 
 function handleNotificationsSubmit(event) {
@@ -1461,19 +1531,26 @@ function renderNotificationsIfOpen() {
   }
 
   const draft = readNotificationsDraft();
-  const preview = buildEmailSummaryPreviewShared({
+  const summaryPreview = buildEmailSummaryPreviewShared({
     store,
     emailConfig: draft,
     now: new Date(),
     fallbackRecipientEmail: authState.user?.email || ""
   });
-  notificationsPreview.innerHTML = renderEmailSummaryPreview(preview);
+  const reminderPreview = buildEmailReminderPreviewShared({
+    store,
+    emailConfig: draft,
+    now: new Date(),
+    fallbackRecipientEmail: authState.user?.email || ""
+  });
+  notificationsPreview.innerHTML = renderNotificationsPreview(summaryPreview, reminderPreview);
   notificationsHistory.innerHTML = renderNotificationHistory(draft.history);
   syncNotificationActionState(draft);
 }
 
-function setNotificationSendInFlight(inFlight) {
+function setNotificationSendInFlight(inFlight, kind = "") {
   notificationSendState.inFlight = Boolean(inFlight);
+  notificationSendState.kind = inFlight ? kind : "";
   syncNotificationActionState();
   if (isDeveloperUser()) {
     renderDeveloperPanel();
@@ -1485,6 +1562,31 @@ async function handleSendNotificationSummary() {
     draft: readNotificationsDraft(),
     successMessage: "",
     failurePrefix: "Summary send failed"
+  });
+}
+
+async function handleSendNotificationReminder() {
+  const draft = readNotificationsDraft();
+  await sendNotificationEmailDraft({
+    kind: "reminder",
+    draft,
+    endpoint: "/api/notifications/send-reminder",
+    requireContent: true,
+    successMessage: "",
+    missingRecipientMessage: "Choose a recipient email before sending reminders.",
+    missingAuthMessage: "Connect Google first to send email reminders.",
+    failurePrefix: "Reminder send failed",
+    buildPreview: (now) => buildEmailReminderPreviewShared({
+      store,
+      emailConfig: draft,
+      now,
+      fallbackRecipientEmail: authState.user?.email || ""
+    }),
+    renderHtml: renderEmailReminderBodyHtmlShared,
+    renderText: renderEmailReminderBodyTextShared,
+    historyEntry: (preview) => ({
+      reminderKey: preview.reminderKey || ""
+    })
   });
 }
 
@@ -3493,26 +3595,33 @@ function buildEmailSummaryPreview(emailConfig, now = new Date()) {
   };
 }
 
+function renderNotificationsPreview(summaryPreview, reminderPreview) {
+  return `
+    ${renderEmailSummaryPreview(summaryPreview)}
+    ${renderEmailReminderPreview(reminderPreview)}
+  `;
+}
+
 function renderEmailSummaryPreview(preview) {
   const recipientCopy = preview.recipientEmail || "No recipient selected yet";
   return `
-    <div class="notifications-preview-header">
-      <div class="notifications-preview-meta">
-        <span class="sync-status">Recipient</span>
-        <strong>${escapeHtml(recipientCopy)}</strong>
-      </div>
-      <div class="notifications-preview-meta">
-        <span class="sync-status">Schedule</span>
-        <strong>${escapeHtml(preview.scheduleLabel)}</strong>
-      </div>
-      <div class="notifications-preview-meta">
-        <span class="sync-status">Status</span>
-        <strong>${preview.enabled ? "Enabled" : "Saved only"}</strong>
-      </div>
-    </div>
     <article class="notifications-preview-card">
       <p class="eyebrow">Subject</p>
       <h4>${escapeHtml(preview.subject)}</h4>
+      <div class="notifications-preview-header">
+        <div class="notifications-preview-meta">
+          <span class="sync-status">Recipient</span>
+          <strong>${escapeHtml(recipientCopy)}</strong>
+        </div>
+        <div class="notifications-preview-meta">
+          <span class="sync-status">Schedule</span>
+          <strong>${escapeHtml(preview.scheduleLabel)}</strong>
+        </div>
+        <div class="notifications-preview-meta">
+          <span class="sync-status">Status</span>
+          <strong>${preview.enabled ? "Enabled" : "Saved only"}</strong>
+        </div>
+      </div>
       ${preview.sections.length > 0 ? preview.sections.map((section) => `
         <section class="notifications-preview-section">
           <strong>${escapeHtml(section.title)}</strong>
@@ -3521,6 +3630,39 @@ function renderEmailSummaryPreview(preview) {
           </ul>
         </section>
       `).join("") : `<p class="sync-status">No matching content yet. As tasks, widgets, and tree progress change, this preview will fill in automatically.</p>`}
+    </article>
+  `;
+}
+
+function renderEmailReminderPreview(preview) {
+  const recipientCopy = preview.recipientEmail || "No recipient selected yet";
+  return `
+    <article class="notifications-preview-card">
+      <p class="eyebrow">Reminder preview</p>
+      <h4>${escapeHtml(preview.subject)}</h4>
+      <div class="notifications-preview-header">
+        <div class="notifications-preview-meta">
+          <span class="sync-status">Recipient</span>
+          <strong>${escapeHtml(recipientCopy)}</strong>
+        </div>
+        <div class="notifications-preview-meta">
+          <span class="sync-status">Schedule</span>
+          <strong>${escapeHtml(preview.scheduleLabel)}</strong>
+        </div>
+        <div class="notifications-preview-meta">
+          <span class="sync-status">Events</span>
+          <strong>${preview.eventCount || 0}</strong>
+        </div>
+      </div>
+      ${preview.quietHoursActive ? `<p class="sync-status">Quiet hours are active right now. Manual sends still work, but automatic reminder delivery will pause during that window.</p>` : ""}
+      ${preview.sections.length > 0 ? preview.sections.map((section) => `
+        <section class="notifications-preview-section">
+          <strong>${escapeHtml(section.title)}</strong>
+          <ul>
+            ${section.items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
+          </ul>
+        </section>
+      `).join("") : `<p class="sync-status">No reminder items are due right now. Daily agenda entries will appear here on days that have open reminder-enabled tasks.</p>`}
     </article>
   `;
 }
@@ -3574,17 +3716,17 @@ function renderEmailSummaryBodyText(preview) {
 function renderNotificationHistory(historyEntries) {
   const entries = Array.isArray(historyEntries) ? historyEntries : [];
   if (entries.length === 0) {
-    return `<p class="sync-status">No email summaries have been sent yet. Send a summary now to start building history.</p>`;
+    return `<p class="sync-status">No notification emails have been sent yet. Send a summary or reminder now to start building history.</p>`;
   }
   return `
     <div class="notifications-history-list">
       ${entries.map((entry) => `
         <article class="notifications-history-item">
           <div>
-            <strong>${escapeHtml(entry.subject || "Email summary")}</strong>
+            <strong>${escapeHtml(entry.subject || "Notification email")}</strong>
             <p class="sync-status">${escapeHtml(entry.recipientEmail || "No recipient")} · ${escapeHtml(formatDateTime(entry.at))}</p>
           </div>
-          <span class="widget-badge">${entry.status === "error" ? "Error" : "Sent"}</span>
+          <span class="widget-badge">${entry.status === "error" ? "Error" : (entry.kind === "reminder" ? "Reminder" : "Summary")}</span>
         </article>
       `).join("")}
     </div>

@@ -135,20 +135,29 @@ export function normalizeEmailSummaryHistory(value) {
       id: typeof entry.id === "string" ? entry.id : "",
       at: typeof entry.at === "number" ? entry.at : 0,
       status: entry.status === "error" ? "error" : "sent",
+      kind: entry.kind === "reminder" ? "reminder" : "summary",
       recipientEmail: normalizeRecipientEmail(entry.recipientEmail),
       subject: typeof entry.subject === "string" ? entry.subject.slice(0, 200) : "",
-      summaryKey: typeof entry.summaryKey === "string" ? entry.summaryKey.slice(0, 120) : ""
+      summaryKey: typeof entry.summaryKey === "string" ? entry.summaryKey.slice(0, 120) : "",
+      reminderKey: typeof entry.reminderKey === "string" ? entry.reminderKey.slice(0, 240) : ""
     }))
     .filter((entry) => entry.id && entry.at > 0)
     .sort((left, right) => right.at - left.at)
     .slice(0, MAX_NOTIFICATION_HISTORY_ENTRIES);
 }
 
-export function appendEmailSummaryHistoryEntry(existingEntries, nextEntry) {
+export function appendNotificationHistoryEntry(existingEntries, nextEntry) {
   return normalizeEmailSummaryHistory([
     nextEntry,
     ...normalizeEmailSummaryHistory(existingEntries)
   ]);
+}
+
+export function appendEmailSummaryHistoryEntry(existingEntries, nextEntry) {
+  return appendNotificationHistoryEntry(existingEntries, {
+    kind: "summary",
+    ...nextEntry
+  });
 }
 
 function getRuntimeNotificationTimezone() {

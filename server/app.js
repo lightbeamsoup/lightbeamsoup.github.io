@@ -251,42 +251,31 @@ app.post("/api/lifetree/reset", async (req, res) => {
 
 app.post("/api/notifications/send-summary", async (req, res) => {
   try {
-    const user = requireUser(req);
-    const accessToken = await refreshAccessToken(user);
-    const recipientEmail = normalizeRecipientEmail(req.body?.recipientEmail) || normalizeRecipientEmail(user.email);
-    const subject = sanitizeEmailHeader(req.body?.subject, 220);
-    const html = sanitizeEmailBody(req.body?.html, 200_000);
-    const text = sanitizeEmailBody(req.body?.text, 80_000);
-
-    if (!recipientEmail) {
-      res.status(400).json({ error: "Choose a valid recipient email before sending a summary." });
-      return;
-    }
-    if (!subject) {
-      res.status(400).json({ error: "Missing summary subject." });
-      return;
-    }
-    if (!html && !text) {
-      res.status(400).json({ error: "Missing summary body." });
-      return;
-    }
-
-    const delivery = await sendGmailMessage(accessToken, {
-      fromEmail: normalizeRecipientEmail(user.email),
-      recipientEmail,
-      subject,
-      html: html || `<pre>${escapeHtml(text)}</pre>`,
-      text: text || stripHtmlToText(html)
-    });
-
-    res.json({
-      ok: true,
-      id: delivery.id || "",
-      threadId: delivery.threadId || "",
-      sentAt: Date.now()
+    await handleNotificationSendRequest(req, res, {
+      missingRecipientMessage: "Choose a valid recipient email before sending a summary.",
+      missingSubjectMessage: "Missing summary subject.",
+      missingBodyMessage: "Missing summary body."
     });
   } catch (error) {
     const message = String(error?.message || "Email summary send failed");
+    const statusCode = message === "Not authenticated" || message === "Missing stored user"
+      ? 401
+      : message.includes("(403)")
+        ? 403
+        : 500;
+    res.status(statusCode).json({ error: message });
+  }
+});
+
+app.post("/api/notifications/send-reminder", async (req, res) => {
+  try {
+    await handleNotificationSendRequest(req, res, {
+      missingRecipientMessage: "Choose a valid recipient email before sending reminders.",
+      missingSubjectMessage: "Missing reminder subject.",
+      missingBodyMessage: "Missing reminder body."
+    });
+  } catch (error) {
+    const message = String(error?.message || "Email reminder send failed");
     const statusCode = message === "Not authenticated" || message === "Missing stored user"
       ? 401
       : message.includes("(403)")
@@ -314,6 +303,47 @@ app.listen(PORT, () => {
 
 if (ENABLE_NOTIFICATION_SCHEDULER) {
   startNotificationScheduler();
+}
+
+async function handleNotificationSendRequest(req, res, {
+  missingRecipientMessage,
+  missingSubjectMessage,
+  missingBodyMessage
+}) {
+  const user = requireUser(req);
+  const accessToken = await refreshAccessToken(user);
+  const recipientEmail = normalizeRecipientEmail(req.body?.recipientEmail) || normalizeRecipientEmail(user.email);
+  const subject = sanitizeEmailHeader(req.body?.subject, 220);
+  const html = sanitizeEmailBody(req.body?.html, 200_000);
+  const text = sanitizeEmailBody(req.body?.text, 80_000);
+
+  if (!recipientEmail) {
+    res.status(400).json({ error: missingRecipientMessage });
+    return;
+  }
+  if (!subject) {
+    res.status(400).json({ error: missingSubjectMessage });
+    return;
+  }
+  if (!html && !text) {
+    res.status(400).json({ error: missingBodyMessage });
+    return;
+  }
+
+  const delivery = await sendGmailMessage(accessToken, {
+    fromEmail: normalizeRecipientEmail(user.email),
+    recipientEmail,
+    subject,
+    html: html || `<pre>${escapeHtml(text)}</pre>`,
+    text: text || stripHtmlToText(html)
+  });
+
+  res.json({
+    ok: true,
+    id: delivery.id || "",
+    threadId: delivery.threadId || "",
+    sentAt: Date.now()
+  });
 }
 
 function assertOAuthEnv() {
