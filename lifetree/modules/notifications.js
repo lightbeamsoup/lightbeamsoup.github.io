@@ -136,6 +136,11 @@ export function normalizeEmailSummaryHistory(value) {
       at: typeof entry.at === "number" ? entry.at : 0,
       status: entry.status === "error" ? "error" : "sent",
       kind: entry.kind === "reminder" ? "reminder" : "summary",
+      reminderTemplateKind: entry.reminderTemplateKind === "agenda"
+        || entry.reminderTemplateKind === "due-soon"
+        || entry.reminderTemplateKind === "overdue"
+        ? entry.reminderTemplateKind
+        : "",
       recipientEmail: normalizeRecipientEmail(entry.recipientEmail),
       subject: typeof entry.subject === "string" ? entry.subject.slice(0, 200) : "",
       summaryKey: typeof entry.summaryKey === "string" ? entry.summaryKey.slice(0, 120) : "",

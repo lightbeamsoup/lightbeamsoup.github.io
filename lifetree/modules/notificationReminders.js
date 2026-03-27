@@ -10,8 +10,9 @@ import {
 } from "./notifications.js";
 
 const LIFETREE_APP_URL = "https://www.joshcodes.ai/lifetree";
+const REMINDER_TEMPLATE_ORDER = ["agenda", "due-soon", "overdue"];
 
-export function buildEmailReminderPreview({
+export function buildEmailReminderTemplates({
   store,
   emailConfig,
   now = new Date(),
@@ -38,43 +39,19 @@ export function buildEmailReminderPreview({
     includeKinds,
     requireDailyAgendaTime
   });
-  const eventKeys = buildReminderEventKeys(candidates);
-  const sections = [];
-
-  if (reminders.enabled === true && candidates.dueSoon.length > 0) {
-    sections.push({
-      title: "Due soon",
-      items: candidates.dueSoon.map((candidate) => buildReminderPreviewItem(candidate.task, timeZone))
-    });
-  }
-  if (reminders.enabled === true && candidates.overdue.length > 0) {
-    sections.push({
-      title: "Overdue",
-      items: candidates.overdue.map((candidate) => buildReminderPreviewItem(candidate.task, timeZone))
-    });
-  }
-  if (reminders.enabled === true && candidates.dailyAgenda.length > 0) {
-    sections.push({
-      title: "Today's agenda",
-      items: candidates.dailyAgenda.map((candidate) => buildReminderPreviewItem(candidate.task, timeZone))
-    });
-  }
-
-  return {
-    subject: `${displayName} reminders · ${formatDateInTimeZone(now, timeZone)}`,
+  return buildReminderTemplatesFromCandidates({
+    reminders,
+    displayName,
     recipientEmail,
-    enabled: reminders.enabled === true,
-    scheduleLabel: buildReminderScheduleLabel(reminders, timeZone),
-    sections,
+    candidates,
+    now,
+    timeZone,
     quietHoursActive,
-    suppressedByQuietHours: respectQuietHours && quietHoursActive,
-    eventCount: candidates.dueSoon.length + candidates.overdue.length + candidates.dailyAgenda.length,
-    eventKeys,
-    reminderKey: eventKeys.join("|").slice(0, 240)
-  };
+    suppressedByQuietHours: respectQuietHours && quietHoursActive
+  });
 }
 
-export function buildScheduledEmailReminderPreview({
+export function buildScheduledEmailReminderTemplates({
   store,
   emailConfig,
   now = new Date(),
@@ -89,7 +66,7 @@ export function buildScheduledEmailReminderPreview({
   const quietHoursActive = reminders.quietHoursEnabled === true
     && isTimeWithinWindow(getZonedTimeString(now, timeZone), reminders.quietHoursStart, reminders.quietHoursEnd);
   if (quietHoursActive) {
-    return buildEmailReminderPreview({
+    return buildEmailReminderTemplates({
       store,
       emailConfig,
       now,
@@ -120,15 +97,15 @@ export function buildScheduledEmailReminderPreview({
     ...filteredCandidates.dailyAgenda
   ];
 
-  return buildEmailReminderPreviewFromCandidates({
-    store,
-    emailConfig,
-    now,
-    fallbackRecipientEmail,
+  return buildReminderTemplatesFromCandidates({
+    reminders,
+    displayName: String(store?.profile?.displayName || "").trim() || "Lifetree",
+    recipientEmail: normalizeRecipientEmail(emailConfig?.recipientEmail || fallbackRecipientEmail || ""),
     candidates: filteredCandidates,
+    now,
+    timeZone,
     quietHoursActive: false,
-    suppressedByQuietHours: false,
-    timeZone
+    suppressedByQuietHours: false
   });
 }
 
@@ -238,25 +215,23 @@ export function buildReminderEventKeys(candidates) {
 }
 
 export function renderEmailReminderBodyHtml(preview) {
-  const sectionsHtml = preview.sections.length > 0
-    ? preview.sections.map((section) => `
-      <section style="margin: 0 0 20px;">
-        <h2 style="margin: 0 0 10px; font-size: 18px; color: #253243;">${escapeHtml(section.title)}</h2>
-        <ul style="margin: 0; padding-left: 20px; color: #4f637a; line-height: 1.55;">
-          ${section.items.map((item) => renderReminderHtmlItem(item)).join("")}
-        </ul>
-      </section>
-    `).join("")
+  const intro = buildReminderTemplateIntro(preview);
+  const itemsHtml = preview.items.length > 0
+    ? `
+      <ul style="margin: 0; padding-left: 20px; color: #4f637a; line-height: 1.55;">
+        ${preview.items.map((item) => renderReminderHtmlItem(item)).join("")}
+      </ul>
+    `
     : `<p style="margin: 0; color: #4f637a;">No reminder events are due right now.</p>`;
-
   return `<!doctype html>
 <html lang="en">
   <body style="margin: 0; padding: 24px; background: #f5efe4; color: #253243; font-family: Georgia, 'Times New Roman', serif;">
     <main style="max-width: 720px; margin: 0 auto; background: #fffaf3; border: 1px solid rgba(37, 50, 67, 0.1); border-radius: 24px; padding: 28px; box-shadow: 0 24px 60px rgba(37, 50, 67, 0.12);">
-      <p style="margin: 0 0 8px; text-transform: uppercase; letter-spacing: 0.12em; font-size: 12px; color: #e57b4b;">Lifetree reminders</p>
+      <p style="margin: 0 0 8px; text-transform: uppercase; letter-spacing: 0.12em; font-size: 12px; color: #e57b4b;">${escapeHtml(preview.eyebrow)}</p>
       <h1 style="margin: 0 0 10px; font-size: 28px; line-height: 1.2; color: #253243;">${escapeHtml(preview.subject)}</h1>
-      <p style="margin: 0 0 24px; color: #4f637a;">${escapeHtml(preview.scheduleLabel)}${preview.recipientEmail ? ` · Sent to ${escapeHtml(preview.recipientEmail)}` : ""}</p>
-      ${sectionsHtml}
+      <p style="margin: 0 0 14px; color: #4f637a;">${escapeHtml(preview.scheduleLabel)}${preview.recipientEmail ? ` · Sent to ${escapeHtml(preview.recipientEmail)}` : ""}</p>
+      <p style="margin: 0 0 20px; color: #4f637a;">${escapeHtml(intro)}</p>
+      ${itemsHtml}
       <p style="margin: 24px 0 0; color: #4f637a;">Open Lifetree: <a href="${LIFETREE_APP_URL}" style="color: #e57b4b;">${LIFETREE_APP_URL}</a></p>
     </main>
   </body>
@@ -269,85 +244,110 @@ export function renderEmailReminderBodyText(preview) {
     lines.push(`Sent to ${preview.recipientEmail}`);
   }
   lines.push("");
-  if (preview.sections.length === 0) {
+  lines.push(buildReminderTemplateIntro(preview));
+  lines.push("");
+  if (preview.items.length === 0) {
     lines.push("No reminder events are due right now.");
   } else {
-    for (const section of preview.sections) {
-      lines.push(section.title);
-      lines.push(...section.items.map((item) => `- ${formatReminderTextItem(item)}`));
-      lines.push("");
-    }
+    lines.push(...preview.items.map((item) => `- ${formatReminderTextItem(item)}`));
+    lines.push("");
   }
   lines.push(`Open Lifetree: ${LIFETREE_APP_URL}`);
   return lines.join("\n").trim();
 }
 
-export function buildReminderScheduleLabel(remindersConfig, timeZone = DEFAULT_NOTIFICATION_TIMEZONE) {
-  const parts = [];
-  if (remindersConfig.enabled === true) {
-    if (remindersConfig.dueSoonEnabled !== false) {
-      parts.push("Due soon");
-    }
-    if (remindersConfig.overdueEnabled !== false) {
-      parts.push("Overdue");
-    }
-    if (remindersConfig.dailyAgendaEnabled === true) {
-      parts.push(`Daily agenda at ${formatTimeLabel(remindersConfig.dailyAgendaTime)}`);
-    }
-  } else {
-    parts.push("Reminders saved only");
+export function buildReminderScheduleLabel(remindersConfig, timeZone = DEFAULT_NOTIFICATION_TIMEZONE, templateKind = "due-soon") {
+  if (templateKind === "agenda") {
+    return `Daily agenda${remindersConfig.dailyAgendaEnabled === true ? ` at ${formatTimeLabel(remindersConfig.dailyAgendaTime)}` : ""} · ${timeZone}`;
   }
-  if (remindersConfig.quietHoursEnabled === true) {
-    parts.push(`Quiet hours ${formatTimeLabel(remindersConfig.quietHoursStart)}-${formatTimeLabel(remindersConfig.quietHoursEnd)}`);
+  if (templateKind === "overdue") {
+    return `Overdue reminder · ${timeZone}`;
   }
-  parts.push(timeZone);
-  return parts.join(" · ");
+  return `Due soon reminder · ${timeZone}`;
 }
 
-function buildEmailReminderPreviewFromCandidates({
-  store,
-  emailConfig,
-  now,
-  fallbackRecipientEmail,
+function buildReminderTemplatesFromCandidates({
+  reminders,
+  displayName,
+  recipientEmail,
   candidates,
+  now,
+  timeZone,
+  quietHoursActive = false,
+  suppressedByQuietHours = false
+}) {
+  if (reminders.enabled !== true) {
+    return [];
+  }
+
+  const templateSpecs = [
+    {
+      templateKind: "agenda",
+      items: candidates.dailyAgenda,
+      eventKeys: Array.isArray(candidates.dailyAgenda) && candidates.dailyAgenda.length > 0 && candidates.dailyAgendaKey
+        ? [candidates.dailyAgendaKey]
+        : []
+    },
+    {
+      templateKind: "due-soon",
+      items: candidates.dueSoon,
+      eventKeys: (Array.isArray(candidates.dueSoon) ? candidates.dueSoon : []).map((candidate) => candidate.key)
+    },
+    {
+      templateKind: "overdue",
+      items: candidates.overdue,
+      eventKeys: (Array.isArray(candidates.overdue) ? candidates.overdue : []).map((candidate) => candidate.key)
+    }
+  ];
+
+  return templateSpecs
+    .map((spec) => buildReminderTemplatePreview({
+      displayName,
+      recipientEmail,
+      reminders,
+      now,
+      timeZone,
+      quietHoursActive,
+      suppressedByQuietHours,
+      templateKind: spec.templateKind,
+      candidates: spec.items,
+      eventKeys: spec.eventKeys
+    }))
+    .filter(Boolean)
+    .sort((left, right) => REMINDER_TEMPLATE_ORDER.indexOf(left.templateKind) - REMINDER_TEMPLATE_ORDER.indexOf(right.templateKind));
+}
+
+function buildReminderTemplatePreview({
+  displayName,
+  recipientEmail,
+  reminders,
+  now,
+  timeZone,
   quietHoursActive,
   suppressedByQuietHours,
-  timeZone
+  templateKind,
+  candidates,
+  eventKeys
 }) {
-  const reminders = emailConfig?.reminders || {};
-  const recipientEmail = normalizeRecipientEmail(emailConfig?.recipientEmail || fallbackRecipientEmail || "");
-  const displayName = String(store?.profile?.displayName || "").trim() || "Lifetree";
-  const eventKeys = buildReminderEventKeys(candidates);
-  const sections = [];
-  if (reminders.enabled === true && candidates.dueSoon.length > 0) {
-    sections.push({
-      title: "Due soon",
-      items: candidates.dueSoon.map((candidate) => buildReminderPreviewItem(candidate.task, timeZone))
-    });
+  const safeCandidates = Array.isArray(candidates) ? candidates : [];
+  if (safeCandidates.length === 0) {
+    return null;
   }
-  if (reminders.enabled === true && candidates.overdue.length > 0) {
-    sections.push({
-      title: "Overdue",
-      items: candidates.overdue.map((candidate) => buildReminderPreviewItem(candidate.task, timeZone))
-    });
-  }
-  if (reminders.enabled === true && candidates.dailyAgenda.length > 0) {
-    sections.push({
-      title: "Today's agenda",
-      items: candidates.dailyAgenda.map((candidate) => buildReminderPreviewItem(candidate.task, timeZone))
-    });
-  }
+  const items = safeCandidates.map((candidate) => buildReminderPreviewItem(candidate.task, timeZone));
+  const dateCopy = formatDateInTimeZone(now, timeZone);
   return {
-    subject: `${displayName} reminders · ${formatDateInTimeZone(now, timeZone)}`,
+    templateKind,
+    eyebrow: templateKind === "agenda" ? "Lifetree agenda" : templateKind === "overdue" ? "Lifetree overdue reminder" : "Lifetree reminder",
+    subject: buildReminderSubject(displayName, templateKind, dateCopy),
     recipientEmail,
     enabled: reminders.enabled === true,
-    scheduleLabel: buildReminderScheduleLabel(reminders, timeZone),
-    sections,
+    scheduleLabel: buildReminderScheduleLabel(reminders, timeZone, templateKind),
+    items,
     quietHoursActive,
     suppressedByQuietHours,
-    eventCount: candidates.dueSoon.length + candidates.overdue.length + candidates.dailyAgenda.length,
-    eventKeys,
-    reminderKey: eventKeys.join("|").slice(0, 240)
+    eventCount: items.length,
+    eventKeys: [...new Set(eventKeys)].sort(),
+    reminderKey: [...new Set(eventKeys)].sort().join("|").slice(0, 240)
   };
 }
 
@@ -463,6 +463,26 @@ function normalizeReminderPreviewItem(item) {
     label: String(item || ""),
     status: "open"
   };
+}
+
+function buildReminderSubject(displayName, templateKind, dateCopy) {
+  if (templateKind === "agenda") {
+    return `${displayName}'s agenda · ${dateCopy}`;
+  }
+  if (templateKind === "overdue") {
+    return `Overdue tasks for ${displayName} · ${dateCopy}`;
+  }
+  return `Reminders for ${displayName} · ${dateCopy}`;
+}
+
+function buildReminderTemplateIntro(preview) {
+  if (preview.templateKind === "agenda") {
+    return "Here is everything due today. Tasks already completed or skipped stay listed so the day is easy to review at a glance.";
+  }
+  if (preview.templateKind === "overdue") {
+    return "These tasks are now past their overdue threshold and still need attention.";
+  }
+  return "These tasks are approaching their due time and may need attention soon.";
 }
 
 function zonedDateTimeToTimestamp(dateString, timeString, timeZone) {

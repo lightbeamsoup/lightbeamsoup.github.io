@@ -45,7 +45,7 @@ import {
   renderEmailSummaryBodyText as renderEmailSummaryBodyTextShared
 } from "./modules/notificationSummary.js";
 import {
-  buildEmailReminderPreview as buildEmailReminderPreviewShared,
+  buildEmailReminderTemplates as buildEmailReminderTemplatesShared,
   renderEmailReminderBodyHtml as renderEmailReminderBodyHtmlShared,
   renderEmailReminderBodyText as renderEmailReminderBodyTextShared
 } from "./modules/notificationReminders.js";
@@ -1195,7 +1195,7 @@ function syncNotificationsInputs() {
 
 function syncNotificationActionState(draft = null) {
   const nextDraft = draft || readNotificationsDraft();
-  const reminderPreview = buildEmailReminderPreviewShared({
+  const reminderTemplates = buildEmailReminderTemplatesShared({
     store,
     emailConfig: nextDraft,
     now: new Date(),
@@ -1211,7 +1211,7 @@ function syncNotificationActionState(draft = null) {
     : !nextDraft.recipientEmail
       ? "Choose a recipient email before sending a summary."
       : "";
-  sendNotificationReminderButton.disabled = !canSendBase || reminderPreview.sections.length === 0;
+  sendNotificationReminderButton.disabled = !canSendBase || reminderTemplates.length === 0;
   sendNotificationReminderButton.textContent = notificationSendState.inFlight && notificationSendState.kind === "reminder"
     ? "Sending…"
     : "Send reminders now";
@@ -1219,7 +1219,7 @@ function syncNotificationActionState(draft = null) {
     ? "Connect Google to send reminders from the authenticated Gmail account."
     : !nextDraft.recipientEmail
       ? "Choose a recipient email before sending reminders."
-      : reminderPreview.sections.length === 0
+      : reminderTemplates.length === 0
         ? "No reminder emails are due right now."
         : "";
 }
@@ -1539,13 +1539,13 @@ function renderNotificationsIfOpen() {
     now: new Date(),
     fallbackRecipientEmail: authState.user?.email || ""
   });
-  const reminderPreview = buildEmailReminderPreviewShared({
+  const reminderTemplates = buildEmailReminderTemplatesShared({
     store,
     emailConfig: draft,
     now: new Date(),
     fallbackRecipientEmail: authState.user?.email || ""
   });
-  notificationsPreview.innerHTML = renderNotificationsPreview(summaryPreview, reminderPreview);
+  notificationsPreview.innerHTML = renderNotificationsPreview(summaryPreview, reminderTemplates);
   notificationsHistory.innerHTML = renderNotificationHistory(draft.history);
   syncNotificationActionState(draft);
 }
@@ -1574,30 +1574,90 @@ async function sendNotificationReminderDraft({
   successMessage = "",
   failurePrefix = "Reminder send failed"
 } = {}) {
-  return sendNotificationEmailDraft({
-    kind: "reminder",
-    draft,
-    endpoint: "/api/notifications/send-reminder",
-    requireContent: true,
-    successMessage,
-    missingRecipientMessage: "Choose a recipient email before sending reminders.",
-    missingAuthMessage: "Connect Google first to send email reminders.",
-    failurePrefix,
-    buildPreview: (now) => buildEmailReminderPreviewShared({
-      store,
-      emailConfig: draft,
-      now,
-      fallbackRecipientEmail: authState.user?.email || "",
-      includeKinds,
-      requireDailyAgendaTime
-    }),
-    renderHtml: renderEmailReminderBodyHtmlShared,
-    renderText: renderEmailReminderBodyTextShared,
-    historyEntry: (preview) => ({
-      reminderKey: preview.reminderKey || "",
-      reminderEventKeys: Array.isArray(preview.eventKeys) ? preview.eventKeys : []
-    })
+  if (!draft.recipientEmail) {
+    setSyncStatus("Choose a recipient email before sending reminders.", "error");
+    return { success: false };
+  }
+
+  if (!authState.authenticated) {
+    const authenticated = await refreshAuthStatus({ suppressUnavailableError: false });
+    if (!authenticated) {
+      setSyncStatus("Connect Google first to send email reminders.", "error");
+      renderNotificationsIfOpen();
+      return { success: false };
+    }
+  }
+
+  const now = new Date();
+  const reminderTemplates = buildEmailReminderTemplatesShared({
+    store,
+    emailConfig: draft,
+    now,
+    fallbackRecipientEmail: authState.user?.email || "",
+    includeKinds,
+    requireDailyAgendaTime
   });
+  if (reminderTemplates.length === 0) {
+    setSyncStatus("No matching reminder emails are due right now.", "info");
+    return { success: false };
+  }
+
+  setNotificationSendInFlight(true, "reminder");
+  let history = normalizeNotifications(store.notifications).email.history;
+  let sentCount = 0;
+  try {
+    for (const preview of reminderTemplates) {
+      const response = await fetch(`${API_BASE}/api/notifications/send-reminder`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        credentials: FETCH_CREDENTIALS,
+        body: JSON.stringify({
+          recipientEmail: preview.recipientEmail,
+          subject: preview.subject,
+          html: renderEmailReminderBodyHtmlShared(preview),
+          text: renderEmailReminderBodyTextShared(preview)
+        })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.error || "Reminder send failed");
+      }
+      history = appendNotificationHistoryEntry(history, {
+        id: createId(),
+        at: typeof payload.sentAt === "number" ? payload.sentAt : Date.now(),
+        status: "sent",
+        kind: "reminder",
+        reminderTemplateKind: preview.templateKind || "",
+        recipientEmail: preview.recipientEmail,
+        subject: preview.subject,
+        reminderKey: preview.reminderKey || "",
+        reminderEventKeys: Array.isArray(preview.eventKeys) ? preview.eventKeys : []
+      });
+      sentCount += 1;
+    }
+
+    persistNotificationsDraft({ ...draft, history }, {
+      history,
+      updatedAt: Date.now()
+    });
+    await saveCurrentStoreToDrive({ quiet: true, force: true, mode: "manual" });
+    setSyncStatus(successMessage || `Sent ${sentCount} reminder email${sentCount === 1 ? "" : "s"} to ${draft.recipientEmail}.`, "success");
+    return { success: true, history, count: sentCount };
+  } catch (error) {
+    const message = String(error?.message || "Reminder send failed");
+    if (message.includes("insufficientPermissions")) {
+      setSyncStatus("Reconnect Google and grant Gmail send access, then try sending the notification again.", "error");
+    } else if (message === "Not authenticated") {
+      setSyncStatus("Connect Google first to send email reminders.", "error");
+    } else {
+      setSyncStatus(`${failurePrefix}: ${message}`, "error");
+    }
+    return { success: false, error: message };
+  } finally {
+    setNotificationSendInFlight(false, "");
+  }
 }
 
 async function handleSendNotificationReminder() {
@@ -3613,10 +3673,10 @@ function buildEmailSummaryPreview(emailConfig, now = new Date()) {
   };
 }
 
-function renderNotificationsPreview(summaryPreview, reminderPreview) {
+function renderNotificationsPreview(summaryPreview, reminderTemplates) {
   return `
     ${renderEmailSummaryPreview(summaryPreview)}
-    ${renderEmailReminderPreview(reminderPreview)}
+    ${renderReminderTemplatesPreview(reminderTemplates)}
   `;
 }
 
@@ -3652,11 +3712,24 @@ function renderEmailSummaryPreview(preview) {
   `;
 }
 
+function renderReminderTemplatesPreview(reminderTemplates) {
+  if (!Array.isArray(reminderTemplates) || reminderTemplates.length === 0) {
+    return `
+      <article class="notifications-preview-card">
+        <p class="eyebrow">Reminder preview</p>
+        <h4>No reminder emails are due right now</h4>
+        <p class="sync-status">Agenda, due-soon, and overdue emails will appear here as separate templates when they have content.</p>
+      </article>
+    `;
+  }
+  return reminderTemplates.map((preview) => renderEmailReminderPreview(preview)).join("");
+}
+
 function renderEmailReminderPreview(preview) {
   const recipientCopy = preview.recipientEmail || "No recipient selected yet";
   return `
     <article class="notifications-preview-card">
-      <p class="eyebrow">Reminder preview</p>
+      <p class="eyebrow">${escapeHtml(preview.eyebrow || "Reminder preview")}</p>
       <h4>${escapeHtml(preview.subject)}</h4>
       <div class="notifications-preview-header">
         <div class="notifications-preview-meta">
@@ -3668,21 +3741,29 @@ function renderEmailReminderPreview(preview) {
           <strong>${escapeHtml(preview.scheduleLabel)}</strong>
         </div>
         <div class="notifications-preview-meta">
-          <span class="sync-status">Events</span>
+          <span class="sync-status">Items</span>
           <strong>${preview.eventCount || 0}</strong>
         </div>
       </div>
       ${preview.quietHoursActive ? `<p class="sync-status">Quiet hours are active right now. Manual sends still work, but automatic reminder delivery will pause during that window.</p>` : ""}
-      ${preview.sections.length > 0 ? preview.sections.map((section) => `
-        <section class="notifications-preview-section">
-          <strong>${escapeHtml(section.title)}</strong>
-          <ul>
-            ${section.items.map((item) => renderReminderPreviewListItem(item)).join("")}
-          </ul>
-        </section>
-      `).join("") : `<p class="sync-status">No reminder items are due right now. Daily agenda entries will appear here on days that have tasks due, even if some were already completed or skipped.</p>`}
+      <p class="sync-status">${escapeHtml(buildReminderPreviewIntro(preview))}</p>
+      <section class="notifications-preview-section">
+        <ul>
+          ${preview.items.map((item) => renderReminderPreviewListItem(item)).join("")}
+        </ul>
+      </section>
     </article>
   `;
+}
+
+function buildReminderPreviewIntro(preview) {
+  if (preview.templateKind === "agenda") {
+    return "This agenda includes everything due today. Completed and skipped tasks stay visible for context.";
+  }
+  if (preview.templateKind === "overdue") {
+    return "This email is for tasks that have already crossed their overdue threshold.";
+  }
+  return "This email is for tasks that are nearing their due time.";
 }
 
 function renderReminderPreviewListItem(item) {
@@ -3773,11 +3854,27 @@ function renderNotificationHistory(historyEntries) {
             <strong>${escapeHtml(entry.subject || "Notification email")}</strong>
             <p class="sync-status">${escapeHtml(entry.recipientEmail || "No recipient")} · ${escapeHtml(formatDateTime(entry.at))}</p>
           </div>
-          <span class="widget-badge">${entry.status === "error" ? "Error" : (entry.kind === "reminder" ? "Reminder" : "Summary")}</span>
+          <span class="widget-badge">${entry.status === "error" ? "Error" : formatNotificationHistoryBadge(entry)}</span>
         </article>
       `).join("")}
     </div>
   `;
+}
+
+function formatNotificationHistoryBadge(entry) {
+  if (entry?.kind !== "reminder") {
+    return "Summary";
+  }
+  if (entry?.reminderTemplateKind === "agenda") {
+    return "Agenda";
+  }
+  if (entry?.reminderTemplateKind === "overdue") {
+    return "Overdue";
+  }
+  if (entry?.reminderTemplateKind === "due-soon") {
+    return "Due soon";
+  }
+  return "Reminder";
 }
 
 function buildNotificationScheduleLabel(summaryConfig) {

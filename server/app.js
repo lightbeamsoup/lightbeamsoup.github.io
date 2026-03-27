@@ -11,7 +11,7 @@ import {
   shouldEmailSummarySendNow
 } from "../lifetree/modules/notificationSummary.js";
 import {
-  buildScheduledEmailReminderPreview,
+  buildScheduledEmailReminderTemplates,
   renderEmailReminderBodyHtml,
   renderEmailReminderBodyText
 } from "../lifetree/modules/notificationReminders.js";
@@ -666,13 +666,17 @@ async function processScheduledNotificationsForUser(user) {
     }
   }
 
-  const reminderPreview = buildScheduledEmailReminderPreview({
+  const reminderTemplates = buildScheduledEmailReminderTemplates({
     store: payload,
     emailConfig,
     now: new Date(),
     fallbackRecipientEmail: normalizeRecipientEmail(user.email)
   });
-  if (reminderPreview.recipientEmail && reminderPreview.sections.length > 0 && !reminderPreview.suppressedByQuietHours) {
+  for (const reminderPreview of reminderTemplates) {
+    if (!reminderPreview.recipientEmail || reminderPreview.items.length === 0 || reminderPreview.suppressedByQuietHours) {
+      continue;
+    }
+
     await sendGmailMessage(accessToken, {
       fromEmail: normalizeRecipientEmail(user.email),
       recipientEmail: reminderPreview.recipientEmail,
@@ -686,6 +690,7 @@ async function processScheduledNotificationsForUser(user) {
       at: Date.now(),
       status: "sent",
       kind: "reminder",
+      reminderTemplateKind: reminderPreview.templateKind || "",
       recipientEmail: reminderPreview.recipientEmail,
       subject: reminderPreview.subject,
       reminderKey: reminderPreview.reminderKey || "",
