@@ -1341,11 +1341,18 @@ body.developer-open {
 
 .settings-panel {
   max-width: 560px;
+  height: auto;
+  max-height: calc(100dvh - 24px);
 }
 
 .settings-form {
   display: grid;
   gap: 18px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 6px;
+  scrollbar-gutter: stable;
 }
 
 .settings-form label {
