@@ -3,6 +3,7 @@
 ## Open items
 
 - Widgets: Create a Travel Buddy widget.
+- Drive sync: Make merge/conflict popups clearer about what happened and what each choice will do.
 
 ## Recently completed
 
