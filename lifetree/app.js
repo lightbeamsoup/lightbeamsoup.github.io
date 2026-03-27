@@ -1380,6 +1380,7 @@ function renderWidgetDetailIfOpen() {
       getStore: () => store,
       createId,
       todayString,
+      applyAutoSkipRules,
       resolveCategorySnapshot,
       openTaskDesk: handleOpenTaskDesk,
       openWidgetDetail,

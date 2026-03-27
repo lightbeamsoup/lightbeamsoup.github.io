@@ -388,7 +388,7 @@ function renderRecurringDetailSeriesCard(series, formatDate, escapeHtml, getPend
           : (blocked ? `<span class="canopy-note">${escapeHtml(series.blockedNote || "Blocked")}</span>` : "")}
       </div>
       <div class="canopy-task-footer${series.isWidgetManaged ? " locked" : ""}">
-        ${series.isWidgetManaged ? "" : `<span class="canopy-task-status">${escapeHtml(series.footerLabel)}</span>`}
+        <span class="canopy-task-status">${escapeHtml(series.footerLabel)}</span>
         <div class="canopy-task-actions">
           <button
             ${renderRecurringSeriesActions(series, escapeHtml)}
