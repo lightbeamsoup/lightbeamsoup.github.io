@@ -3,11 +3,14 @@
 ## Open items
 
 - Widgets: Create a Travel Buddy widget.
+- Energy:
+  - [ ] Add matching widget-owned task metadata to Energy tasks.
+  - [ ] Update the Energy shell to surface the richer widget task state more clearly.
 - Workout Coach:
   - [x] Scaffold the widget and register it in the widget menu.
   - [x] Add workout plans with workout type, duration, intensity, and daily/weekly linked schedules.
   - [x] Add widget-owned task metadata for workout sessions and weight check-ins.
-  - [ ] Add daily and weekly progress views that roll up repeated instances into one tracked card.
+  - [x] Add daily and weekly progress views that roll up repeated instances into one tracked card.
   - [ ] Add workout completion logging with actual duration and intensity overrides.
   - [ ] Add open weight logging plus optional scheduled weight check-ins.
   - [ ] Add per-widget weight units and decide how points should work for unscheduled weight logs.

@@ -65,6 +65,7 @@ body[data-theme="dark"] .energy-detail-card,
 body[data-theme="dark"] .energy-settings-card,
 body[data-theme="dark"] .workout-recurrence-panel,
 body[data-theme="dark"] .workout-plan-item,
+body[data-theme="dark"] .workout-progress-card,
 body[data-theme="dark"] .edit-panel,
 body[data-theme="dark"] .recurrence-panel,
 body[data-theme="dark"] .skip-panel,
@@ -1687,6 +1688,79 @@ body.developer-open {
   margin: 0 0 6px;
 }
 
+.workout-progress-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.workout-progress-section {
+  display: grid;
+  gap: 12px;
+}
+
+.workout-progress-section-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.workout-progress-section-header h4 {
+  margin: 0;
+}
+
+.workout-progress-list {
+  display: grid;
+  gap: 12px;
+}
+
+.workout-progress-card {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border-radius: 20px;
+  border: 1px solid rgba(37, 50, 67, 0.1);
+  background: rgba(255, 255, 255, 0.46);
+}
+
+.workout-progress-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: start;
+}
+
+.workout-progress-header h4 {
+  margin: 0 0 4px;
+}
+
+.workout-progress-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 56px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(24, 129, 113, 0.12);
+  border: 1px solid rgba(24, 129, 113, 0.26);
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.workout-progress-chip.done {
+  background: rgba(80, 164, 103, 0.18);
+  border-color: rgba(80, 164, 103, 0.34);
+}
+
+.workout-progress-stats {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
 .widget-menu h2 {
   margin: 0 0 8px;
 }
@@ -3246,6 +3320,10 @@ textarea {
   }
 
   .energy-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .workout-progress-grid {
     grid-template-columns: 1fr;
   }
 

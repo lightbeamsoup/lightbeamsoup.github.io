@@ -125,10 +125,45 @@ export const workoutWidgetDefinition = {
     const weightTracking = widget.settings.weightTracking;
     const planDraft = createPlanDraft();
     const ownedTemplateCount = tasks.filter((task) => isWorkoutOwnedTemplate(task, widget.id)).length;
+    const progressView = buildWorkoutProgressView(tasks, widget.id);
 
     return `
       <section class="energy-detail">
         <div class="energy-detail-grid">
+          <section class="energy-detail-card energy-settings-card">
+            <div class="energy-detail-header">
+              <div>
+                <p class="eyebrow">Progress</p>
+                <h3>Current period progress</h3>
+                <p class="sync-status">Repeated same-period instances are rolled up into one tracked card per plan.</p>
+              </div>
+            </div>
+            <div class="workout-progress-grid">
+              <section class="workout-progress-section">
+                <div class="workout-progress-section-header">
+                  <h4>Today</h4>
+                  <span>${progressView.dailyCards.length}</span>
+                </div>
+                <div class="workout-progress-list">
+                  ${progressView.dailyCards.length
+                    ? progressView.dailyCards.map((card) => renderWorkoutProgressCard(card, escapeHtml)).join("")
+                    : `<p class="empty-state">No daily workout or weight tasks are scheduled today.</p>`}
+                </div>
+              </section>
+              <section class="workout-progress-section">
+                <div class="workout-progress-section-header">
+                  <h4>This week</h4>
+                  <span>${progressView.weeklyCards.length}</span>
+                </div>
+                <div class="workout-progress-list">
+                  ${progressView.weeklyCards.length
+                    ? progressView.weeklyCards.map((card) => renderWorkoutProgressCard(card, escapeHtml)).join("")
+                    : `<p class="empty-state">No weekly workout or weight tasks are scheduled in this calendar week.</p>`}
+                </div>
+              </section>
+            </div>
+          </section>
+
           <section class="energy-detail-card">
             <div class="energy-detail-header">
               <div>
@@ -673,6 +708,22 @@ function toDateString(date) {
   return `${year}-${month}-${day}`;
 }
 
+function startOfWeek(value) {
+  const date = new Date(value);
+  date.setHours(0, 0, 0, 0);
+  date.setDate(date.getDate() - date.getDay());
+  return toDateString(date);
+}
+
+function addDays(dateString, count) {
+  const date = new Date(`${dateString}T12:00:00`);
+  if (Number.isNaN(date.getTime())) {
+    return dateString;
+  }
+  date.setDate(date.getDate() + count);
+  return toDateString(date);
+}
+
 function compareWorkoutOwnedTemplateSchedule(left, right) {
   const leftDate = `${left.dueDate || left.startDate || ""}T${left.timeOfDay || "23:59"}`;
   const rightDate = `${right.dueDate || right.startDate || ""}T${right.timeOfDay || "23:59"}`;
@@ -975,6 +1026,28 @@ function renderWorkoutPlanCard(plan, escapeHtml) {
   `;
 }
 
+function renderWorkoutProgressCard(card, escapeHtml) {
+  return `
+    <article class="workout-progress-card">
+      <div class="workout-progress-header">
+        <div>
+          <h4>${escapeHtml(card.label)}</h4>
+          <p class="sync-status">${escapeHtml(card.summary)}</p>
+        </div>
+        <span class="workout-progress-chip ${card.openCount === 0 ? "done" : ""}">
+          ${escapeHtml(`${card.doneCount}/${card.totalCount}`)}
+        </span>
+      </div>
+      <div class="workout-progress-stats">
+        <span><strong>Completions:</strong> ${escapeHtml(`${card.doneCount}/${card.totalCount}`)}</span>
+        <span><strong>Open:</strong> ${escapeHtml(String(card.openCount))}</span>
+        <span><strong>Skipped:</strong> ${escapeHtml(String(card.skippedCount))}</span>
+      </div>
+      ${card.nextDue ? `<p class="sync-status">Next due: ${escapeHtml(card.nextDue)}</p>` : ""}
+    </article>
+  `;
+}
+
 function describeWorkoutPlan(plan) {
   const workoutType = plan.workoutType || plan.name || "Workout";
   const duration = plan.durationMinutes ? `${plan.durationMinutes} min` : "Duration TBD";
@@ -999,6 +1072,164 @@ function describeWorkoutRecurrence(recurrence) {
     return `Every ${recurrence.interval} week${recurrence.interval === 1 ? "" : "s"} on ${days || "selected days"} at ${recurrence.timeOfDay}`;
   }
   return "No schedule";
+}
+
+function buildWorkoutProgressView(tasks, widgetId, now = new Date()) {
+  const allTasks = Array.isArray(tasks) ? tasks : [];
+  const today = toDateString(now);
+  const weekStart = startOfWeek(now);
+  const weekEnd = addDays(weekStart, 6);
+  const workoutTasks = dedupeWorkoutTasksForProgress(
+    allTasks.filter((task) => task?.ownerWidgetId === widgetId && isWorkoutProgressTask(task) && !task.archived)
+  );
+
+  return {
+    dailyCards: buildProgressCardsForPeriod(workoutTasks, {
+      period: "daily",
+      today,
+      weekStart,
+      weekEnd
+    }),
+    weeklyCards: buildProgressCardsForPeriod(workoutTasks, {
+      period: "weekly",
+      today,
+      weekStart,
+      weekEnd
+    })
+  };
+}
+
+function buildProgressCardsForPeriod(tasks, { period, today, weekStart, weekEnd }) {
+  const groups = new Map();
+
+  for (const task of tasks) {
+    const recurrenceType = task.recurrence?.sourceType || task.recurrence?.type || "";
+    if (period === "daily" && recurrenceType !== "daily") {
+      continue;
+    }
+    if (period === "weekly" && recurrenceType !== "weekly") {
+      continue;
+    }
+
+    const scheduledDate = task.dueDate || task.startDate || "";
+    if (!scheduledDate) {
+      continue;
+    }
+    if (period === "daily" && scheduledDate !== today) {
+      continue;
+    }
+    if (period === "weekly" && (scheduledDate < weekStart || scheduledDate > weekEnd)) {
+      continue;
+    }
+
+    const key = buildWorkoutProgressKey(task, period);
+    const group = groups.get(key) || {
+      key,
+      label: buildWorkoutProgressLabel(task),
+      summary: buildWorkoutProgressSummary(task, period),
+      totalCount: 0,
+      doneCount: 0,
+      skippedCount: 0,
+      openCount: 0,
+      nextDue: ""
+    };
+    group.totalCount += 1;
+    if (task.status === "done") {
+      group.doneCount += 1;
+    } else if (task.status === "skipped") {
+      group.skippedCount += 1;
+    } else {
+      group.openCount += 1;
+    }
+    if (!group.nextDue && task.status === "open") {
+      group.nextDue = formatProgressDueText(task);
+    }
+    groups.set(key, group);
+  }
+
+  return [...groups.values()].sort((left, right) => {
+    if (left.openCount === 0 && right.openCount !== 0) {
+      return 1;
+    }
+    if (right.openCount === 0 && left.openCount !== 0) {
+      return -1;
+    }
+    return left.label.localeCompare(right.label);
+  });
+}
+
+function dedupeWorkoutTasksForProgress(tasks) {
+  const bySignature = new Map();
+  for (const task of tasks) {
+    const signature = [
+      task.ownerTaskKey || "",
+      task.widgetTaskKind || "",
+      task.dueDate || task.startDate || "",
+      task.timeOfDay || ""
+    ].join("|");
+    const existing = bySignature.get(signature);
+    if (!existing || compareWorkoutProgressTaskPriority(task, existing) < 0) {
+      bySignature.set(signature, task);
+    }
+  }
+  return [...bySignature.values()];
+}
+
+function compareWorkoutProgressTaskPriority(left, right) {
+  const leftRank = workoutProgressStatusRank(left.status);
+  const rightRank = workoutProgressStatusRank(right.status);
+  if (leftRank !== rightRank) {
+    return leftRank - rightRank;
+  }
+  return (left.createdAt || 0) - (right.createdAt || 0);
+}
+
+function workoutProgressStatusRank(status) {
+  if (status === "done") {
+    return 0;
+  }
+  if (status === "open") {
+    return 1;
+  }
+  if (status === "skipped") {
+    return 2;
+  }
+  return 3;
+}
+
+function isWorkoutProgressTask(task) {
+  return task?.widgetTaskKind === "workout-session" || task?.widgetTaskKind === "weight-checkin";
+}
+
+function buildWorkoutProgressKey(task, period) {
+  if (task.widgetTaskKind === "weight-checkin") {
+    return `${period}:weight-checkin`;
+  }
+  return `${period}:${task.widgetTaskMeta?.planId || task.ownerTaskKey || task.id}`;
+}
+
+function buildWorkoutProgressLabel(task) {
+  if (task.widgetTaskKind === "weight-checkin") {
+    return "Weight check-ins";
+  }
+  return task.widgetTaskMeta?.workoutType || task.name || "Workout session";
+}
+
+function buildWorkoutProgressSummary(task, period) {
+  if (task.widgetTaskKind === "weight-checkin") {
+    return period === "daily"
+      ? "Current-day weight logging progress"
+      : "Current calendar week weight logging progress";
+  }
+  const duration = task.widgetTaskMeta?.durationMinutes ? `${task.widgetTaskMeta.durationMinutes} min` : "Duration TBD";
+  const intensity = task.widgetTaskMeta?.intensity || "moderate";
+  return `${duration} · ${intensity}`;
+}
+
+function formatProgressDueText(task) {
+  const date = task.dueDate || task.startDate || "";
+  const time = task.timeOfDay || "23:59";
+  return date ? `${date} at ${time}` : time;
 }
 
 function replaceAdditionalTimes(container, times) {
