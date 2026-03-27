@@ -10,6 +10,11 @@ const RECURRING_GROUP_LABELS = {
   weekly: "Weeklies",
   monthly: "Monthlies"
 };
+const RECURRING_SERIES_BADGE_LABELS = {
+  daily: "Daily",
+  weekly: "Weekly",
+  monthly: "Monthly"
+};
 const RECURRING_PERIOD_LABELS = {
   daily: "day",
   weekly: "week",
@@ -182,9 +187,12 @@ export function renderCanopyDetailContent(container, {
         : '<p class="canopy-empty">No one-off tasks are queued here.</p>'}
     </div>
   `;
+  const hasSurfacedRecurring = column.standardItems.some((item) => Boolean(item.surfacedRecurringGroup));
   return {
     title: `${column.label} tasks`,
-    subtitle: "These one-off tasks leave the canopy as soon as they are completed or skipped.",
+    subtitle: hasSurfacedRecurring
+      ? "One-off tasks leave the canopy when resolved. Surfaced weekly and monthly tasks still remain tracked in their period groups."
+      : "These one-off tasks leave the canopy as soon as they are completed or skipped.",
     footerNote: showHelpText ? "Hover or long-press task actions for help." : ""
   };
 }
@@ -286,7 +294,7 @@ function renderCanopyTask(item, formatDate, escapeHtml, getPendingActionForTask,
         <div class="canopy-task-main">
           <strong>${escapeHtml(item.displayName)}</strong>
           <span>${escapeHtml(describeTaskDate(item.task, formatDate))}</span>
-          ${renderCanopyMeta(item.task, escapeHtml, renderPriorityIndicator)}
+          ${renderCanopyMeta(item.task, escapeHtml, renderPriorityIndicator, item.surfacedRecurringGroup || "")}
         </div>
         <div class="canopy-task-footer">
           <span class="canopy-task-status">${escapeHtml(pendingAction.description || "Pending action")}</span>
@@ -305,7 +313,7 @@ function renderCanopyTask(item, formatDate, escapeHtml, getPendingActionForTask,
         <span>${escapeHtml(describeTaskDate(item.task, formatDate))}</span>
         ${item.blocked ? `<span class="canopy-task-status">${escapeHtml(item.blockedNote || "Blocked")}</span>` : ""}
         <div class="canopy-task-bottom">
-          ${renderCanopyMeta(item.task, escapeHtml, renderPriorityIndicator)}
+          ${renderCanopyMeta(item.task, escapeHtml, renderPriorityIndicator, item.surfacedRecurringGroup || "")}
           <div class="canopy-task-actions">
           <button
             type="button"
@@ -739,7 +747,7 @@ function describeTaskDate(task, formatDate) {
   return "No due date";
 }
 
-function renderCanopyMeta(task, escapeHtml, renderPriorityIndicator) {
+function renderCanopyMeta(task, escapeHtml, renderPriorityIndicator, surfacedRecurringGroup = "") {
   const categoryColor = escapeHtml(task.categoryColor || "#7dbf74");
   const category = task.categoryLabel || "Uncategorized";
   const points = formatPointsLabel(task.pointsValue);
@@ -749,6 +757,7 @@ function renderCanopyMeta(task, escapeHtml, renderPriorityIndicator) {
   return `
     <div class="canopy-task-tags">
       <span class="canopy-chip length ${lengthKey}">${escapeHtml(lengthLabel)}</span>
+      ${surfacedRecurringGroup ? `<span class="canopy-chip recurring ${surfacedRecurringGroup}">${escapeHtml(RECURRING_SERIES_BADGE_LABELS[surfacedRecurringGroup] || "Series")}</span>` : ""}
       <span class="canopy-chip category" style="--canopy-chip-color: ${categoryColor}">${escapeHtml(category)}</span>
       <span class="canopy-chip points" style="--canopy-chip-color: ${categoryColor}">${escapeHtml(points)}</span>
       ${renderPriorityIndicator(task.importance || "medium", "canopy")}

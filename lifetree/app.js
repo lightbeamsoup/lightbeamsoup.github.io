@@ -2582,14 +2582,15 @@ function removePointEntryById(entryId) {
 }
 
 function renderCanopy() {
+  const today = todayString();
   const standardCards = getVisibleCards()
-    .filter((card) => !card.task.ownerWidgetType && !card.task.archived && card.status === "open" && card.task.recurrence.type === "none")
+    .filter((card) => shouldSurfaceCanopyStandardCard(card, today))
     .map((card) => ({
       ...card,
+      surfacedRecurringGroup: getSurfacedCanopyRecurringGroup(card.task, today),
       blocked: isBlocked(card.task),
       blockedNote: describeCompletionGate(card.task)
     }));
-  const today = todayString();
   const recurringEntries = buildRecurringCanopyEntries();
 
   canopyState.columns = enrichCanopyColumnsWithRecurringBonuses(buildCanopyColumnsData({
@@ -2606,6 +2607,58 @@ function renderCanopy() {
     getPendingActionForTask,
     renderPriorityIndicator
   });
+}
+
+function shouldSurfaceCanopyStandardCard(card, today = todayString()) {
+  if (!card || card.task.ownerWidgetType || card.task.archived || card.status !== "open") {
+    return false;
+  }
+  if (card.task.recurrence.type === "none") {
+    return true;
+  }
+  if (card.kind !== "series") {
+    return false;
+  }
+  return Boolean(getSurfacedCanopyRecurringGroup(card.task, today));
+}
+
+function getSurfacedCanopyRecurringGroup(task, today = todayString()) {
+  const taskDate = task?.dueDate || task?.startDate || "";
+  if (!taskDate) {
+    return "";
+  }
+  const recurringGroup = getCanopyRecurringGroup(task);
+  const weekStart = startOfWeekString(today);
+  const weekEnd = addDaysToDateString(weekStart, 6);
+
+  if (recurringGroup === "weekly") {
+    return taskDate >= weekStart && taskDate <= today ? "weekly" : "";
+  }
+  if (recurringGroup === "monthly") {
+    return taskDate.slice(0, 7) === today.slice(0, 7) && taskDate <= weekEnd ? "monthly" : "";
+  }
+  return "";
+}
+
+function getCanopyRecurringGroup(task) {
+  if (!task?.recurrence || task.recurrence.type === "none") {
+    return "";
+  }
+  if (task.recurrence.type === "daily" || task.recurrence.sourceType === "daily") {
+    return "daily";
+  }
+  if (task.recurrence.type === "weekly" || task.recurrence.sourceType === "weekly") {
+    return "weekly";
+  }
+  if (
+    task.recurrence.type === "monthly-date"
+    || task.recurrence.type === "monthly-weekday"
+    || task.recurrence.sourceType === "monthly-date"
+    || task.recurrence.sourceType === "monthly-weekday"
+  ) {
+    return "monthly";
+  }
+  return "";
 }
 
 function buildRecurringCanopyEntries() {
