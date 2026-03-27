@@ -3,6 +3,9 @@
 ## Open items
 
 - Widgets: Create a Travel Buddy widget.
+- Notifications:
+  - [ ] Add email reminders.
+  - [ ] Add email summaries.
 - Widgets:
   - [x] Make `Remove widget` less prominent and move it to an `x` in the upper-right corner of the widget shell.
 - Energy:
