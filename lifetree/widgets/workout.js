@@ -94,12 +94,14 @@ export const workoutWidgetDefinition = {
     syncWorkoutOwnedTaskTemplates(widget, store, helpers);
   },
 
-  render({ widget, escapeHtml, formatDateTime }) {
+  render({ widget, tasks, escapeHtml, formatDateTime, getPendingActionForWidget }) {
     const planCount = widget.settings.workoutPlans.length;
     const latestWorkout = widget.data.workoutEntries[widget.data.workoutEntries.length - 1] || null;
     const latestWeight = widget.data.weightEntries[widget.data.weightEntries.length - 1] || null;
     const dailyPlans = widget.settings.workoutPlans.filter((plan) => plan.recurrence?.type === "daily").length;
     const weeklyPlans = widget.settings.workoutPlans.filter((plan) => plan.recurrence?.type === "weekly").length;
+    const nextWorkoutTask = listReadyWorkoutTasks(tasks, widget.id)[0] || null;
+    const pendingWorkoutLog = getPendingWorkoutLogAction(widget.id, getPendingActionForWidget);
 
     return `
       <div class="widget-slot-header">
@@ -112,7 +114,17 @@ export const workoutWidgetDefinition = {
       <p>Workout plans: <strong>${planCount}</strong> (${dailyPlans} daily, ${weeklyPlans} weekly)</p>
       <p>${latestWorkout ? `Latest workout: ${escapeHtml(latestWorkout.workoutType || "Workout")} at ${formatDateTime(latestWorkout.at)}` : "No workout logs yet."}</p>
       <p>${latestWeight ? `Latest weight: ${escapeHtml(formatWeightEntry(latestWeight))} at ${formatDateTime(latestWeight.at)}` : "No weight logs yet."}</p>
+      <p>${pendingWorkoutLog
+        ? `Pending workout log: ${escapeHtml(formatPendingWorkoutSummary(pendingWorkoutLog))}`
+        : nextWorkoutTask
+          ? `Ready now: ${escapeHtml(nextWorkoutTask.widgetTaskMeta?.workoutType || nextWorkoutTask.name || "Workout")} due ${escapeHtml(formatProgressDueText(nextWorkoutTask))}`
+          : "No workout is ready to quick-complete right now."}</p>
       <div class="widget-actions">
+        ${pendingWorkoutLog
+          ? `<button type="button" class="ghost-button" data-widget-action="undo-workout-log" data-pending-key="${pendingWorkoutLog.key}">Undo</button>`
+          : nextWorkoutTask
+            ? `<button type="button" class="primary-button" data-widget-action="quick-workout-complete" data-task-id="${nextWorkoutTask.id}">Quick complete</button>`
+            : ""}
         <button type="button" class="ghost-button" data-widget-action="open-widget-detail">Open panel</button>
         <button type="button" class="ghost-button" data-widget-action="remove-widget">Remove widget</button>
       </div>
@@ -627,45 +639,7 @@ export const workoutWidgetDefinition = {
         helpers.setSyncStatus("That workout task is no longer ready to log.", "error");
         return;
       }
-
-      const entryTime = Date.now();
-      helpers.stageWidgetAction(widget, `workout-log:${taskId}`, {
-        taskId,
-        durationMinutes,
-        intensity,
-        description: `Pending workout log for ${task.name}. Click undo within 5 seconds to cancel.`,
-        commit: () => {
-          const currentTask = helpers.getStore().tasks.find((entry) => entry.id === taskId);
-          if (!currentTask || currentTask.status !== "open" || currentTask.widgetTaskKind !== "workout-session") {
-            return false;
-          }
-
-          const completedTask = helpers.completeWidgetTaskById(taskId, entryTime);
-          if (!completedTask) {
-            return false;
-          }
-
-          upsertWorkoutEntry(widget, {
-            id: helpers.createId(),
-            at: entryTime,
-            workoutType: currentTask.widgetTaskMeta?.workoutType || currentTask.name || "Workout",
-            durationMinutes,
-            intensity,
-            taskId: currentTask.id,
-            taskName: currentTask.name || "",
-            planId: currentTask.widgetTaskMeta?.planId || "",
-            scheduledDate: currentTask.dueDate || currentTask.startDate || "",
-            scheduledTime: currentTask.timeOfDay || "",
-            source: "task"
-          });
-          widget.updatedAt = entryTime;
-
-          return {
-            message: `Logged ${currentTask.name} at ${durationMinutes} min (${intensity}) and completed the task.`,
-            tone: "info"
-          };
-        }
-      });
+      stageWorkoutTaskLog(widget, task, { durationMinutes, intensity }, helpers);
     };
 
     const submitHandler = (event) => {
@@ -750,8 +724,82 @@ export const workoutWidgetDefinition = {
       container.removeEventListener("submit", submitLogHandler);
       form.removeEventListener("submit", submitHandler);
     };
+  },
+
+  handleAction({ action, actionTarget, widget, helpers }) {
+    if (action === "undo-workout-log") {
+      const pendingKey = actionTarget.getAttribute("data-pending-key");
+      if (pendingKey) {
+        helpers.undoPendingAction(pendingKey, "Undid the pending workout log.");
+      }
+      return true;
+    }
+
+    if (action !== "quick-workout-complete") {
+      return false;
+    }
+
+    const taskId = actionTarget.getAttribute("data-task-id") || "";
+    const task = helpers.getStore().tasks.find((entry) => entry.id === taskId);
+    if (!task || task.status !== "open" || task.widgetTaskKind !== "workout-session") {
+      helpers.setSyncStatus("That workout task is no longer ready to complete.", "error");
+      return true;
+    }
+
+    stageWorkoutTaskLog(widget, task, {
+      durationMinutes: normalizeDurationMinutes(task.widgetTaskMeta?.durationMinutes || 30),
+      intensity: normalizeWorkoutIntensity(task.widgetTaskMeta?.intensity)
+    }, helpers);
+    return true;
   }
 };
+
+function stageWorkoutTaskLog(widget, task, { durationMinutes, intensity }, helpers) {
+  const taskId = task?.id || "";
+  if (!taskId) {
+    return;
+  }
+  const normalizedDuration = normalizeDurationMinutes(durationMinutes);
+  const normalizedIntensity = normalizeWorkoutIntensity(intensity);
+  const entryTime = Date.now();
+  helpers.stageWidgetAction(widget, `workout-log:${taskId}`, {
+    taskId,
+    durationMinutes: normalizedDuration,
+    intensity: normalizedIntensity,
+    description: `Pending workout log for ${task.name}. Click undo within 5 seconds to cancel.`,
+    commit: () => {
+      const currentTask = helpers.getStore().tasks.find((entry) => entry.id === taskId);
+      if (!currentTask || currentTask.status !== "open" || currentTask.widgetTaskKind !== "workout-session") {
+        return false;
+      }
+
+      const completedTask = helpers.completeWidgetTaskById(taskId, entryTime);
+      if (!completedTask) {
+        return false;
+      }
+
+      upsertWorkoutEntry(widget, {
+        id: helpers.createId(),
+        at: entryTime,
+        workoutType: currentTask.widgetTaskMeta?.workoutType || currentTask.name || "Workout",
+        durationMinutes: normalizedDuration,
+        intensity: normalizedIntensity,
+        taskId: currentTask.id,
+        taskName: currentTask.name || "",
+        planId: currentTask.widgetTaskMeta?.planId || "",
+        scheduledDate: currentTask.dueDate || currentTask.startDate || "",
+        scheduledTime: currentTask.timeOfDay || "",
+        source: "task"
+      });
+      widget.updatedAt = entryTime;
+
+      return {
+        message: `Logged ${currentTask.name} at ${normalizedDuration} min (${normalizedIntensity}) and completed the task.`,
+        tone: "info"
+      };
+    }
+  });
+}
 
 function syncWorkoutOwnedTaskTemplates(widget, store, helpers) {
   const desiredTemplates = buildDesiredWorkoutTemplates(widget, store, helpers);
@@ -1273,6 +1321,21 @@ function formatPendingWeightSummary(pendingAction) {
     return "";
   }
   return `${trimTrailingZero(pendingAction.value)} ${pendingAction.unit}`;
+}
+
+function getPendingWorkoutLogAction(widgetId, getPendingActionForWidget) {
+  if (typeof getPendingActionForWidget !== "function") {
+    return null;
+  }
+  return getPendingActionForWidget(widgetId, "workout-log:") || null;
+}
+
+function formatPendingWorkoutSummary(pendingAction) {
+  if (!pendingAction) {
+    return "";
+  }
+  const type = pendingAction.intensity ? humanizeIntensity(pendingAction.intensity) : "Workout";
+  return `${pendingAction.durationMinutes || 0} min · ${type}`;
 }
 
 function describeWorkoutEntry(entry) {
