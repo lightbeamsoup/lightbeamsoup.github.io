@@ -3,6 +3,8 @@ export const WORKOUT_WIDGET_TYPE = "workout";
 const DEFAULT_WEIGHT_UNIT = "lb";
 const DEFAULT_WORKOUT_INTENSITY = "moderate";
 const DEFAULT_WORKOUT_TIME = "07:00";
+const WORKOUT_COMPLETION_MECHANISM = "workout-log";
+const WEIGHT_COMPLETION_MECHANISM = "weight-log";
 const WORKOUT_INTENSITY_OPTIONS = [
   { value: "low", label: "Low" },
   { value: "moderate", label: "Moderate" },
@@ -88,6 +90,10 @@ export const workoutWidgetDefinition = {
     return Math.max(latestWorkout?.at || 0, latestWeight?.at || 0, latestPlan, widget?.updatedAt || 0, widget?.createdAt || 0);
   },
 
+  ensureTasks({ widget, store, helpers }) {
+    syncWorkoutOwnedTaskTemplates(widget, store, helpers);
+  },
+
   render({ widget, escapeHtml, formatDateTime }) {
     const planCount = widget.settings.workoutPlans.length;
     const latestWorkout = widget.data.workoutEntries[widget.data.workoutEntries.length - 1] || null;
@@ -113,11 +119,12 @@ export const workoutWidgetDefinition = {
     `;
   },
 
-  renderDetail({ widget, escapeHtml, formatDateTime }) {
+  renderDetail({ widget, tasks, escapeHtml, formatDateTime }) {
     const latestWorkout = widget.data.workoutEntries[widget.data.workoutEntries.length - 1] || null;
     const latestWeight = widget.data.weightEntries[widget.data.weightEntries.length - 1] || null;
     const weightTracking = widget.settings.weightTracking;
     const planDraft = createPlanDraft();
+    const ownedTemplateCount = tasks.filter((task) => isWorkoutOwnedTemplate(task, widget.id)).length;
 
     return `
       <section class="energy-detail">
@@ -191,7 +198,7 @@ export const workoutWidgetDefinition = {
                 <button type="button" class="ghost-button hidden" data-workout-cancel-edit>Cancel edit</button>
               </div>
             </form>
-            <p class="sync-status">These plans are stored now. The next step will attach widget-owned tasks and current-period progress to them.</p>
+            <p class="sync-status">These plans already create widget-owned recurring task templates. The next step will add richer progress rollups and widget-driven completion logging.</p>
           </section>
 
           <section class="energy-detail-card">
@@ -199,7 +206,7 @@ export const workoutWidgetDefinition = {
               <div>
                 <p class="eyebrow">Saved plans</p>
                 <h3>Current workout plans</h3>
-                <p class="sync-status">${widget.settings.workoutPlans.length ? "Edit or remove stored workout plans here." : "No plans yet. Save one from the editor to start building the widget schedule."}</p>
+                <p class="sync-status">${widget.settings.workoutPlans.length ? `Edit or remove stored workout plans here. ${ownedTemplateCount} widget-owned template${ownedTemplateCount === 1 ? "" : "s"} currently exist.` : "No plans yet. Save one from the editor to start building the widget schedule."}</p>
               </div>
             </div>
             <div class="workout-plan-list">
@@ -323,6 +330,7 @@ export const workoutWidgetDefinition = {
           return;
         }
         widget.updatedAt = Date.now();
+        syncWorkoutOwnedTaskTemplates(widget, helpers.getStore(), helpers);
         helpers.persistStore();
         helpers.renderAll();
         helpers.setSyncStatus("Removed that workout plan.", "info");
@@ -392,6 +400,7 @@ export const workoutWidgetDefinition = {
       const otherPlans = widget.settings.workoutPlans.filter((entry) => entry.id !== nextPlan.id);
       widget.settings.workoutPlans = [...otherPlans, nextPlan].sort(compareWorkoutPlanDisplay);
       widget.updatedAt = now;
+      syncWorkoutOwnedTaskTemplates(widget, helpers.getStore(), helpers);
       helpers.persistStore();
       helpers.renderAll();
       helpers.setSyncStatus(existing ? `Updated the ${workoutType} workout plan.` : `Added ${workoutType} as a workout plan.`, "success");
@@ -409,6 +418,302 @@ export const workoutWidgetDefinition = {
     };
   }
 };
+
+function syncWorkoutOwnedTaskTemplates(widget, store, helpers) {
+  const desiredTemplates = buildDesiredWorkoutTemplates(widget, store, helpers);
+  const existingTemplates = store.tasks.filter((task) => isWorkoutOwnedTemplate(task, widget.id));
+  const existingByKey = new Map(existingTemplates.map((task) => [task.ownerTaskKey || "", task]));
+  const desiredKeys = new Set(desiredTemplates.map((task) => task.ownerTaskKey));
+
+  for (const desired of desiredTemplates) {
+    const existing = existingByKey.get(desired.ownerTaskKey) || null;
+    if (!existing) {
+      store.tasks.unshift(desired);
+      helpers.regenerateSeries(desired.id, { preserveClosed: false });
+      continue;
+    }
+
+    if (!workoutTemplateChanged(existing, desired)) {
+      continue;
+    }
+
+    Object.assign(existing, {
+      ...desired,
+      id: existing.id,
+      createdAt: existing.createdAt,
+      status: existing.status,
+      history: Array.isArray(existing.history) ? existing.history : [],
+      pointsEntryId: existing.pointsEntryId || ""
+    });
+    helpers.regenerateSeries(existing.id, { preserveClosed: true });
+  }
+
+  for (const template of existingTemplates) {
+    if (!desiredKeys.has(template.ownerTaskKey || "")) {
+      helpers.retireWidgetOwnedSeries(template);
+    }
+  }
+}
+
+function buildDesiredWorkoutTemplates(widget, store, helpers) {
+  const plans = normalizeWorkoutPlans(widget.settings?.workoutPlans);
+  const desired = [];
+
+  for (const plan of plans) {
+    desired.push(...buildWorkoutSessionTemplates(widget, plan, helpers, store));
+  }
+
+  const weightSchedule = normalizeWeightSchedule(widget.settings?.weightTracking?.schedule);
+  if (weightSchedule) {
+    desired.push(...buildWeightCheckTemplates(widget, normalizeWeightTracking(widget.settings?.weightTracking), helpers, store));
+  }
+
+  return desired.sort(compareWorkoutOwnedTemplateSchedule);
+}
+
+function buildWorkoutSessionTemplates(widget, plan, helpers, store) {
+  const recurrence = normalizeWorkoutRecurrence(plan.recurrence);
+  if (!recurrence) {
+    return [];
+  }
+
+  const slots = buildWorkoutSlots(recurrence);
+  const groupId = `${widget.id}:workout-plan:${plan.id}`;
+  const healthCategory = helpers.resolveCategorySnapshot("health");
+
+  return slots.map((slot, slotIndex) => {
+    const seedDate = recurrence.type === "weekly"
+      ? alignDateToWeekdayOnOrAfter(helpers.todayString(), slot.weekday)
+      : helpers.todayString();
+    const ownerTaskKey = recurrence.type === "weekly"
+      ? `workout-plan:${plan.id}:weekday:${slot.weekday}`
+      : `workout-plan:${plan.id}:time:${slot.timeOfDay}`;
+    return {
+      id: helpers.createId(),
+      templateId: "",
+      occurrenceIndex: 0,
+      name: plan.name || plan.workoutType || "Workout session",
+      details: buildWorkoutTaskDetails(plan),
+      startDate: seedDate,
+      dueDate: seedDate,
+      timeOfDay: slot.timeOfDay,
+      lateGraceMinutes: 15,
+      notBeforeAt: startOfDayTimestamp(seedDate),
+      pointsValue: normalizePoints(plan.points),
+      pointsEntryId: "",
+      length: durationToTaskLength(plan.durationMinutes),
+      categoryKey: healthCategory.key,
+      categoryLabel: healthCategory.label,
+      categoryColor: healthCategory.color,
+      importance: "medium",
+      status: "open",
+      createdAt: Date.now() + slotIndex,
+      ownerWidgetId: widget.id,
+      ownerWidgetType: widget.type,
+      ownerTaskKey,
+      widgetTaskKind: "workout-session",
+      widgetTaskMeta: {
+        planId: plan.id,
+        workoutType: plan.workoutType,
+        durationMinutes: plan.durationMinutes,
+        intensity: plan.intensity,
+        recurrenceType: recurrence.type,
+        slotKey: ownerTaskKey
+      },
+      linkedSeries: {
+        groupId,
+        kind: recurrence.type === "weekly" ? "weekly-window" : "daily-window",
+        slotIndex,
+        slotCount: slots.length
+      },
+      sequenceDependencyId: "",
+      widgetCompletion: {
+        mechanism: WORKOUT_COMPLETION_MECHANISM,
+        lockout: "current-day"
+      },
+      skipRule: recurrence.type === "weekly"
+        ? { type: "end-of-day" }
+        : { type: "after-due-minutes", graceMinutes: 0 },
+      dependencies: [],
+      recurrence: buildTaskRecurrenceFromWorkoutSlot(recurrence, slot),
+      history: []
+    };
+  });
+}
+
+function buildWeightCheckTemplates(widget, weightTracking, helpers) {
+  const recurrence = normalizeWorkoutRecurrence(weightTracking.schedule?.recurrence);
+  if (!recurrence) {
+    return [];
+  }
+
+  const slots = buildWorkoutSlots(recurrence);
+  const groupId = `${widget.id}:weight-checkins`;
+  const healthCategory = helpers.resolveCategorySnapshot("health");
+
+  return slots.map((slot, slotIndex) => {
+    const seedDate = recurrence.type === "weekly"
+      ? alignDateToWeekdayOnOrAfter(helpers.todayString(), slot.weekday)
+      : helpers.todayString();
+    const ownerTaskKey = recurrence.type === "weekly"
+      ? `weight-checkin:weekday:${slot.weekday}`
+      : `weight-checkin:time:${slot.timeOfDay}`;
+    return {
+      id: helpers.createId(),
+      templateId: "",
+      occurrenceIndex: 0,
+      name: "Weight check-in",
+      details: `Created by Workout Coach. Log your weight in ${weightTracking.unit}.`,
+      startDate: seedDate,
+      dueDate: seedDate,
+      timeOfDay: slot.timeOfDay,
+      lateGraceMinutes: 15,
+      notBeforeAt: startOfDayTimestamp(seedDate),
+      pointsValue: 1,
+      pointsEntryId: "",
+      length: "very-short",
+      categoryKey: healthCategory.key,
+      categoryLabel: healthCategory.label,
+      categoryColor: healthCategory.color,
+      importance: "medium",
+      status: "open",
+      createdAt: Date.now() + 100 + slotIndex,
+      ownerWidgetId: widget.id,
+      ownerWidgetType: widget.type,
+      ownerTaskKey,
+      widgetTaskKind: "weight-checkin",
+      widgetTaskMeta: {
+        unit: weightTracking.unit,
+        recurrenceType: recurrence.type,
+        slotKey: ownerTaskKey
+      },
+      linkedSeries: {
+        groupId,
+        kind: recurrence.type === "weekly" ? "weekly-window" : "daily-window",
+        slotIndex,
+        slotCount: slots.length
+      },
+      sequenceDependencyId: "",
+      widgetCompletion: {
+        mechanism: WEIGHT_COMPLETION_MECHANISM,
+        lockout: "current-day"
+      },
+      skipRule: { type: "end-of-day" },
+      dependencies: [],
+      recurrence: buildTaskRecurrenceFromWorkoutSlot(recurrence, slot),
+      history: []
+    };
+  });
+}
+
+function buildWorkoutSlots(recurrence) {
+  if (recurrence.type === "weekly") {
+    return normalizeWeekdays(recurrence.weekdays).map((weekday) => ({
+      weekday,
+      timeOfDay: recurrence.timeOfDay
+    }));
+  }
+  const times = [recurrence.timeOfDay, ...normalizeAdditionalTimes(recurrence.additionalTimes)];
+  return [...new Set(times)].sort().map((timeOfDay) => ({ timeOfDay }));
+}
+
+function buildTaskRecurrenceFromWorkoutSlot(recurrence, slot) {
+  return {
+    type: recurrence.type,
+    interval: recurrence.interval,
+    weekday: recurrence.type === "weekly" ? slot.weekday : 0,
+    day: 1,
+    ordinal: "first",
+    endDate: "",
+    count: null,
+    forever: true
+  };
+}
+
+function buildWorkoutTaskDetails(plan) {
+  return `Created by Workout Coach. Planned duration ${plan.durationMinutes} min. Intensity: ${plan.intensity}.`;
+}
+
+function durationToTaskLength(durationMinutes) {
+  if (durationMinutes <= 15) {
+    return "very-short";
+  }
+  if (durationMinutes <= 30) {
+    return "short";
+  }
+  if (durationMinutes <= 60) {
+    return "medium";
+  }
+  if (durationMinutes <= 90) {
+    return "long";
+  }
+  return "very-long";
+}
+
+function startOfDayTimestamp(dateString) {
+  const date = new Date(`${dateString}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? Date.now() : date.getTime();
+}
+
+function alignDateToWeekdayOnOrAfter(baseDate, weekday) {
+  const date = new Date(`${baseDate}T12:00:00`);
+  if (Number.isNaN(date.getTime())) {
+    return baseDate;
+  }
+  const normalizedWeekday = Number.isInteger(weekday) ? weekday : 0;
+  const diff = (normalizedWeekday - date.getDay() + 7) % 7;
+  date.setDate(date.getDate() + diff);
+  return toDateString(date);
+}
+
+function toDateString(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function compareWorkoutOwnedTemplateSchedule(left, right) {
+  const leftDate = `${left.dueDate || left.startDate || ""}T${left.timeOfDay || "23:59"}`;
+  const rightDate = `${right.dueDate || right.startDate || ""}T${right.timeOfDay || "23:59"}`;
+  if (leftDate !== rightDate) {
+    return leftDate.localeCompare(rightDate);
+  }
+  return (left.linkedSeries?.slotIndex || 0) - (right.linkedSeries?.slotIndex || 0);
+}
+
+function isWorkoutOwnedTemplate(task, widgetId = "") {
+  return Boolean(
+    task &&
+    !task.templateId &&
+    task.ownerWidgetType === WORKOUT_WIDGET_TYPE &&
+    (!widgetId || task.ownerWidgetId === widgetId) &&
+    (task.widgetTaskKind === "workout-session" || task.widgetTaskKind === "weight-checkin")
+  );
+}
+
+function workoutTemplateChanged(existing, desired) {
+  return (
+    existing.name !== desired.name
+    || existing.details !== desired.details
+    || existing.startDate !== desired.startDate
+    || existing.dueDate !== desired.dueDate
+    || existing.timeOfDay !== desired.timeOfDay
+    || existing.lateGraceMinutes !== desired.lateGraceMinutes
+    || existing.pointsValue !== desired.pointsValue
+    || existing.length !== desired.length
+    || existing.categoryKey !== desired.categoryKey
+    || existing.categoryLabel !== desired.categoryLabel
+    || existing.categoryColor !== desired.categoryColor
+    || existing.ownerTaskKey !== desired.ownerTaskKey
+    || existing.widgetTaskKind !== desired.widgetTaskKind
+    || JSON.stringify(existing.widgetTaskMeta || {}) !== JSON.stringify(desired.widgetTaskMeta || {})
+    || JSON.stringify(existing.linkedSeries || {}) !== JSON.stringify(desired.linkedSeries || {})
+    || JSON.stringify(existing.skipRule || {}) !== JSON.stringify(desired.skipRule || {})
+    || JSON.stringify(existing.widgetCompletion || {}) !== JSON.stringify(desired.widgetCompletion || {})
+    || JSON.stringify(existing.recurrence || {}) !== JSON.stringify(desired.recurrence || {})
+  );
+}
 
 function normalizeSlotIndex(value, maxWidgets) {
   const index = Number(value);

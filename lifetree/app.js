@@ -1982,6 +1982,10 @@ function buildTaskFromValues(values, originalTask = null, categorySnapshot = nul
     ownerWidgetId: originalTask?.ownerWidgetId || "",
     ownerWidgetType: originalTask?.ownerWidgetType || "",
     ownerTaskKey: originalTask?.ownerTaskKey || "",
+    widgetTaskKind: typeof values?.widgetTaskKind === "string"
+      ? values.widgetTaskKind
+      : (typeof originalTask?.widgetTaskKind === "string" ? originalTask.widgetTaskKind : ""),
+    widgetTaskMeta: normalizeWidgetTaskMeta(values?.widgetTaskMeta || originalTask?.widgetTaskMeta),
     linkedSeries: normalizeLinkedSeries(values?.linkedSeries || originalTask?.linkedSeries),
     sequenceDependencyId: typeof values?.sequenceDependencyId === "string"
       ? values.sequenceDependencyId
@@ -4947,6 +4951,8 @@ function normalizeTask(task) {
     ownerWidgetId: typeof task.ownerWidgetId === "string" ? task.ownerWidgetId : "",
     ownerWidgetType: typeof task.ownerWidgetType === "string" ? task.ownerWidgetType : "",
     ownerTaskKey: typeof task.ownerTaskKey === "string" ? task.ownerTaskKey : "",
+    widgetTaskKind: typeof task.widgetTaskKind === "string" ? task.widgetTaskKind : "",
+    widgetTaskMeta: normalizeWidgetTaskMeta(task.widgetTaskMeta),
     linkedSeries: normalizeLinkedSeries(task.linkedSeries),
     sequenceDependencyId: typeof task.sequenceDependencyId === "string" ? task.sequenceDependencyId : "",
     widgetCompletion: normalizeWidgetCompletion(task.widgetCompletion),
@@ -5391,6 +5397,8 @@ function buildComparableStore(normalized) {
         ownerWidgetId: task.ownerWidgetId,
         ownerWidgetType: task.ownerWidgetType,
         ownerTaskKey: task.ownerTaskKey,
+        widgetTaskKind: task.widgetTaskKind || "",
+        widgetTaskMeta: normalizeWidgetTaskMeta(task.widgetTaskMeta),
         linkedSeries: normalizeLinkedSeries(task.linkedSeries),
         sequenceDependencyId: task.sequenceDependencyId || "",
         widgetCompletion: {
@@ -5535,7 +5543,9 @@ function choosePreferredTask(localTask, remoteTask, localUpdatedAt, remoteUpdate
     localTask.categoryLabel !== remoteTask.categoryLabel ||
     localTask.categoryColor !== remoteTask.categoryColor ||
     localTask.importance !== remoteTask.importance ||
-    (localTask.dueDate || "") !== (remoteTask.dueDate || "")
+    (localTask.dueDate || "") !== (remoteTask.dueDate || "") ||
+    (localTask.widgetTaskKind || "") !== (remoteTask.widgetTaskKind || "") ||
+    JSON.stringify(normalizeWidgetTaskMeta(localTask.widgetTaskMeta)) !== JSON.stringify(normalizeWidgetTaskMeta(remoteTask.widgetTaskMeta))
   ) {
     return localUpdatedAt >= remoteUpdatedAt ? localTask : remoteTask;
   }
@@ -6058,6 +6068,41 @@ function normalizeWidgetCompletion(value) {
   };
 }
 
+function normalizeWidgetTaskMeta(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  const normalized = {};
+  for (const [key, item] of Object.entries(value).sort(([left], [right]) => left.localeCompare(right))) {
+    const nextValue = normalizeWidgetTaskMetaValue(item);
+    if (typeof nextValue !== "undefined") {
+      normalized[key] = nextValue;
+    }
+  }
+  return normalized;
+}
+
+function normalizeWidgetTaskMetaValue(value) {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : undefined;
+  }
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => normalizeWidgetTaskMetaValue(item))
+      .filter((item) => typeof item !== "undefined");
+  }
+  if (value && typeof value === "object") {
+    return normalizeWidgetTaskMeta(value);
+  }
+  return undefined;
+}
+
 function normalizeSkipRule(value) {
   if (!value || typeof value !== "object") {
     return { type: "none" };
@@ -6255,7 +6300,8 @@ function widgetRuntimeHelpers() {
     createId,
     todayString,
     regenerateSeries,
-    resolveCategorySnapshot
+    resolveCategorySnapshot,
+    retireWidgetOwnedSeries
   };
 }
 
@@ -6305,6 +6351,8 @@ function buildGeneratedInstance(template, occurrenceIndex, startDate, dueDate, e
     ownerWidgetId: existingTask?.ownerWidgetId || template.ownerWidgetId || "",
     ownerWidgetType: existingTask?.ownerWidgetType || template.ownerWidgetType || "",
     ownerTaskKey: existingTask?.ownerTaskKey || template.ownerTaskKey || "",
+    widgetTaskKind: existingTask?.widgetTaskKind || template.widgetTaskKind || "",
+    widgetTaskMeta: normalizeWidgetTaskMeta(existingTask?.widgetTaskMeta || template.widgetTaskMeta),
     linkedSeries: normalizeLinkedSeries(existingTask?.linkedSeries || template.linkedSeries),
     sequenceDependencyId: existingTask?.sequenceDependencyId || "",
     widgetCompletion: normalizeWidgetCompletion(existingTask?.widgetCompletion || template.widgetCompletion),
