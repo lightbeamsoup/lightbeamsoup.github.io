@@ -1,4 +1,5 @@
 import { energyWidgetDefinition } from "./energy.js";
+import { workoutWidgetDefinition } from "./workout.js";
 
 /**
  * Widget definitions describe one plugin type and keep its lifecycle in one place.
@@ -11,7 +12,7 @@ import { energyWidgetDefinition } from "./energy.js";
  * - `ensureTasks` for owned-task provisioning
  * - `shouldAutoSkipOwnedTask` for widget-specific lockout rules
  */
-const WIDGET_DEFINITIONS = [energyWidgetDefinition];
+const WIDGET_DEFINITIONS = [energyWidgetDefinition, workoutWidgetDefinition];
 const WIDGET_DEFINITION_MAP = new Map(WIDGET_DEFINITIONS.map((definition) => [definition.type, definition]));
 
 export function listWidgetDefinitions() {

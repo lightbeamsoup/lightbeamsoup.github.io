@@ -3,7 +3,14 @@
 ## Open items
 
 - Widgets: Create a Travel Buddy widget.
-- Widgets: Create a Workout Coach widget.
+- Workout Coach:
+  - [x] Scaffold the widget and register it in the widget menu.
+  - [ ] Add workout plans with workout type, duration, intensity, and daily/weekly linked schedules.
+  - [ ] Add widget-owned task metadata for workout sessions and weight check-ins.
+  - [ ] Add daily and weekly progress views that roll up repeated instances into one tracked card.
+  - [ ] Add workout completion logging with actual duration and intensity overrides.
+  - [ ] Add open weight logging plus optional scheduled weight check-ins.
+  - [ ] Add per-widget weight units and decide how points should work for unscheduled weight logs.
 
 ## Recently completed
 
