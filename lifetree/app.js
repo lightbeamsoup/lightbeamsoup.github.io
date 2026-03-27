@@ -39,6 +39,7 @@ import {
   renderDeveloperPointsSummary as renderDeveloperPointsSummaryBase
 } from "./modules/points.js";
 import {
+  appendEmailSummaryHistoryEntry,
   choosePreferredNotifications,
   normalizeEmailSummaryConfig,
   normalizeNotifications,
@@ -217,6 +218,7 @@ const notificationsIncludeTreePointsInput = document.getElementById("notificatio
 const notificationsIncludeWidgetHighlightsInput = document.getElementById("notificationsIncludeWidgetHighlights");
 const notificationsPreview = document.getElementById("notificationsPreview");
 const notificationsHistory = document.getElementById("notificationsHistory");
+const sendNotificationSummaryButton = document.getElementById("sendNotificationSummary");
 const taskDeskModal = document.getElementById("taskDeskModal");
 const openTaskDeskButton = document.getElementById("openTaskDesk");
 const closeTaskDeskButton = document.getElementById("closeTaskDesk");
@@ -405,6 +407,9 @@ const syncState = {
 const driveSaveState = {
   inFlight: false,
   mode: ""
+};
+const notificationSendState = {
+  inFlight: false
 };
 const localFingerprintCache = {
   storeRef: null,
@@ -615,6 +620,7 @@ cancelNotificationsButton.addEventListener("click", closeNotifications);
 notificationsForm.addEventListener("submit", handleNotificationsSubmit);
 notificationsForm.addEventListener("input", renderNotificationsIfOpen);
 notificationsForm.addEventListener("change", handleNotificationsFormChange);
+sendNotificationSummaryButton.addEventListener("click", handleSendNotificationSummary);
 closeTreeDetailButton.addEventListener("click", closeTreeDetail);
 closeTreeDetailBackdrop.addEventListener("click", closeTreeDetail);
 closeTreeStyleButton.addEventListener("click", closeTreeStyle);
@@ -1115,6 +1121,18 @@ function syncNotificationsInputs() {
   notificationsWeekdayInput.disabled = !weekly;
 }
 
+function syncNotificationActionState(draft = null) {
+  const nextDraft = draft || readNotificationsDraft();
+  const canSend = Boolean(authState.authenticated && nextDraft.recipientEmail && !notificationSendState.inFlight);
+  sendNotificationSummaryButton.disabled = !canSend;
+  sendNotificationSummaryButton.textContent = notificationSendState.inFlight ? "Sending…" : "Send summary now";
+  sendNotificationSummaryButton.title = !authState.authenticated
+    ? "Connect Google to send summaries from the authenticated Gmail account."
+    : !nextDraft.recipientEmail
+      ? "Choose a recipient email before sending a summary."
+      : "";
+}
+
 function handleNotificationsFormChange() {
   syncNotificationsInputs();
   renderNotificationsIfOpen();
@@ -1149,6 +1167,24 @@ function readNotificationsDraft() {
   };
 }
 
+function persistNotificationsDraft(draft, { history = draft.history, updatedAt = Date.now() } = {}) {
+  store.notifications = normalizeNotifications({
+    ...store.notifications,
+    email: {
+      ...normalizeNotifications(store.notifications).email,
+      recipientEmail: normalizeRecipientEmail(draft.recipientEmail || authState.user?.email || ""),
+      summaries: normalizeEmailSummaryConfig({
+        ...draft.summaries,
+        updatedAt
+      }),
+      history,
+      updatedAt
+    }
+  });
+  persistStore();
+  renderNotificationsIfOpen();
+}
+
 function handleNotificationsSubmit(event) {
   event.preventDefault();
   const current = normalizeNotifications(store.notifications).email;
@@ -1158,7 +1194,7 @@ function handleNotificationsSubmit(event) {
     || authState.user?.email
     || ""
   );
-  const nextSummaries = normalizeEmailSummaryConfig({
+  const comparableSummaries = normalizeEmailSummaryConfig({
     enabled: notificationsSummaryEnabledInput.checked,
     frequency: notificationsFrequencyInput.value,
     sendTime: normalizeNotificationTime(notificationsSendTimeInput.value, current.summaries.sendTime),
@@ -1171,6 +1207,10 @@ function handleNotificationsSubmit(event) {
       treePoints: notificationsIncludeTreePointsInput.checked,
       widgetHighlights: notificationsIncludeWidgetHighlightsInput.checked
     },
+    updatedAt: current.summaries.updatedAt
+  });
+  const nextSummaries = normalizeEmailSummaryConfig({
+    ...comparableSummaries,
     updatedAt: Date.now()
   });
 
@@ -1181,25 +1221,22 @@ function handleNotificationsSubmit(event) {
 
   const unchanged = (
     nextRecipientEmail === current.recipientEmail
-    && JSON.stringify(nextSummaries) === JSON.stringify(current.summaries)
+    && JSON.stringify(comparableSummaries) === JSON.stringify(current.summaries)
   );
   if (unchanged) {
     closeNotifications();
     return;
   }
 
-  store.notifications = normalizeNotifications({
-    ...store.notifications,
-    email: {
-      ...normalizeNotifications(store.notifications).email,
-      recipientEmail: nextRecipientEmail,
-      summaries: nextSummaries,
-      history: current.history,
-      updatedAt: Date.now()
-    }
+  persistNotificationsDraft({
+    recipientEmail: nextRecipientEmail,
+    summaries: nextSummaries,
+    history: current.history,
+    updatedAt: current.updatedAt
+  }, {
+    history: current.history,
+    updatedAt: Date.now()
   });
-  persistStore();
-  renderNotificationsIfOpen();
   closeNotifications();
   setSyncStatus(nextSummaries.enabled ? "Saved email summary settings." : "Saved notification settings.", "info");
 }
@@ -1213,6 +1250,92 @@ function renderNotificationsIfOpen() {
   const preview = buildEmailSummaryPreview(draft);
   notificationsPreview.innerHTML = renderEmailSummaryPreview(preview);
   notificationsHistory.innerHTML = renderNotificationHistory(draft.history);
+  syncNotificationActionState(draft);
+}
+
+function setNotificationSendInFlight(inFlight) {
+  notificationSendState.inFlight = Boolean(inFlight);
+  syncNotificationActionState();
+}
+
+async function handleSendNotificationSummary() {
+  const draft = readNotificationsDraft();
+  if (!draft.recipientEmail) {
+    setSyncStatus("Choose a recipient email before sending a summary.", "error");
+    return;
+  }
+
+  if (!authState.authenticated) {
+    const authenticated = await refreshAuthStatus({ suppressUnavailableError: false });
+    if (!authenticated) {
+      setSyncStatus("Connect Google first to send email summaries.", "error");
+      renderNotificationsIfOpen();
+      return;
+    }
+  }
+
+  const now = new Date();
+  const preview = buildEmailSummaryPreview(draft, now);
+  const summaryKey = buildEmailSummaryKey(draft.summaries, now);
+  const requestBody = {
+    recipientEmail: preview.recipientEmail,
+    subject: preview.subject,
+    html: renderEmailSummaryBodyHtml(preview),
+    text: renderEmailSummaryBodyText(preview)
+  };
+
+  setNotificationSendInFlight(true);
+  try {
+    const response = await fetch(`${API_BASE}/api/notifications/send-summary`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      credentials: FETCH_CREDENTIALS,
+      body: JSON.stringify(requestBody)
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload.error || "Summary send failed");
+    }
+
+    const history = appendEmailSummaryHistoryEntry(draft.history, {
+      id: createId(),
+      at: typeof payload.sentAt === "number" ? payload.sentAt : Date.now(),
+      status: "sent",
+      recipientEmail: preview.recipientEmail,
+      subject: preview.subject,
+      summaryKey
+    });
+    persistNotificationsDraft({ ...draft, history }, {
+      history,
+      updatedAt: Date.now()
+    });
+    setSyncStatus(`Sent summary to ${preview.recipientEmail}.`, "success");
+  } catch (error) {
+    const message = String(error?.message || "Summary send failed");
+    const history = appendEmailSummaryHistoryEntry(draft.history, {
+      id: createId(),
+      at: Date.now(),
+      status: "error",
+      recipientEmail: preview.recipientEmail,
+      subject: preview.subject,
+      summaryKey
+    });
+    persistNotificationsDraft({ ...draft, history }, {
+      history,
+      updatedAt: Date.now()
+    });
+    if (message.includes("insufficientPermissions")) {
+      setSyncStatus("Reconnect Google and grant Gmail send access, then try sending the summary again.", "error");
+    } else if (message === "Not authenticated") {
+      setSyncStatus("Connect Google first to send email summaries.", "error");
+    } else {
+      setSyncStatus(`Summary send failed: ${message}`, "error");
+    }
+  } finally {
+    setNotificationSendInFlight(false);
+  }
 }
 
 function handleThemeSettingModeChange(event) {
@@ -3235,10 +3358,56 @@ function renderEmailSummaryPreview(preview) {
   `;
 }
 
+function renderEmailSummaryBodyHtml(preview) {
+  const sectionsHtml = preview.sections.length > 0
+    ? preview.sections.map((section) => `
+      <section style="margin: 0 0 20px;">
+        <h2 style="margin: 0 0 10px; font-size: 18px; color: #253243;">${escapeHtml(section.title)}</h2>
+        <ul style="margin: 0; padding-left: 20px; color: #4f637a; line-height: 1.55;">
+          ${section.items.map((item) => `<li style="margin-bottom: 6px;">${escapeHtml(item)}</li>`).join("")}
+        </ul>
+      </section>
+    `).join("")
+    : `<p style="margin: 0; color: #4f637a;">No matching content yet. As tasks, widgets, and tree progress change, this preview will fill in automatically.</p>`;
+
+  return `<!doctype html>
+<html lang="en">
+  <body style="margin: 0; padding: 24px; background: #f5efe4; color: #253243; font-family: Georgia, 'Times New Roman', serif;">
+    <main style="max-width: 720px; margin: 0 auto; background: #fffaf3; border: 1px solid rgba(37, 50, 67, 0.1); border-radius: 24px; padding: 28px; box-shadow: 0 24px 60px rgba(37, 50, 67, 0.12);">
+      <p style="margin: 0 0 8px; text-transform: uppercase; letter-spacing: 0.12em; font-size: 12px; color: #e57b4b;">Lifetree summary</p>
+      <h1 style="margin: 0 0 10px; font-size: 28px; line-height: 1.2; color: #253243;">${escapeHtml(preview.subject)}</h1>
+      <p style="margin: 0 0 24px; color: #4f637a;">${escapeHtml(preview.scheduleLabel)}${preview.recipientEmail ? ` · Sent to ${escapeHtml(preview.recipientEmail)}` : ""}</p>
+      ${sectionsHtml}
+    </main>
+  </body>
+</html>`;
+}
+
+function renderEmailSummaryBodyText(preview) {
+  const lines = [
+    preview.subject,
+    preview.scheduleLabel
+  ];
+  if (preview.recipientEmail) {
+    lines.push(`Sent to ${preview.recipientEmail}`);
+  }
+  lines.push("");
+  if (preview.sections.length === 0) {
+    lines.push("No matching content yet. As tasks, widgets, and tree progress change, this preview will fill in automatically.");
+  } else {
+    for (const section of preview.sections) {
+      lines.push(section.title);
+      lines.push(...section.items.map((item) => `- ${item}`));
+      lines.push("");
+    }
+  }
+  return lines.join("\n").trim();
+}
+
 function renderNotificationHistory(historyEntries) {
   const entries = Array.isArray(historyEntries) ? historyEntries : [];
   if (entries.length === 0) {
-    return `<p class="sync-status">No email summaries have been sent yet. Send history will appear here once backend delivery is connected.</p>`;
+    return `<p class="sync-status">No email summaries have been sent yet. Send a summary now to start building history.</p>`;
   }
   return `
     <div class="notifications-history-list">
@@ -3260,6 +3429,16 @@ function buildNotificationScheduleLabel(summaryConfig) {
     return `Weekly · ${WEEKDAY_LABELS[summaryConfig.weekday]} at ${formatNotificationTime(summaryConfig.sendTime)}`;
   }
   return `Daily · ${formatNotificationTime(summaryConfig.sendTime)}`;
+}
+
+function buildEmailSummaryKey(summaryConfig, now = new Date()) {
+  if (summaryConfig.frequency === "weekly") {
+    const weekStart = new Date(now.getTime());
+    weekStart.setHours(0, 0, 0, 0);
+    weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+    return `weekly:${toDateString(weekStart)}`;
+  }
+  return `daily:${toDateString(now)}`;
 }
 
 function formatNotificationTime(value) {
@@ -6066,6 +6245,7 @@ function updateGoogleButtons() {
   downloadDriveDataButton.disabled = !isDeveloperUser();
   renderDeveloperPanel();
   renderSyncMeta();
+  renderNotificationsIfOpen();
 }
 
 function setSyncStatus(message, tone) {

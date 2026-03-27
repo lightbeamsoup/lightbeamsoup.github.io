@@ -101,6 +101,13 @@ export function normalizeEmailSummaryHistory(value) {
     .slice(0, MAX_NOTIFICATION_HISTORY_ENTRIES);
 }
 
+export function appendEmailSummaryHistoryEntry(existingEntries, nextEntry) {
+  return normalizeEmailSummaryHistory([
+    nextEntry,
+    ...normalizeEmailSummaryHistory(existingEntries)
+  ]);
+}
+
 function mergeNotificationHistory(localEntries, remoteEntries) {
   const mergedById = new Map();
   for (const entry of [...normalizeEmailSummaryHistory(localEntries), ...normalizeEmailSummaryHistory(remoteEntries)]) {

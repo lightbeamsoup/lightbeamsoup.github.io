@@ -21,7 +21,8 @@ const OAUTH_SCOPES = [
   "openid",
   "email",
   "profile",
-  "https://www.googleapis.com/auth/drive.appdata"
+  "https://www.googleapis.com/auth/drive.appdata",
+  "https://www.googleapis.com/auth/gmail.send"
 ].join(" ");
 
 const app = express();
@@ -225,6 +226,53 @@ app.post("/api/lifetree/reset", async (req, res) => {
     res.json({ ok: true, cleared: true });
   } catch (error) {
     res.status(401).json({ error: error.message });
+  }
+});
+
+app.post("/api/notifications/send-summary", async (req, res) => {
+  try {
+    const user = requireUser(req);
+    const accessToken = await refreshAccessToken(user);
+    const recipientEmail = normalizeEmailAddress(req.body?.recipientEmail) || normalizeEmailAddress(user.email);
+    const subject = sanitizeEmailHeader(req.body?.subject, 220);
+    const html = sanitizeEmailBody(req.body?.html, 200_000);
+    const text = sanitizeEmailBody(req.body?.text, 80_000);
+
+    if (!recipientEmail) {
+      res.status(400).json({ error: "Choose a valid recipient email before sending a summary." });
+      return;
+    }
+    if (!subject) {
+      res.status(400).json({ error: "Missing summary subject." });
+      return;
+    }
+    if (!html && !text) {
+      res.status(400).json({ error: "Missing summary body." });
+      return;
+    }
+
+    const delivery = await sendGmailMessage(accessToken, {
+      fromEmail: normalizeEmailAddress(user.email),
+      recipientEmail,
+      subject,
+      html: html || `<pre>${escapeHtml(text)}</pre>`,
+      text: text || stripHtmlToText(html)
+    });
+
+    res.json({
+      ok: true,
+      id: delivery.id || "",
+      threadId: delivery.threadId || "",
+      sentAt: Date.now()
+    });
+  } catch (error) {
+    const message = String(error?.message || "Email summary send failed");
+    const statusCode = message === "Not authenticated" || message === "Missing stored user"
+      ? 401
+      : message.includes("(403)")
+        ? 403
+        : 500;
+    res.status(statusCode).json({ error: message });
   }
 });
 
@@ -446,6 +494,63 @@ async function deleteDriveFile(accessToken, fileId) {
   }
 }
 
+async function sendGmailMessage(accessToken, { fromEmail, recipientEmail, subject, html, text }) {
+  const response = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      raw: buildRawEmailMessage({
+        fromEmail,
+        recipientEmail,
+        subject,
+        html,
+        text
+      })
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(await formatGoogleError(response, "Gmail send failed"));
+  }
+
+  return response.json();
+}
+
+function buildRawEmailMessage({ fromEmail, recipientEmail, subject, html, text }) {
+  const boundary = `lifetree-${crypto.randomUUID()}`;
+  const message = [
+    fromEmail ? `From: ${fromEmail}` : "",
+    `To: ${recipientEmail}`,
+    `Subject: ${encodeMimeHeader(subject)}`,
+    "MIME-Version: 1.0",
+    `Content-Type: multipart/alternative; boundary="${boundary}"`,
+    "",
+    `--${boundary}`,
+    'Content-Type: text/plain; charset="UTF-8"',
+    "Content-Transfer-Encoding: 8bit",
+    "",
+    text,
+    `--${boundary}`,
+    'Content-Type: text/html; charset="UTF-8"',
+    "Content-Transfer-Encoding: 8bit",
+    "",
+    html,
+    `--${boundary}--`,
+    ""
+  ]
+    .filter((line, index) => line || index >= 4)
+    .join("\r\n");
+
+  return Buffer.from(message, "utf8")
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+}
+
 function loadStore() {
   fs.mkdirSync(dataDir, { recursive: true });
   if (!fs.existsSync(storePath)) {
@@ -474,6 +579,52 @@ function parseCookies(header) {
       result[key] = decodeURIComponent(rest.join("="));
       return result;
     }, {});
+}
+
+function normalizeEmailAddress(value) {
+  const candidate = String(value || "").trim().slice(0, 160);
+  if (!candidate) {
+    return "";
+  }
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(candidate) ? candidate : "";
+}
+
+function sanitizeEmailHeader(value, maxLength = 200) {
+  return String(value || "")
+    .replace(/[\r\n]+/g, " ")
+    .trim()
+    .slice(0, maxLength);
+}
+
+function sanitizeEmailBody(value, maxLength = 100_000) {
+  return typeof value === "string" ? value.slice(0, maxLength) : "";
+}
+
+function encodeMimeHeader(value) {
+  return `=?UTF-8?B?${Buffer.from(String(value || ""), "utf8").toString("base64")}?=`;
+}
+
+function stripHtmlToText(value) {
+  return String(value || "")
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .trim();
+}
+
+function escapeHtml(value) {
+  return String(value || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }
 
 function serializeCookie(name, value, options) {
