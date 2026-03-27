@@ -2,6 +2,21 @@ export const WORKOUT_WIDGET_TYPE = "workout";
 
 const DEFAULT_WEIGHT_UNIT = "lb";
 const DEFAULT_WORKOUT_INTENSITY = "moderate";
+const DEFAULT_WORKOUT_TIME = "07:00";
+const WORKOUT_INTENSITY_OPTIONS = [
+  { value: "low", label: "Low" },
+  { value: "moderate", label: "Moderate" },
+  { value: "high", label: "High" }
+];
+const WEEKDAY_OPTIONS = [
+  { value: 0, label: "Sun" },
+  { value: 1, label: "Mon" },
+  { value: 2, label: "Tue" },
+  { value: 3, label: "Wed" },
+  { value: 4, label: "Thu" },
+  { value: 5, label: "Fri" },
+  { value: 6, label: "Sat" }
+];
 
 export const workoutWidgetDefinition = {
   type: WORKOUT_WIDGET_TYPE,
@@ -77,6 +92,8 @@ export const workoutWidgetDefinition = {
     const planCount = widget.settings.workoutPlans.length;
     const latestWorkout = widget.data.workoutEntries[widget.data.workoutEntries.length - 1] || null;
     const latestWeight = widget.data.weightEntries[widget.data.weightEntries.length - 1] || null;
+    const dailyPlans = widget.settings.workoutPlans.filter((plan) => plan.recurrence?.type === "daily").length;
+    const weeklyPlans = widget.settings.workoutPlans.filter((plan) => plan.recurrence?.type === "weekly").length;
 
     return `
       <div class="widget-slot-header">
@@ -86,7 +103,7 @@ export const workoutWidgetDefinition = {
         </div>
         <span class="widget-badge">Scaffold</span>
       </div>
-      <p>Workout plans: <strong>${planCount}</strong></p>
+      <p>Workout plans: <strong>${planCount}</strong> (${dailyPlans} daily, ${weeklyPlans} weekly)</p>
       <p>${latestWorkout ? `Latest workout: ${escapeHtml(latestWorkout.workoutType || "Workout")} at ${formatDateTime(latestWorkout.at)}` : "No workout logs yet."}</p>
       <p>${latestWeight ? `Latest weight: ${escapeHtml(formatWeightEntry(latestWeight))} at ${formatDateTime(latestWeight.at)}` : "No weight logs yet."}</p>
       <div class="widget-actions">
@@ -100,6 +117,7 @@ export const workoutWidgetDefinition = {
     const latestWorkout = widget.data.workoutEntries[widget.data.workoutEntries.length - 1] || null;
     const latestWeight = widget.data.weightEntries[widget.data.weightEntries.length - 1] || null;
     const weightTracking = widget.settings.weightTracking;
+    const planDraft = createPlanDraft();
 
     return `
       <section class="energy-detail">
@@ -109,11 +127,86 @@ export const workoutWidgetDefinition = {
               <div>
                 <p class="eyebrow">Workout plans</p>
                 <h3>Plan workouts</h3>
-                <p class="sync-status">Next step: define daily and weekly workout plans with workout type, duration, and intensity.</p>
+                <p class="sync-status">Create daily or weekly workout plans with linked schedule details. These plans are the source of truth for the widget's future tasks.</p>
               </div>
             </div>
-            <p>${widget.settings.workoutPlans.length ? `${widget.settings.workoutPlans.length} workout plan${widget.settings.workoutPlans.length === 1 ? "" : "s"} scaffolded.` : "No workout plans yet."}</p>
-            <p class="sync-status">These plans will eventually own linked recurring tasks and show grouped progress in Dailies and Weeklies.</p>
+            <form class="workout-plan-form" data-workout-plan-form data-editing-plan-id="">
+              <div class="quick-add-grid">
+                <label class="quick-add-title">
+                  <span>Workout type</span>
+                  <input type="text" maxlength="80" value="${escapeHtml(planDraft.workoutType)}" placeholder="Strength, run, yoga, swim..." data-workout-plan-type required />
+                </label>
+                <label>
+                  <span>Duration (minutes)</span>
+                  <input type="number" min="1" max="600" step="1" value="${planDraft.durationMinutes}" data-workout-plan-duration required />
+                </label>
+                <label>
+                  <span>Intensity</span>
+                  <select data-workout-plan-intensity>
+                    ${WORKOUT_INTENSITY_OPTIONS.map((option) => `
+                      <option value="${option.value}" ${planDraft.intensity === option.value ? "selected" : ""}>${option.label}</option>
+                    `).join("")}
+                  </select>
+                </label>
+                <label>
+                  <span>Pattern</span>
+                  <select data-workout-plan-pattern>
+                    <option value="daily" selected>Daily</option>
+                    <option value="weekly">Weekly</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Every</span>
+                  <input type="number" min="1" max="30" step="1" value="${planDraft.recurrence.interval}" data-workout-plan-interval />
+                </label>
+                <label>
+                  <span>Time of day</span>
+                  <input type="time" value="${escapeHtml(planDraft.recurrence.timeOfDay)}" data-workout-plan-time />
+                </label>
+              </div>
+              <div class="workout-recurrence-panel" data-workout-daily-panel>
+                <div class="energy-detail-header">
+                  <div>
+                    <h3>Additional same-day times</h3>
+                    <p class="sync-status">Use these to create linked daily instances after the main time above.</p>
+                  </div>
+                </div>
+                <div class="energy-reminder-editor" data-workout-additional-times>
+                  ${renderAdditionalTimeInputs(planDraft.recurrence.additionalTimes, escapeHtml)}
+                </div>
+                <div class="widget-actions workout-inline-actions">
+                  <button type="button" class="ghost-button" data-workout-add-time>Add time</button>
+                </div>
+              </div>
+              <div class="workout-recurrence-panel hidden" data-workout-weekly-panel>
+                <div class="weekday-picker-panel">
+                  <span>Days in the week</span>
+                  <div class="weekday-picker">
+                    ${renderWeekdayOptions(planDraft.recurrence.weekdays)}
+                  </div>
+                </div>
+              </div>
+              <div class="widget-actions workout-inline-actions">
+                <button type="submit" class="primary-button">Save plan</button>
+                <button type="button" class="ghost-button hidden" data-workout-cancel-edit>Cancel edit</button>
+              </div>
+            </form>
+            <p class="sync-status">These plans are stored now. The next step will attach widget-owned tasks and current-period progress to them.</p>
+          </section>
+
+          <section class="energy-detail-card">
+            <div class="energy-detail-header">
+              <div>
+                <p class="eyebrow">Saved plans</p>
+                <h3>Current workout plans</h3>
+                <p class="sync-status">${widget.settings.workoutPlans.length ? "Edit or remove stored workout plans here." : "No plans yet. Save one from the editor to start building the widget schedule."}</p>
+              </div>
+            </div>
+            <div class="workout-plan-list">
+              ${widget.settings.workoutPlans.length
+                ? widget.settings.workoutPlans.map((plan) => renderWorkoutPlanCard(plan, escapeHtml)).join("")
+                : `<p class="empty-state">No workout plans yet.</p>`}
+            </div>
           </section>
 
           <section class="energy-detail-card">
@@ -143,6 +236,177 @@ export const workoutWidgetDefinition = {
         </div>
       </section>
     `;
+  },
+
+  mountDetail({ widget, container, helpers }) {
+    const form = container.querySelector("[data-workout-plan-form]");
+    const patternInput = container.querySelector("[data-workout-plan-pattern]");
+    const dailyPanel = container.querySelector("[data-workout-daily-panel]");
+    const weeklyPanel = container.querySelector("[data-workout-weekly-panel]");
+    const additionalTimes = container.querySelector("[data-workout-additional-times]");
+    const cancelEditButton = container.querySelector("[data-workout-cancel-edit]");
+
+    if (!form || !patternInput || !dailyPanel || !weeklyPanel || !additionalTimes) {
+      return null;
+    }
+
+    const syncPanels = () => {
+      const isDaily = patternInput.value !== "weekly";
+      dailyPanel.classList.toggle("hidden", !isDaily);
+      weeklyPanel.classList.toggle("hidden", isDaily);
+    };
+
+    const resetForm = () => {
+      form.reset();
+      form.setAttribute("data-editing-plan-id", "");
+      const freshDraft = createPlanDraft();
+      form.querySelector("[data-workout-plan-duration]").value = String(freshDraft.durationMinutes);
+      form.querySelector("[data-workout-plan-intensity]").value = freshDraft.intensity;
+      patternInput.value = freshDraft.recurrence.type;
+      form.querySelector("[data-workout-plan-interval]").value = String(freshDraft.recurrence.interval);
+      form.querySelector("[data-workout-plan-time]").value = freshDraft.recurrence.timeOfDay;
+      replaceAdditionalTimes(additionalTimes, freshDraft.recurrence.additionalTimes);
+      setSelectedWeekdays(container, freshDraft.recurrence.weekdays);
+      cancelEditButton?.classList.add("hidden");
+      syncPanels();
+    };
+
+    const populateForm = (plan) => {
+      form.setAttribute("data-editing-plan-id", plan.id);
+      form.querySelector("[data-workout-plan-type]").value = plan.workoutType || plan.name || "";
+      form.querySelector("[data-workout-plan-duration]").value = String(plan.durationMinutes || 30);
+      form.querySelector("[data-workout-plan-intensity]").value = plan.intensity || DEFAULT_WORKOUT_INTENSITY;
+      patternInput.value = plan.recurrence?.type || "daily";
+      form.querySelector("[data-workout-plan-interval]").value = String(plan.recurrence?.interval || 1);
+      form.querySelector("[data-workout-plan-time]").value = plan.recurrence?.timeOfDay || DEFAULT_WORKOUT_TIME;
+      replaceAdditionalTimes(additionalTimes, plan.recurrence?.additionalTimes || []);
+      setSelectedWeekdays(container, plan.recurrence?.weekdays || []);
+      cancelEditButton?.classList.remove("hidden");
+      syncPanels();
+    };
+
+    const clickHandler = (event) => {
+      const addTimeButton = event.target.closest("[data-workout-add-time]");
+      if (addTimeButton) {
+        const row = document.createElement("div");
+        row.className = "energy-time-row";
+        row.innerHTML = renderAdditionalTimeRow(DEFAULT_WORKOUT_TIME);
+        additionalTimes.appendChild(row);
+        return;
+      }
+
+      const removeTimeButton = event.target.closest("[data-workout-remove-time]");
+      if (removeTimeButton) {
+        removeTimeButton.closest(".energy-time-row")?.remove();
+        return;
+      }
+
+      const editButton = event.target.closest("[data-workout-edit-plan]");
+      if (editButton) {
+        const planId = editButton.getAttribute("data-plan-id") || "";
+        const plan = widget.settings.workoutPlans.find((entry) => entry.id === planId);
+        if (!plan) {
+          helpers.setSyncStatus("That workout plan could not be found.", "error");
+          return;
+        }
+        populateForm(plan);
+        return;
+      }
+
+      const deleteButton = event.target.closest("[data-workout-delete-plan]");
+      if (deleteButton) {
+        const planId = deleteButton.getAttribute("data-plan-id") || "";
+        const before = widget.settings.workoutPlans.length;
+        widget.settings.workoutPlans = widget.settings.workoutPlans.filter((entry) => entry.id !== planId);
+        if (widget.settings.workoutPlans.length === before) {
+          helpers.setSyncStatus("That workout plan could not be found.", "error");
+          return;
+        }
+        widget.updatedAt = Date.now();
+        helpers.persistStore();
+        helpers.renderAll();
+        helpers.setSyncStatus("Removed that workout plan.", "info");
+        return;
+      }
+
+      const cancelEdit = event.target.closest("[data-workout-cancel-edit]");
+      if (cancelEdit) {
+        resetForm();
+      }
+    };
+
+    const submitHandler = (event) => {
+      event.preventDefault();
+      const planId = form.getAttribute("data-editing-plan-id") || "";
+      const workoutType = String(form.querySelector("[data-workout-plan-type]").value || "").trim().slice(0, 80);
+      const durationMinutes = normalizeDurationMinutes(form.querySelector("[data-workout-plan-duration]").value);
+      const intensity = normalizeWorkoutIntensity(form.querySelector("[data-workout-plan-intensity]").value);
+      const pattern = patternInput.value === "weekly" ? "weekly" : "daily";
+      const interval = normalizePositiveInteger(form.querySelector("[data-workout-plan-interval]").value, 1);
+      const timeOfDay = normalizeTimeValue(form.querySelector("[data-workout-plan-time]").value, DEFAULT_WORKOUT_TIME);
+      const selectedWeekdays = getSelectedWeekdays(container);
+      const additionalTimeValues = collectAdditionalTimes(additionalTimes);
+
+      if (!workoutType) {
+        helpers.setSyncStatus("Workout type is required.", "error");
+        return;
+      }
+
+      if (durationMinutes < 1) {
+        helpers.setSyncStatus("Workout duration must be at least 1 minute.", "error");
+        return;
+      }
+
+      if (pattern === "weekly" && selectedWeekdays.length === 0) {
+        helpers.setSyncStatus("Choose at least one weekday for a weekly workout plan.", "error");
+        return;
+      }
+
+      if (!additionalTimeValues) {
+        helpers.setSyncStatus("Additional workout times must be valid and unique.", "error");
+        return;
+      }
+
+      const now = Date.now();
+      const existing = widget.settings.workoutPlans.find((entry) => entry.id === planId) || null;
+      const nextPlan = {
+        id: existing?.id || helpers.createId(),
+        name: workoutType,
+        workoutType,
+        durationMinutes,
+        intensity,
+        recurrence: {
+          type: pattern,
+          interval,
+          instancesPerPeriod: pattern === "daily" ? (1 + additionalTimeValues.length) : selectedWeekdays.length,
+          weekdays: pattern === "weekly" ? selectedWeekdays : [],
+          timeOfDay,
+          additionalTimes: pattern === "daily" ? additionalTimeValues : []
+        },
+        categoryKey: "health",
+        points: existing?.points || 3,
+        createdAt: existing?.createdAt || now,
+        updatedAt: now
+      };
+
+      const otherPlans = widget.settings.workoutPlans.filter((entry) => entry.id !== nextPlan.id);
+      widget.settings.workoutPlans = [...otherPlans, nextPlan].sort(compareWorkoutPlanDisplay);
+      widget.updatedAt = now;
+      helpers.persistStore();
+      helpers.renderAll();
+      helpers.setSyncStatus(existing ? `Updated the ${workoutType} workout plan.` : `Added ${workoutType} as a workout plan.`, "success");
+    };
+
+    patternInput.addEventListener("change", syncPanels);
+    container.addEventListener("click", clickHandler);
+    form.addEventListener("submit", submitHandler);
+    syncPanels();
+
+    return () => {
+      patternInput.removeEventListener("change", syncPanels);
+      container.removeEventListener("click", clickHandler);
+      form.removeEventListener("submit", submitHandler);
+    };
   }
 };
 
@@ -234,13 +498,17 @@ function normalizeWorkoutRecurrence(value) {
   return {
     type,
     interval: normalizePositiveInteger(value.interval, 1),
-    instancesPerPeriod: normalizePositiveInteger(value.instancesPerPeriod, 1),
+    instancesPerPeriod: normalizePositiveInteger(
+      value.instancesPerPeriod,
+      type === "daily"
+        ? 1 + normalizeAdditionalTimes(value.additionalTimes).length
+        : Math.max(1, normalizeWeekdays(value.weekdays).length)
+    ),
     weekdays: Array.isArray(value.weekdays)
-      ? value.weekdays
-          .map((day) => Number(day))
-          .filter((day) => Number.isInteger(day) && day >= 0 && day <= 6)
+      ? normalizeWeekdays(value.weekdays)
       : [],
-    timeOfDay: typeof value.timeOfDay === "string" ? value.timeOfDay : ""
+    timeOfDay: normalizeTimeValue(value.timeOfDay, DEFAULT_WORKOUT_TIME),
+    additionalTimes: normalizeAdditionalTimes(value.additionalTimes)
   };
 }
 
@@ -294,6 +562,32 @@ function normalizeEntrySource(value) {
   return value === "extra" ? "extra" : "task";
 }
 
+function normalizeWeekdays(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return [...new Set(
+    value
+      .map((day) => Number(day))
+      .filter((day) => Number.isInteger(day) && day >= 0 && day <= 6)
+  )].sort((left, right) => left - right);
+}
+
+function normalizeAdditionalTimes(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return [...new Set(
+    value
+      .filter((time) => typeof time === "string" && /^\d{2}:\d{2}$/.test(time))
+      .map((time) => time.trim())
+  )].sort();
+}
+
+function normalizeTimeValue(value, fallback) {
+  return typeof value === "string" && /^\d{2}:\d{2}$/.test(value.trim()) ? value.trim() : fallback;
+}
+
 function formatWeightEntry(entry) {
   if (!entry || !Number.isFinite(entry.value)) {
     return "No weight logged";
@@ -310,4 +604,128 @@ function describeWorkoutEntry(entry) {
 
 function trimTrailingZero(value) {
   return Number.isInteger(value) ? String(value) : String(value);
+}
+
+function createPlanDraft() {
+  return {
+    workoutType: "",
+    durationMinutes: 30,
+    intensity: DEFAULT_WORKOUT_INTENSITY,
+    recurrence: {
+      type: "daily",
+      interval: 1,
+      instancesPerPeriod: 1,
+      weekdays: [1, 3, 5],
+      timeOfDay: DEFAULT_WORKOUT_TIME,
+      additionalTimes: []
+    }
+  };
+}
+
+function renderAdditionalTimeInputs(times, escapeHtml) {
+  const safeTimes = normalizeAdditionalTimes(times);
+  if (!safeTimes.length) {
+    return "";
+  }
+  return safeTimes.map((time) => renderAdditionalTimeRow(time, escapeHtml)).join("");
+}
+
+function renderAdditionalTimeRow(time, escapeHtml = (value) => value) {
+  return `
+    <div class="energy-time-row">
+      <label>
+        <span>Extra time</span>
+        <input type="time" value="${escapeHtml(time)}" data-workout-additional-time />
+      </label>
+      <button type="button" class="ghost-button" data-workout-remove-time>Remove</button>
+    </div>
+  `;
+}
+
+function renderWeekdayOptions(selectedDays) {
+  const selected = new Set(normalizeWeekdays(selectedDays));
+  return WEEKDAY_OPTIONS.map((option) => `
+    <label>
+      <input type="checkbox" value="${option.value}" data-workout-weekday ${selected.has(option.value) ? "checked" : ""} />
+      <span>${option.label}</span>
+    </label>
+  `).join("");
+}
+
+function renderWorkoutPlanCard(plan, escapeHtml) {
+  const summary = describeWorkoutPlan(plan);
+  return `
+    <article class="workout-plan-item">
+      <div class="workout-plan-item-header">
+        <div>
+          <h4>${escapeHtml(plan.name || plan.workoutType || "Workout plan")}</h4>
+          <p class="sync-status">${escapeHtml(summary)}</p>
+        </div>
+        <div class="widget-actions workout-inline-actions">
+          <button type="button" class="ghost-button" data-workout-edit-plan data-plan-id="${plan.id}">Edit</button>
+          <button type="button" class="ghost-button" data-workout-delete-plan data-plan-id="${plan.id}">Delete</button>
+        </div>
+      </div>
+    </article>
+  `;
+}
+
+function describeWorkoutPlan(plan) {
+  const workoutType = plan.workoutType || plan.name || "Workout";
+  const duration = plan.durationMinutes ? `${plan.durationMinutes} min` : "Duration TBD";
+  const intensity = WORKOUT_INTENSITY_OPTIONS.find((option) => option.value === plan.intensity)?.label || "Moderate";
+  const recurrence = describeWorkoutRecurrence(plan.recurrence);
+  return `${workoutType} · ${duration} · ${intensity} · ${recurrence}`;
+}
+
+function describeWorkoutRecurrence(recurrence) {
+  if (!recurrence) {
+    return "No schedule";
+  }
+  if (recurrence.type === "daily") {
+    const allTimes = [recurrence.timeOfDay, ...normalizeAdditionalTimes(recurrence.additionalTimes)];
+    return `Every ${recurrence.interval} day${recurrence.interval === 1 ? "" : "s"} at ${allTimes.join(", ")}`;
+  }
+  if (recurrence.type === "weekly") {
+    const days = normalizeWeekdays(recurrence.weekdays)
+      .map((day) => WEEKDAY_OPTIONS.find((option) => option.value === day)?.label || "")
+      .filter(Boolean)
+      .join(", ");
+    return `Every ${recurrence.interval} week${recurrence.interval === 1 ? "" : "s"} on ${days || "selected days"} at ${recurrence.timeOfDay}`;
+  }
+  return "No schedule";
+}
+
+function replaceAdditionalTimes(container, times) {
+  if (!container) {
+    return;
+  }
+  container.innerHTML = renderAdditionalTimeInputs(times, (value) => value);
+}
+
+function setSelectedWeekdays(container, weekdays) {
+  const selected = new Set(normalizeWeekdays(weekdays));
+  Array.from(container.querySelectorAll("[data-workout-weekday]")).forEach((input) => {
+    input.checked = selected.has(Number(input.value));
+  });
+}
+
+function getSelectedWeekdays(container) {
+  return normalizeWeekdays(
+    Array.from(container.querySelectorAll("[data-workout-weekday]:checked")).map((input) => Number(input.value))
+  );
+}
+
+function collectAdditionalTimes(container) {
+  const values = Array.from(container.querySelectorAll("[data-workout-additional-time]"))
+    .map((input) => normalizeTimeValue(input.value, ""))
+    .filter(Boolean);
+  const normalized = normalizeAdditionalTimes(values);
+  return normalized.length === values.length ? normalized : null;
+}
+
+function compareWorkoutPlanDisplay(left, right) {
+  const leftName = (left.name || left.workoutType || "").toLowerCase();
+  const rightName = (right.name || right.workoutType || "").toLowerCase();
+  return leftName.localeCompare(rightName) || (left.createdAt || 0) - (right.createdAt || 0);
 }
