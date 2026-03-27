@@ -330,6 +330,7 @@ const removeTreeSkinButton = document.getElementById("removeTreeSkin");
 const copyWidgetDiagnosticsButton = document.getElementById("copyWidgetDiagnostics");
 const downloadDriveDataButton = document.getElementById("downloadDriveData");
 const importDriveDataButton = document.getElementById("importDriveData");
+const sendDeveloperDailySummaryButton = document.getElementById("sendDeveloperDailySummary");
 const cleanWidgetDataButton = document.getElementById("cleanWidgetData");
 const clearWidgetDriveDataButton = document.getElementById("clearWidgetDriveData");
 const injectPointsButton = document.getElementById("injectPoints");
@@ -598,6 +599,7 @@ removeTreeSkinButton.addEventListener("click", removeSelectedTreeSkin);
 resetFruitGrowthButton.addEventListener("click", resetDeveloperFruitGrowth);
 copyWidgetDiagnosticsButton.addEventListener("click", copyWidgetDiagnostics);
 downloadDriveDataButton.addEventListener("click", downloadDriveData);
+sendDeveloperDailySummaryButton.addEventListener("click", sendDeveloperDailySummary);
 importDriveDataButton.addEventListener("click", openDeveloperImportPicker);
 developerImportJsonInput.addEventListener("change", handleDeveloperImportJson);
 cleanWidgetDataButton.addEventListener("click", runLocalWidgetCleanup);
@@ -1185,6 +1187,110 @@ function persistNotificationsDraft(draft, { history = draft.history, updatedAt =
   renderNotificationsIfOpen();
 }
 
+function buildSummarySendDraft(baseDraft, { frequencyOverride = "" } = {}) {
+  return {
+    ...baseDraft,
+    summaries: normalizeEmailSummaryConfig({
+      ...baseDraft.summaries,
+      frequency: frequencyOverride || baseDraft.summaries.frequency,
+      updatedAt: baseDraft.summaries.updatedAt
+    })
+  };
+}
+
+async function sendNotificationSummaryDraft({
+  draft = readNotificationsDraft(),
+  frequencyOverride = "",
+  successMessage = "",
+  failurePrefix = "Summary send failed"
+} = {}) {
+  const sendDraft = buildSummarySendDraft(draft, { frequencyOverride });
+  if (!sendDraft.recipientEmail) {
+    setSyncStatus("Choose a recipient email before sending a summary.", "error");
+    return { success: false };
+  }
+
+  if (!authState.authenticated) {
+    const authenticated = await refreshAuthStatus({ suppressUnavailableError: false });
+    if (!authenticated) {
+      setSyncStatus("Connect Google first to send email summaries.", "error");
+      renderNotificationsIfOpen();
+      return { success: false };
+    }
+  }
+
+  const now = new Date();
+  const preview = buildEmailSummaryPreview(sendDraft, now);
+  const summaryKey = buildEmailSummaryKey(sendDraft.summaries, now);
+  const requestBody = {
+    recipientEmail: preview.recipientEmail,
+    subject: preview.subject,
+    html: renderEmailSummaryBodyHtml(preview),
+    text: renderEmailSummaryBodyText(preview)
+  };
+
+  setNotificationSendInFlight(true);
+  try {
+    const response = await fetch(`${API_BASE}/api/notifications/send-summary`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      credentials: FETCH_CREDENTIALS,
+      body: JSON.stringify(requestBody)
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload.error || "Summary send failed");
+    }
+
+    const history = appendEmailSummaryHistoryEntry(
+      normalizeNotifications(store.notifications).email.history,
+      {
+        id: createId(),
+        at: typeof payload.sentAt === "number" ? payload.sentAt : Date.now(),
+        status: "sent",
+        recipientEmail: preview.recipientEmail,
+        subject: preview.subject,
+        summaryKey
+      }
+    );
+    persistNotificationsDraft({ ...sendDraft, history }, {
+      history,
+      updatedAt: Date.now()
+    });
+    setSyncStatus(successMessage || `Sent summary to ${preview.recipientEmail}.`, "success");
+    return { success: true, preview, history };
+  } catch (error) {
+    const message = String(error?.message || "Summary send failed");
+    const history = appendEmailSummaryHistoryEntry(
+      normalizeNotifications(store.notifications).email.history,
+      {
+        id: createId(),
+        at: Date.now(),
+        status: "error",
+        recipientEmail: preview.recipientEmail,
+        subject: preview.subject,
+        summaryKey
+      }
+    );
+    persistNotificationsDraft({ ...sendDraft, history }, {
+      history,
+      updatedAt: Date.now()
+    });
+    if (message.includes("insufficientPermissions")) {
+      setSyncStatus("Reconnect Google and grant Gmail send access, then try sending the summary again.", "error");
+    } else if (message === "Not authenticated") {
+      setSyncStatus("Connect Google first to send email summaries.", "error");
+    } else {
+      setSyncStatus(`${failurePrefix}: ${message}`, "error");
+    }
+    return { success: false, error: message };
+  } finally {
+    setNotificationSendInFlight(false);
+  }
+}
+
 function handleNotificationsSubmit(event) {
   event.preventDefault();
   const current = normalizeNotifications(store.notifications).email;
@@ -1256,86 +1362,17 @@ function renderNotificationsIfOpen() {
 function setNotificationSendInFlight(inFlight) {
   notificationSendState.inFlight = Boolean(inFlight);
   syncNotificationActionState();
+  if (isDeveloperUser()) {
+    renderDeveloperPanel();
+  }
 }
 
 async function handleSendNotificationSummary() {
-  const draft = readNotificationsDraft();
-  if (!draft.recipientEmail) {
-    setSyncStatus("Choose a recipient email before sending a summary.", "error");
-    return;
-  }
-
-  if (!authState.authenticated) {
-    const authenticated = await refreshAuthStatus({ suppressUnavailableError: false });
-    if (!authenticated) {
-      setSyncStatus("Connect Google first to send email summaries.", "error");
-      renderNotificationsIfOpen();
-      return;
-    }
-  }
-
-  const now = new Date();
-  const preview = buildEmailSummaryPreview(draft, now);
-  const summaryKey = buildEmailSummaryKey(draft.summaries, now);
-  const requestBody = {
-    recipientEmail: preview.recipientEmail,
-    subject: preview.subject,
-    html: renderEmailSummaryBodyHtml(preview),
-    text: renderEmailSummaryBodyText(preview)
-  };
-
-  setNotificationSendInFlight(true);
-  try {
-    const response = await fetch(`${API_BASE}/api/notifications/send-summary`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      credentials: FETCH_CREDENTIALS,
-      body: JSON.stringify(requestBody)
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      throw new Error(payload.error || "Summary send failed");
-    }
-
-    const history = appendEmailSummaryHistoryEntry(draft.history, {
-      id: createId(),
-      at: typeof payload.sentAt === "number" ? payload.sentAt : Date.now(),
-      status: "sent",
-      recipientEmail: preview.recipientEmail,
-      subject: preview.subject,
-      summaryKey
-    });
-    persistNotificationsDraft({ ...draft, history }, {
-      history,
-      updatedAt: Date.now()
-    });
-    setSyncStatus(`Sent summary to ${preview.recipientEmail}.`, "success");
-  } catch (error) {
-    const message = String(error?.message || "Summary send failed");
-    const history = appendEmailSummaryHistoryEntry(draft.history, {
-      id: createId(),
-      at: Date.now(),
-      status: "error",
-      recipientEmail: preview.recipientEmail,
-      subject: preview.subject,
-      summaryKey
-    });
-    persistNotificationsDraft({ ...draft, history }, {
-      history,
-      updatedAt: Date.now()
-    });
-    if (message.includes("insufficientPermissions")) {
-      setSyncStatus("Reconnect Google and grant Gmail send access, then try sending the summary again.", "error");
-    } else if (message === "Not authenticated") {
-      setSyncStatus("Connect Google first to send email summaries.", "error");
-    } else {
-      setSyncStatus(`Summary send failed: ${message}`, "error");
-    }
-  } finally {
-    setNotificationSendInFlight(false);
-  }
+  await sendNotificationSummaryDraft({
+    draft: readNotificationsDraft(),
+    successMessage: "",
+    failurePrefix: "Summary send failed"
+  });
 }
 
 function handleThemeSettingModeChange(event) {
@@ -6243,6 +6280,7 @@ function updateGoogleButtons() {
   clearDriveDataButton.disabled = !isDeveloperUser();
   clearWidgetDriveDataButton.disabled = !isDeveloperUser();
   downloadDriveDataButton.disabled = !isDeveloperUser();
+  sendDeveloperDailySummaryButton.disabled = !authState.authenticated || notificationSendState.inFlight;
   renderDeveloperPanel();
   renderSyncMeta();
   renderNotificationsIfOpen();
@@ -6312,6 +6350,10 @@ function renderDeveloperPanel() {
   grantTreeSkinButton.disabled = !hasSkins;
   removeTreeSkinButton.disabled = !hasSkins;
   importDriveDataButton.disabled = !visible;
+  sendDeveloperDailySummaryButton.disabled = !authState.authenticated || notificationSendState.inFlight;
+  sendDeveloperDailySummaryButton.textContent = notificationSendState.inFlight
+    ? "Sending…"
+    : "Send daily summary email";
 
   const devSettings = normalizeDevSettings(store.devSettings);
   developerMaxTaskPoints.value = String(devSettings.maxTaskPoints);
@@ -6507,6 +6549,23 @@ function removeSelectedTreeSkin() {
   persistStore();
   renderAll();
   setSyncStatus(`Removed ${result.skin.label} from the available skins.`, "info");
+}
+
+async function sendDeveloperDailySummary() {
+  if (!isDeveloperUser()) {
+    return;
+  }
+  const savedDraft = normalizeNotifications(store.notifications).email;
+  const recipientEmail = savedDraft.recipientEmail || authState.user?.email || "";
+  await sendNotificationSummaryDraft({
+    draft: {
+      ...savedDraft,
+      recipientEmail
+    },
+    frequencyOverride: "daily",
+    successMessage: `Sent daily summary to ${recipientEmail || "the configured recipient"}.`,
+    failurePrefix: "Daily summary send failed"
+  });
 }
 
 function getReturnToTarget() {
