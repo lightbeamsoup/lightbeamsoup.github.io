@@ -120,7 +120,6 @@ export const energyWidgetDefinition = {
       <p>Reminder tasks: ${escapeHtml(reminderSummary)}</p>
       <div class="widget-actions">
         <button type="button" class="ghost-button" data-widget-action="open-widget-detail">Open panel</button>
-        <button type="button" class="ghost-button" data-widget-action="remove-widget">Remove widget</button>
       </div>
     `;
   },

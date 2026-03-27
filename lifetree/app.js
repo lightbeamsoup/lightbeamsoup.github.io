@@ -3483,13 +3483,24 @@ function renderWidgetOrbit() {
     const definition = getWidgetDefinition(widget.type);
     if (definition?.render) {
       slot.classList.add("filled");
-      slot.innerHTML = definition.render({
+      slot.innerHTML = `
+        <button
+          type="button"
+          class="widget-shell-remove"
+          data-widget-action="remove-widget"
+          aria-label="Remove widget"
+          data-help="Remove this widget from the shell. Its owned tasks and history will retire."
+        >
+          <span aria-hidden="true">×</span>
+        </button>
+        ${definition.render({
         widget,
         tasks: store.tasks,
         escapeHtml,
         formatDateTime,
         getPendingActionForWidget
-      });
+      })}
+      `;
       continue;
     }
 

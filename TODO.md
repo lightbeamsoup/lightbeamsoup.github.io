@@ -4,7 +4,7 @@
 
 - Widgets: Create a Travel Buddy widget.
 - Widgets:
-  - [ ] Make `Remove widget` less prominent and move it to an `x` in the upper-right corner of the widget shell.
+  - [x] Make `Remove widget` less prominent and move it to an `x` in the upper-right corner of the widget shell.
 - Energy:
   - [ ] Add matching widget-owned task metadata to Energy tasks.
   - [ ] Update the Energy shell to surface the richer widget task state more clearly.

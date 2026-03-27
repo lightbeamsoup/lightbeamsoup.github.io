@@ -135,7 +135,6 @@ export const workoutWidgetDefinition = {
           ? `<button type="button" class="ghost-button" data-widget-action="undo-adhoc-workout" data-pending-key="${pendingAdHocWorkout.key}">Undo quick workout</button>`
           : `<button type="button" class="ghost-button" data-widget-action="toggle-adhoc-workout">${shellState.quickAdHocOpen ? "Close quick workout" : "Quick workout"}</button>`}
         <button type="button" class="ghost-button" data-widget-action="open-widget-detail">Open panel</button>
-        <button type="button" class="ghost-button" data-widget-action="remove-widget">Remove widget</button>
       </div>
       ${shellState.quickAdHocOpen && !pendingAdHocWorkout ? renderShellAdHocWorkoutForm(escapeHtml) : ""}
     `;
