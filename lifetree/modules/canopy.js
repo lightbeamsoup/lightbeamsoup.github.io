@@ -208,27 +208,53 @@ function renderRecurringGroupRow(column, escapeHtml, formatPointsLabel) {
         <div class="canopy-group-entry">
           <button
             type="button"
-            class="canopy-group-card"
+            class="canopy-group-card${group.bonus?.collectible ? " ready" : ""}${group.bonus?.claimed ? " claimed" : ""}"
             data-canopy-action="open-group"
             data-column-key="${column.key}"
             data-group-key="${group.key}"
+            ${group.bonus ? `style="--canopy-bonus-color: ${escapeHtml(group.bonus.selectedCategory?.color || "#f4c95d")}"` : ""}
           >
             <strong>${escapeHtml(group.label)}</strong>
             <span>${group.resolvedSeriesCount}/${group.seriesCards.length} finished</span>
+            ${group.bonus?.claimed ? `
+              <span class="canopy-group-bonus-state claimed">Bonus claimed in ${escapeHtml(group.bonus.claimedCategoryLabel || group.bonus.selectedCategory?.label || "selected type")}</span>
+            ` : group.bonus?.collectible ? `
+              <span class="canopy-group-bonus-state ready">Bonus ready: collect ${escapeHtml(formatPointsLabel(group.bonus.points))}</span>
+            ` : ""}
           </button>
-          ${group.bonus?.collectible ? `
+          ${group.bonus?.pendingAction ? `
             <button
               type="button"
-              class="canopy-group-star${group.bonus.pendingAction ? " pending" : ""}"
-              data-canopy-action="${group.bonus.pendingAction ? "undo-group-bonus" : "collect-group-bonus"}"
+              class="canopy-group-star pending"
+              data-canopy-action="undo-group-bonus"
               data-column-key="${column.key}"
               data-group-key="${group.key}"
-              data-pending-key="${group.bonus.pendingAction?.key || ""}"
-              data-help="${escapeHtml(group.bonus.pendingAction ? "Undo this pending recurring bonus collection." : `Collect the ${group.label.toLowerCase()} bonus in ${group.bonus.selectedCategory?.label || "the selected category"}.`)}"
+              data-pending-key="${group.bonus.pendingAction.key}"
+              data-help="${escapeHtml("Undo this pending recurring bonus collection.")}"
               style="--canopy-bonus-color: ${escapeHtml(group.bonus.selectedCategory?.color || "#f4c95d")}"
-              title="${escapeHtml(group.bonus.pendingAction ? "Undo pending bonus collection" : `Collect ${formatPointsLabel(group.bonus.points)} in ${group.bonus.selectedCategory?.label || "the selected category"}`)}"
-              aria-label="${escapeHtml(group.bonus.pendingAction ? `Undo ${group.label} bonus collection` : `Collect ${group.label} bonus`)}"
-            >${group.bonus.pendingAction ? "Undo" : "★"}</button>
+              title="${escapeHtml("Undo pending bonus collection")}"
+              aria-label="${escapeHtml(`Undo ${group.label} bonus collection`)}"
+            >Undo</button>
+          ` : group.bonus?.collectible ? `
+            <button
+              type="button"
+              class="canopy-group-star"
+              data-canopy-action="collect-group-bonus"
+              data-column-key="${column.key}"
+              data-group-key="${group.key}"
+              data-pending-key=""
+              data-help="${escapeHtml(`Collect the ${group.label.toLowerCase()} bonus in ${group.bonus.selectedCategory?.label || "the selected category"}.`)}"
+              style="--canopy-bonus-color: ${escapeHtml(group.bonus.selectedCategory?.color || "#f4c95d")}"
+              title="${escapeHtml(`Collect ${formatPointsLabel(group.bonus.points)} in ${group.bonus.selectedCategory?.label || "the selected category"}`)}"
+              aria-label="${escapeHtml(`Collect ${group.label} bonus`)}"
+            >★</button>
+          ` : group.bonus?.claimed ? `
+            <span
+              class="canopy-group-star claimed"
+              style="--canopy-bonus-color: ${escapeHtml(group.bonus.selectedCategory?.color || "#f4c95d")}"
+              title="${escapeHtml(`Bonus already claimed in ${group.bonus.claimedCategoryLabel || group.bonus.selectedCategory?.label || "selected type"}`)}"
+              aria-label="${escapeHtml(`${group.label} bonus already claimed`)}"
+            >✓</span>
           ` : ""}
         </div>
       `).join("")}
@@ -271,14 +297,14 @@ function renderRecurringBonusPanel(group, columnKey, escapeHtml, formatPointsLab
         </label>
         <button
           type="button"
-          class="ghost-button canopy-bonus-collect"
+          class="ghost-button canopy-bonus-collect${bonus.claimed ? " claimed" : ""}"
           data-canopy-action="${bonus.pendingAction ? "undo-group-bonus" : "collect-group-bonus"}"
           data-column-key="${columnKey}"
           data-group-key="${group.key}"
           data-pending-key="${bonus.pendingAction?.key || ""}"
           data-help="${escapeHtml(bonus.pendingAction ? "Undo this pending recurring bonus collection." : `Collect ${formatPointsLabel(bonus.points)} once every ${group.label.toLowerCase()} task in this ${bonus.periodLabel} is complete.`)}"
           ${!bonus.pendingAction && !bonus.collectible ? "disabled" : ""}
-        >${bonus.claimed ? "Collected" : bonus.pendingAction ? "Undo" : `Collect ${formatPointsLabel(bonus.points)}`}</button>
+        >${bonus.claimed ? `✓ Collected` : bonus.pendingAction ? "Undo" : `Collect ${formatPointsLabel(bonus.points)}`}</button>
       </div>
     </section>
   `;

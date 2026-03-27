@@ -159,10 +159,38 @@ body[data-theme="dark"] .canopy-bonus-panel {
   border-color: color-mix(in srgb, var(--canopy-bonus-color, #f4c95d) 32%, rgba(214, 228, 246, 0.18));
 }
 
+body[data-theme="dark"] .canopy-group-card.ready {
+  background:
+    linear-gradient(180deg, rgba(24, 35, 52, 0.96), rgba(18, 28, 42, 0.96)),
+    linear-gradient(90deg, color-mix(in srgb, var(--canopy-bonus-color, #f4c95d) 18%, rgba(24, 35, 52, 0.96)), transparent 26%);
+  border-color: color-mix(in srgb, var(--canopy-bonus-color, #f4c95d) 32%, rgba(214, 228, 246, 0.18));
+}
+
+body[data-theme="dark"] .canopy-group-card.claimed {
+  background:
+    linear-gradient(180deg, rgba(24, 35, 52, 0.96), rgba(18, 28, 42, 0.96)),
+    linear-gradient(90deg, color-mix(in srgb, var(--canopy-bonus-color, #7dbf74) 16%, rgba(24, 35, 52, 0.96)), transparent 26%);
+  border-color: color-mix(in srgb, var(--canopy-bonus-color, #7dbf74) 28%, rgba(214, 228, 246, 0.18));
+}
+
 body[data-theme="dark"] .canopy-group-star {
   color: color-mix(in srgb, var(--canopy-bonus-color, #f4c95d) 82%, #fff0b6);
   background: rgba(24, 35, 52, 0.92);
   border-color: color-mix(in srgb, var(--canopy-bonus-color, #f4c95d) 34%, rgba(214, 228, 246, 0.18));
+}
+
+body[data-theme="dark"] .canopy-group-star.claimed {
+  color: #def7dc;
+  background: rgba(34, 79, 51, 0.92);
+  border-color: rgba(120, 214, 148, 0.32);
+}
+
+body[data-theme="dark"] .canopy-group-bonus-state.ready {
+  color: color-mix(in srgb, var(--canopy-bonus-color, #f4c95d) 82%, #fff0b6);
+}
+
+body[data-theme="dark"] .canopy-group-bonus-state.claimed {
+  color: color-mix(in srgb, var(--canopy-bonus-color, #7dbf74) 80%, #def7dc);
 }
 
 body[data-theme="dark"] .help-tooltip {
@@ -859,6 +887,33 @@ body.developer-open {
   font-size: 0.9rem;
 }
 
+.canopy-group-card.ready {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(248, 237, 219, 0.96)),
+    linear-gradient(90deg, color-mix(in srgb, var(--canopy-bonus-color, #f4c95d) 18%, white), transparent 28%);
+  border-color: color-mix(in srgb, var(--canopy-bonus-color, #f4c95d) 34%, rgba(37, 50, 67, 0.12));
+}
+
+.canopy-group-card.claimed {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(248, 237, 219, 0.96)),
+    linear-gradient(90deg, color-mix(in srgb, var(--canopy-bonus-color, #7dbf74) 18%, white), transparent 28%);
+  border-color: color-mix(in srgb, var(--canopy-bonus-color, #7dbf74) 30%, rgba(37, 50, 67, 0.12));
+}
+
+.canopy-group-bonus-state {
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.canopy-group-bonus-state.ready {
+  color: color-mix(in srgb, var(--canopy-bonus-color, #f4c95d) 72%, #8b6412);
+}
+
+.canopy-group-bonus-state.claimed {
+  color: color-mix(in srgb, var(--canopy-bonus-color, #7dbf74) 70%, #2f6a42);
+}
+
 .canopy-group-star {
   width: 44px;
   min-width: 44px;
@@ -885,6 +940,13 @@ body.developer-open {
   min-width: 72px;
   padding: 0 14px;
   font-size: 0.9rem;
+}
+
+.canopy-group-star.claimed {
+  background: rgba(125, 191, 116, 0.18);
+  border: 1px solid rgba(80, 133, 75, 0.22);
+  color: #2f6a42;
+  box-shadow: 0 10px 24px rgba(37, 50, 67, 0.06);
 }
 
 .help-tooltip {
@@ -977,6 +1039,12 @@ body.developer-open {
 
 .canopy-bonus-collect {
   white-space: nowrap;
+}
+
+.canopy-bonus-collect.claimed {
+  background: rgba(125, 191, 116, 0.16);
+  border-color: rgba(80, 133, 75, 0.22);
+  color: #2f6a42;
 }
 
 .canopy-detail-footer {
