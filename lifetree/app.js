@@ -1250,6 +1250,7 @@ function handleWidgetSlotClick(event) {
       getStore: () => store,
       applyAutoSkipRules,
       completeNextTaskFromWidget,
+      completeWidgetTaskById,
       openWidgetDetail,
       stageWidgetAction,
       getPendingActionForWidget,
@@ -1353,6 +1354,7 @@ function renderWidgetDetailIfOpen() {
       stageWidgetAction,
       getPendingActionForWidget,
       completeNextTaskFromWidget,
+      completeWidgetTaskById,
       undoPendingAction,
       retireWidgetOwnedSeries
     }
@@ -3485,6 +3487,15 @@ function completeNextTaskFromWidget(widget, mechanism, at = Date.now()) {
   nextTask.status = "done";
   pushHistory(nextTask, "completed");
   return nextTask;
+}
+
+function completeWidgetTaskById(taskId, at = Date.now()) {
+  const task = store.tasks.find((item) => item.id === taskId);
+  if (!task || task.archived || task.status !== "open" || isBlocked(task)) {
+    return null;
+  }
+  markTaskCompleted(task, at);
+  return task;
 }
 
 function stageWidgetAction(widget, actionType, metadata) {

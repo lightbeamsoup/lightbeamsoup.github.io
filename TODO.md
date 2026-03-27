@@ -11,7 +11,7 @@
   - [x] Add workout plans with workout type, duration, intensity, and daily/weekly linked schedules.
   - [x] Add widget-owned task metadata for workout sessions and weight check-ins.
   - [x] Add daily and weekly progress views that roll up repeated instances into one tracked card.
-  - [ ] Add workout completion logging with actual duration and intensity overrides.
+  - [x] Add workout completion logging with actual duration and intensity overrides.
   - [ ] Add open weight logging plus optional scheduled weight check-ins.
   - [ ] Add per-widget weight units and decide how points should work for unscheduled weight logs.
 

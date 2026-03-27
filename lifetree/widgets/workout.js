@@ -119,13 +119,15 @@ export const workoutWidgetDefinition = {
     `;
   },
 
-  renderDetail({ widget, tasks, escapeHtml, formatDateTime }) {
+  renderDetail({ widget, tasks, escapeHtml, formatDateTime, getPendingActionForWidget }) {
     const latestWorkout = widget.data.workoutEntries[widget.data.workoutEntries.length - 1] || null;
     const latestWeight = widget.data.weightEntries[widget.data.weightEntries.length - 1] || null;
     const weightTracking = widget.settings.weightTracking;
     const planDraft = createPlanDraft();
     const ownedTemplateCount = tasks.filter((task) => isWorkoutOwnedTemplate(task, widget.id)).length;
     const progressView = buildWorkoutProgressView(tasks, widget.id);
+    const completionTasks = listReadyWorkoutTasks(tasks, widget.id);
+    const recentWorkoutEntries = [...widget.data.workoutEntries].slice(-8).reverse();
 
     return `
       <section class="energy-detail">
@@ -161,6 +163,21 @@ export const workoutWidgetDefinition = {
                     : `<p class="empty-state">No weekly workout or weight tasks are scheduled in this calendar week.</p>`}
                 </div>
               </section>
+            </div>
+          </section>
+
+          <section class="energy-detail-card">
+            <div class="energy-detail-header">
+              <div>
+                <p class="eyebrow">Logging</p>
+                <h3>Complete workouts</h3>
+                <p class="sync-status">Set the actual duration and intensity here before the widget marks a workout task complete.</p>
+              </div>
+            </div>
+            <div class="workout-log-list">
+              ${completionTasks.length
+                ? completionTasks.map((task) => renderWorkoutCompletionCard(task, widget.id, escapeHtml, getPendingActionForWidget)).join("")
+                : `<p class="empty-state">No workout tasks are currently ready to log from the widget.</p>`}
             </div>
           </section>
 
@@ -233,7 +250,7 @@ export const workoutWidgetDefinition = {
                 <button type="button" class="ghost-button hidden" data-workout-cancel-edit>Cancel edit</button>
               </div>
             </form>
-            <p class="sync-status">These plans already create widget-owned recurring task templates. The next step will add richer progress rollups and widget-driven completion logging.</p>
+            <p class="sync-status">These plans create the widget-owned recurring tasks that feed the progress cards and workout logging flow above.</p>
           </section>
 
           <section class="energy-detail-card">
@@ -269,10 +286,14 @@ export const workoutWidgetDefinition = {
               <div>
                 <p class="eyebrow">History</p>
                 <h3>Recent activity</h3>
-                <p class="sync-status">Workout and weight history will live here once the logging flow is implemented.</p>
+                <p class="sync-status">Recent workout logs keep the actual duration and intensity that were recorded at completion time.</p>
               </div>
             </div>
-            <p>${latestWorkout ? `Latest workout: ${escapeHtml(describeWorkoutEntry(latestWorkout))} at ${formatDateTime(latestWorkout.at)}` : "No workout entries yet."}</p>
+            <div class="workout-entry-list">
+              ${recentWorkoutEntries.length
+                ? recentWorkoutEntries.map((entry) => renderWorkoutEntryCard(entry, escapeHtml, formatDateTime)).join("")
+                : `<p class="empty-state">No workout entries yet.</p>`}
+            </div>
             <p>${latestWeight ? `Latest weight: ${escapeHtml(formatWeightEntry(latestWeight))} at ${formatDateTime(latestWeight.at)}` : "No weight entries yet."}</p>
           </section>
         </div>
@@ -375,7 +396,84 @@ export const workoutWidgetDefinition = {
       const cancelEdit = event.target.closest("[data-workout-cancel-edit]");
       if (cancelEdit) {
         resetForm();
+        return;
       }
+
+      const undoLogButton = event.target.closest("[data-workout-log-undo]");
+      if (undoLogButton) {
+        const pendingKey = undoLogButton.getAttribute("data-pending-key");
+        if (pendingKey) {
+          helpers.undoPendingAction(pendingKey, "Undid the pending workout log.");
+        }
+      }
+    };
+
+    const submitLogHandler = (event) => {
+      const logForm = event.target.closest("[data-workout-log-form]");
+      if (!logForm) {
+        return;
+      }
+      event.preventDefault();
+
+      const taskId = logForm.getAttribute("data-task-id") || "";
+      const durationInput = logForm.querySelector("[data-workout-log-duration]");
+      const intensityInput = logForm.querySelector("[data-workout-log-intensity]");
+      const durationMinutes = normalizeDurationMinutes(durationInput?.value);
+      const intensity = normalizeWorkoutIntensity(intensityInput?.value);
+
+      if (!taskId) {
+        helpers.setSyncStatus("That workout task could not be identified.", "error");
+        return;
+      }
+      if (durationMinutes < 1) {
+        helpers.setSyncStatus("Workout duration must be at least 1 minute.", "error");
+        return;
+      }
+
+      const task = helpers.getStore().tasks.find((entry) => entry.id === taskId);
+      if (!task || task.status !== "open" || task.widgetTaskKind !== "workout-session") {
+        helpers.setSyncStatus("That workout task is no longer ready to log.", "error");
+        return;
+      }
+
+      const entryTime = Date.now();
+      helpers.stageWidgetAction(widget, `workout-log:${taskId}`, {
+        taskId,
+        durationMinutes,
+        intensity,
+        description: `Pending workout log for ${task.name}. Click undo within 5 seconds to cancel.`,
+        commit: () => {
+          const currentTask = helpers.getStore().tasks.find((entry) => entry.id === taskId);
+          if (!currentTask || currentTask.status !== "open" || currentTask.widgetTaskKind !== "workout-session") {
+            return false;
+          }
+
+          const completedTask = helpers.completeWidgetTaskById(taskId, entryTime);
+          if (!completedTask) {
+            return false;
+          }
+
+          upsertWorkoutEntry(widget, {
+            id: helpers.createId(),
+            at: entryTime,
+            workoutType: currentTask.widgetTaskMeta?.workoutType || currentTask.name || "Workout",
+            durationMinutes,
+            intensity,
+            taskId: currentTask.id,
+            taskName: currentTask.name || "",
+            planId: currentTask.widgetTaskMeta?.planId || "",
+            scheduledDate: currentTask.dueDate || currentTask.startDate || "",
+            scheduledTime: currentTask.timeOfDay || "",
+            source: "task"
+          });
+          widget.updatedAt = entryTime;
+
+          return {
+            message: `Logged ${currentTask.name} at ${durationMinutes} min (${intensity}) and completed the task.`,
+            tone: "info"
+          };
+        }
+      });
     };
 
     const submitHandler = (event) => {
@@ -443,12 +541,14 @@ export const workoutWidgetDefinition = {
 
     patternInput.addEventListener("change", syncPanels);
     container.addEventListener("click", clickHandler);
+    container.addEventListener("submit", submitLogHandler);
     form.addEventListener("submit", submitHandler);
     syncPanels();
 
     return () => {
       patternInput.removeEventListener("change", syncPanels);
       container.removeEventListener("click", clickHandler);
+      container.removeEventListener("submit", submitLogHandler);
       form.removeEventListener("submit", submitHandler);
     };
   }
@@ -816,7 +916,10 @@ function normalizeWorkoutEntries(value) {
       durationMinutes: normalizeDurationMinutes(entry.durationMinutes),
       intensity: normalizeWorkoutIntensity(entry.intensity),
       taskId: typeof entry.taskId === "string" ? entry.taskId : "",
+      taskName: typeof entry.taskName === "string" ? entry.taskName.trim().slice(0, 120) : "",
       planId: typeof entry.planId === "string" ? entry.planId : "",
+      scheduledDate: typeof entry.scheduledDate === "string" ? entry.scheduledDate : "",
+      scheduledTime: normalizeTimeValue(entry.scheduledTime, ""),
       source: normalizeEntrySource(entry.source)
     }))
     .sort((left, right) => left.at - right.at);
@@ -954,8 +1057,17 @@ function formatWeightEntry(entry) {
 function describeWorkoutEntry(entry) {
   const type = entry.workoutType || "Workout";
   const duration = entry.durationMinutes ? `${entry.durationMinutes} min` : "duration TBD";
-  const intensity = entry.intensity || DEFAULT_WORKOUT_INTENSITY;
+  const intensity = humanizeIntensity(entry.intensity || DEFAULT_WORKOUT_INTENSITY);
   return `${type} · ${duration} · ${intensity}`;
+}
+
+function formatScheduledWorkoutSlot(entry) {
+  const date = entry.scheduledDate || "";
+  const time = entry.scheduledTime || "";
+  if (date && time) {
+    return `${date} at ${time}`;
+  }
+  return date || time || "No scheduled slot";
 }
 
 function trimTrailingZero(value) {
@@ -1048,12 +1160,74 @@ function renderWorkoutProgressCard(card, escapeHtml) {
   `;
 }
 
+function renderWorkoutCompletionCard(task, widgetId, escapeHtml, getPendingActionForWidget) {
+  const pendingAction = getPendingActionForWidget?.(widgetId, `workout-log:${task.id}`) || null;
+  const durationMinutes = normalizeDurationMinutes(task.widgetTaskMeta?.durationMinutes || 30);
+  const intensity = normalizeWorkoutIntensity(task.widgetTaskMeta?.intensity);
+  const disabled = pendingAction ? "disabled" : "";
+
+  return `
+    <article class="workout-log-card">
+      <div class="workout-log-card-header">
+        <div>
+          <h4>${escapeHtml(task.widgetTaskMeta?.workoutType || task.name || "Workout")}</h4>
+          <p class="sync-status">${escapeHtml(task.name || "Workout task")} · Due ${escapeHtml(formatProgressDueText(task))}</p>
+        </div>
+        <span class="workout-progress-chip">${escapeHtml(humanizeIntensity(intensity))}</span>
+      </div>
+      <form class="workout-log-form" data-workout-log-form data-task-id="${task.id}">
+        <div class="quick-add-grid">
+          <label>
+            <span>Actual duration</span>
+            <input type="number" min="1" max="600" step="1" value="${durationMinutes}" data-workout-log-duration ${disabled} />
+          </label>
+          <label>
+            <span>Actual intensity</span>
+            <select data-workout-log-intensity ${disabled}>
+              ${WORKOUT_INTENSITY_OPTIONS.map((option) => `
+                <option value="${option.value}" ${intensity === option.value ? "selected" : ""}>${option.label}</option>
+              `).join("")}
+            </select>
+          </label>
+        </div>
+        <div class="widget-actions workout-inline-actions">
+          ${pendingAction
+            ? `<button type="button" class="ghost-button" data-workout-log-undo data-pending-key="${pendingAction.key}">Undo</button>`
+            : `<button type="submit" class="primary-button">Complete + log</button>`}
+        </div>
+      </form>
+    </article>
+  `;
+}
+
+function renderWorkoutEntryCard(entry, escapeHtml, formatDateTime) {
+  return `
+    <article class="workout-entry-card">
+      <div class="workout-entry-card-header">
+        <div>
+          <h4>${escapeHtml(entry.workoutType || entry.taskName || "Workout")}</h4>
+          <p class="sync-status">${escapeHtml(describeWorkoutEntry(entry))}</p>
+        </div>
+        <span class="workout-progress-chip done">${escapeHtml(entry.source === "extra" ? "Extra" : "Task")}</span>
+      </div>
+      <div class="workout-progress-stats">
+        <span><strong>Logged:</strong> ${escapeHtml(formatDateTime(entry.at))}</span>
+        ${entry.scheduledDate ? `<span><strong>Scheduled:</strong> ${escapeHtml(formatScheduledWorkoutSlot(entry))}</span>` : ""}
+      </div>
+    </article>
+  `;
+}
+
 function describeWorkoutPlan(plan) {
   const workoutType = plan.workoutType || plan.name || "Workout";
   const duration = plan.durationMinutes ? `${plan.durationMinutes} min` : "Duration TBD";
-  const intensity = WORKOUT_INTENSITY_OPTIONS.find((option) => option.value === plan.intensity)?.label || "Moderate";
+  const intensity = humanizeIntensity(plan.intensity);
   const recurrence = describeWorkoutRecurrence(plan.recurrence);
   return `${workoutType} · ${duration} · ${intensity} · ${recurrence}`;
+}
+
+function humanizeIntensity(value) {
+  return WORKOUT_INTENSITY_OPTIONS.find((option) => option.value === value)?.label || "Moderate";
 }
 
 function describeWorkoutRecurrence(recurrence) {
@@ -1097,6 +1271,20 @@ function buildWorkoutProgressView(tasks, widgetId, now = new Date()) {
       weekEnd
     })
   };
+}
+
+function listReadyWorkoutTasks(tasks, widgetId, at = Date.now()) {
+  const allTasks = Array.isArray(tasks) ? tasks : [];
+  return allTasks
+    .filter((task) =>
+      task
+      && task.ownerWidgetId === widgetId
+      && task.widgetTaskKind === "workout-session"
+      && !task.archived
+      && task.status === "open"
+      && isWorkoutTaskReady(task, allTasks, at)
+    )
+    .sort(compareWorkoutTaskSchedule);
 }
 
 function buildProgressCardsForPeriod(tasks, { period, today, weekStart, weekEnd }) {
@@ -1230,6 +1418,57 @@ function formatProgressDueText(task) {
   const date = task.dueDate || task.startDate || "";
   const time = task.timeOfDay || "23:59";
   return date ? `${date} at ${time}` : time;
+}
+
+function compareWorkoutTaskSchedule(left, right) {
+  const leftDate = `${left.dueDate || left.startDate || ""}T${left.timeOfDay || "23:59"}`;
+  const rightDate = `${right.dueDate || right.startDate || ""}T${right.timeOfDay || "23:59"}`;
+  if (leftDate !== rightDate) {
+    return leftDate.localeCompare(rightDate);
+  }
+  return (left.createdAt || 0) - (right.createdAt || 0);
+}
+
+function isWorkoutTaskReady(task, tasks, at = Date.now()) {
+  if (typeof task.notBeforeAt === "number" && task.notBeforeAt > at) {
+    return false;
+  }
+  const dependencies = Array.isArray(task.dependencies) ? task.dependencies : [];
+  return dependencies.every((dependencyId) => {
+    const dependency = tasks.find((entry) => entry.id === dependencyId);
+    return !dependency || dependency.status === "done" || dependency.status === "skipped";
+  });
+}
+
+function upsertWorkoutEntry(widget, entry) {
+  const nextEntry = {
+    id: typeof entry.id === "string" ? entry.id : "",
+    at: typeof entry.at === "number" ? entry.at : Date.now(),
+    workoutType: typeof entry.workoutType === "string" ? entry.workoutType.trim().slice(0, 80) : "",
+    durationMinutes: normalizeDurationMinutes(entry.durationMinutes),
+    intensity: normalizeWorkoutIntensity(entry.intensity),
+    taskId: typeof entry.taskId === "string" ? entry.taskId : "",
+    taskName: typeof entry.taskName === "string" ? entry.taskName.trim().slice(0, 120) : "",
+    planId: typeof entry.planId === "string" ? entry.planId : "",
+    scheduledDate: typeof entry.scheduledDate === "string" ? entry.scheduledDate : "",
+    scheduledTime: normalizeTimeValue(entry.scheduledTime, ""),
+    source: normalizeEntrySource(entry.source)
+  };
+
+  const existingIndex = nextEntry.taskId
+    ? widget.data.workoutEntries.findIndex((item) => item.taskId === nextEntry.taskId && item.source === nextEntry.source)
+    : -1;
+
+  if (existingIndex >= 0) {
+    widget.data.workoutEntries.splice(existingIndex, 1, {
+      ...widget.data.workoutEntries[existingIndex],
+      ...nextEntry
+    });
+  } else {
+    widget.data.workoutEntries.push(nextEntry);
+  }
+
+  widget.data.workoutEntries.sort((left, right) => left.at - right.at);
 }
 
 function replaceAdditionalTimes(container, times) {

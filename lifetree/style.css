@@ -66,6 +66,8 @@ body[data-theme="dark"] .energy-settings-card,
 body[data-theme="dark"] .workout-recurrence-panel,
 body[data-theme="dark"] .workout-plan-item,
 body[data-theme="dark"] .workout-progress-card,
+body[data-theme="dark"] .workout-log-card,
+body[data-theme="dark"] .workout-entry-card,
 body[data-theme="dark"] .edit-panel,
 body[data-theme="dark"] .recurrence-panel,
 body[data-theme="dark"] .skip-panel,
@@ -1759,6 +1761,40 @@ body.developer-open {
   flex-wrap: wrap;
   color: var(--muted);
   font-size: 0.88rem;
+}
+
+.workout-log-list,
+.workout-entry-list {
+  display: grid;
+  gap: 12px;
+}
+
+.workout-log-card,
+.workout-entry-card {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 20px;
+  border: 1px solid rgba(37, 50, 67, 0.1);
+  background: rgba(255, 255, 255, 0.46);
+}
+
+.workout-log-card-header,
+.workout-entry-card-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: start;
+}
+
+.workout-log-card h4,
+.workout-entry-card h4 {
+  margin: 0 0 4px;
+}
+
+.workout-log-form {
+  display: grid;
+  gap: 12px;
 }
 
 .widget-menu h2 {
