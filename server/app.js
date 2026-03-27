@@ -4,6 +4,17 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";
+import {
+  buildEmailSummaryPreview,
+  renderEmailSummaryBodyHtml,
+  renderEmailSummaryBodyText,
+  shouldEmailSummarySendNow
+} from "../lifetree/modules/notificationSummary.js";
+import {
+  appendEmailSummaryHistoryEntry,
+  normalizeNotifications,
+  normalizeRecipientEmail
+} from "../lifetree/modules/notifications.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -14,6 +25,11 @@ const storePath = path.join(dataDir, "auth-store.json");
 
 const PORT = Number(process.env.PORT || 3000);
 const REQUEST_BODY_LIMIT = process.env.REQUEST_BODY_LIMIT || "10mb";
+const SUMMARY_SCHEDULER_INTERVAL_MS = Math.max(
+  60_000,
+  Number(process.env.SUMMARY_SCHEDULER_INTERVAL_MS || 300_000) || 300_000
+);
+const ENABLE_NOTIFICATION_SCHEDULER = process.env.ENABLE_NOTIFICATION_SCHEDULER !== "false";
 const SESSION_COOKIE = "lifetree_session";
 const DRIVE_FILE_NAME = "task-deck-store.json";
 const DEV_EMAIL = "jbkallman@gmail.com";
@@ -24,6 +40,10 @@ const OAUTH_SCOPES = [
   "https://www.googleapis.com/auth/drive.appdata",
   "https://www.googleapis.com/auth/gmail.send"
 ].join(" ");
+const notificationSchedulerState = {
+  inFlight: false,
+  timerId: null
+};
 
 const app = express();
 app.set("trust proxy", 1);
@@ -233,7 +253,7 @@ app.post("/api/notifications/send-summary", async (req, res) => {
   try {
     const user = requireUser(req);
     const accessToken = await refreshAccessToken(user);
-    const recipientEmail = normalizeEmailAddress(req.body?.recipientEmail) || normalizeEmailAddress(user.email);
+    const recipientEmail = normalizeRecipientEmail(req.body?.recipientEmail) || normalizeRecipientEmail(user.email);
     const subject = sanitizeEmailHeader(req.body?.subject, 220);
     const html = sanitizeEmailBody(req.body?.html, 200_000);
     const text = sanitizeEmailBody(req.body?.text, 80_000);
@@ -252,7 +272,7 @@ app.post("/api/notifications/send-summary", async (req, res) => {
     }
 
     const delivery = await sendGmailMessage(accessToken, {
-      fromEmail: normalizeEmailAddress(user.email),
+      fromEmail: normalizeRecipientEmail(user.email),
       recipientEmail,
       subject,
       html: html || `<pre>${escapeHtml(text)}</pre>`,
@@ -291,6 +311,10 @@ app.use(express.static(rootDir, { extensions: ["html"] }));
 app.listen(PORT, () => {
   console.log(`Lifetree server listening on http://localhost:${PORT}`);
 });
+
+if (ENABLE_NOTIFICATION_SCHEDULER) {
+  startNotificationScheduler();
+}
 
 function assertOAuthEnv() {
   for (const key of ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REDIRECT_URI", "TOKEN_SECRET"]) {
@@ -519,6 +543,103 @@ async function sendGmailMessage(accessToken, { fromEmail, recipientEmail, subjec
   return response.json();
 }
 
+function startNotificationScheduler() {
+  if (notificationSchedulerState.timerId) {
+    return;
+  }
+  notificationSchedulerState.timerId = setInterval(() => {
+    void runNotificationScheduler();
+  }, SUMMARY_SCHEDULER_INTERVAL_MS);
+  setTimeout(() => {
+    void runNotificationScheduler();
+  }, 15_000);
+}
+
+async function runNotificationScheduler() {
+  if (notificationSchedulerState.inFlight) {
+    return;
+  }
+  notificationSchedulerState.inFlight = true;
+  try {
+    const store = loadStore();
+    const users = Object.values(store.users || {});
+    for (const user of users) {
+      try {
+        await processScheduledSummariesForUser(user);
+      } catch (error) {
+        console.error(`Notification scheduler failed for ${user?.email || user?.userId || "unknown user"}: ${error.message}`);
+      }
+    }
+  } finally {
+    notificationSchedulerState.inFlight = false;
+  }
+}
+
+async function processScheduledSummariesForUser(user) {
+  if (!user?.refreshToken) {
+    return;
+  }
+
+  const accessToken = await refreshAccessToken(user);
+  const file = await findDriveFile(accessToken);
+  if (!file) {
+    return;
+  }
+
+  const response = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`
+    }
+  });
+  if (!response.ok) {
+    throw new Error(await formatGoogleError(response, "Drive download failed"));
+  }
+
+  const payload = await response.json();
+  const notifications = normalizeNotifications(payload.notifications);
+  const emailConfig = notifications.email;
+  const dueCheck = shouldEmailSummarySendNow(emailConfig, new Date());
+  if (!dueCheck.due) {
+    return;
+  }
+
+  const preview = buildEmailSummaryPreview({
+    store: payload,
+    emailConfig,
+    now: new Date(),
+    fallbackRecipientEmail: normalizeRecipientEmail(user.email)
+  });
+  if (!preview.recipientEmail) {
+    return;
+  }
+
+  await sendGmailMessage(accessToken, {
+    fromEmail: normalizeRecipientEmail(user.email),
+    recipientEmail: preview.recipientEmail,
+    subject: preview.subject,
+    html: renderEmailSummaryBodyHtml(preview),
+    text: renderEmailSummaryBodyText(preview)
+  });
+
+  const history = appendEmailSummaryHistoryEntry(emailConfig.history, {
+    id: crypto.randomUUID(),
+    at: Date.now(),
+    status: "sent",
+    recipientEmail: preview.recipientEmail,
+    subject: preview.subject,
+    summaryKey: preview.summaryKey || dueCheck.summaryKey
+  });
+  payload.notifications = normalizeNotifications({
+    ...payload.notifications,
+    email: {
+      ...emailConfig,
+      history,
+      updatedAt: Date.now()
+    }
+  });
+  await upsertDriveFile(accessToken, payload, file.id);
+}
+
 function buildRawEmailMessage({ fromEmail, recipientEmail, subject, html, text }) {
   const boundary = `lifetree-${crypto.randomUUID()}`;
   const message = [
@@ -579,14 +700,6 @@ function parseCookies(header) {
       result[key] = decodeURIComponent(rest.join("="));
       return result;
     }, {});
-}
-
-function normalizeEmailAddress(value) {
-  const candidate = String(value || "").trim().slice(0, 160);
-  if (!candidate) {
-    return "";
-  }
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(candidate) ? candidate : "";
 }
 
 function sanitizeEmailHeader(value, maxLength = 200) {

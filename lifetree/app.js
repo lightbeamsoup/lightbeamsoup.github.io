@@ -39,10 +39,17 @@ import {
   renderDeveloperPointsSummary as renderDeveloperPointsSummaryBase
 } from "./modules/points.js";
 import {
+  buildEmailSummaryKey as buildEmailSummaryKeyShared,
+  buildEmailSummaryPreview as buildEmailSummaryPreviewShared,
+  renderEmailSummaryBodyHtml as renderEmailSummaryBodyHtmlShared,
+  renderEmailSummaryBodyText as renderEmailSummaryBodyTextShared
+} from "./modules/notificationSummary.js";
+import {
   appendEmailSummaryHistoryEntry,
   choosePreferredNotifications,
   normalizeEmailSummaryConfig,
   normalizeNotifications,
+  normalizeNotificationTimezone,
   normalizeRecipientEmail,
   normalizeWeekday,
   normalizeNotificationTime
@@ -724,12 +731,16 @@ async function handleManualLoadFromDrive() {
 }
 
 async function handleManualSaveToDrive() {
+  await saveCurrentStoreToDrive({ quiet: false, force: false, mode: "manual" });
+}
+
+async function saveCurrentStoreToDrive({ quiet = false, force = false, mode = "manual" } = {}) {
   if (driveSaveState.inFlight) {
-    return;
+    return { success: false, skipped: true };
   }
-  setDriveSaveInFlight(true, "manual");
+  setDriveSaveInFlight(true, mode);
   try {
-    const result = await saveToDrive();
+    const result = await saveToDrive({ quiet, force });
     if (result?.success) {
       rememberRemoteStoreState({
         updatedAt: result.remoteUpdatedAt,
@@ -740,10 +751,11 @@ async function handleManualSaveToDrive() {
       });
       autosaveController.markCurrentAsSaved();
     }
+    return result;
   } finally {
     setDriveSaveInFlight(false);
+    renderSyncMeta();
   }
-  renderSyncMeta();
 }
 
 function finalizeStoreState() {
@@ -1142,6 +1154,10 @@ function handleNotificationsFormChange() {
 
 function readNotificationsDraft() {
   const current = normalizeNotifications(store.notifications).email;
+  const currentTimezone = normalizeNotificationTimezone(
+    current.summaries.timezone,
+    typeof Intl !== "undefined" ? Intl.DateTimeFormat().resolvedOptions().timeZone : undefined
+  );
   return {
     recipientEmail: normalizeRecipientEmail(
       notificationsRecipientEmailInput?.value
@@ -1154,6 +1170,7 @@ function readNotificationsDraft() {
       frequency: notificationsFrequencyInput.value,
       sendTime: normalizeNotificationTime(notificationsSendTimeInput.value, current.summaries.sendTime),
       weekday: normalizeWeekday(notificationsWeekdayInput.value, current.summaries.weekday),
+      timezone: currentTimezone,
       include: {
         overdue: notificationsIncludeOverdueInput.checked,
         dueSoon: notificationsIncludeDueSoonInput.checked,
@@ -1220,13 +1237,18 @@ async function sendNotificationSummaryDraft({
   }
 
   const now = new Date();
-  const preview = buildEmailSummaryPreview(sendDraft, now);
-  const summaryKey = buildEmailSummaryKey(sendDraft.summaries, now);
+  const preview = buildEmailSummaryPreviewShared({
+    store,
+    emailConfig: sendDraft,
+    now,
+    fallbackRecipientEmail: authState.user?.email || ""
+  });
+  const summaryKey = buildEmailSummaryKeyShared(sendDraft.summaries, now);
   const requestBody = {
     recipientEmail: preview.recipientEmail,
     subject: preview.subject,
-    html: renderEmailSummaryBodyHtml(preview),
-    text: renderEmailSummaryBodyText(preview)
+    html: renderEmailSummaryBodyHtmlShared(preview),
+    text: renderEmailSummaryBodyTextShared(preview)
   };
 
   setNotificationSendInFlight(true);
@@ -1259,6 +1281,7 @@ async function sendNotificationSummaryDraft({
       history,
       updatedAt: Date.now()
     });
+    await saveCurrentStoreToDrive({ quiet: true, force: true, mode: "manual" });
     setSyncStatus(successMessage || `Sent summary to ${preview.recipientEmail}.`, "success");
     return { success: true, preview, history };
   } catch (error) {
@@ -1294,6 +1317,10 @@ async function sendNotificationSummaryDraft({
 function handleNotificationsSubmit(event) {
   event.preventDefault();
   const current = normalizeNotifications(store.notifications).email;
+  const currentTimezone = normalizeNotificationTimezone(
+    current.summaries.timezone,
+    typeof Intl !== "undefined" ? Intl.DateTimeFormat().resolvedOptions().timeZone : undefined
+  );
   const nextRecipientEmail = normalizeRecipientEmail(
     notificationsRecipientEmailInput.value
     || current.recipientEmail
@@ -1305,6 +1332,7 @@ function handleNotificationsSubmit(event) {
     frequency: notificationsFrequencyInput.value,
     sendTime: normalizeNotificationTime(notificationsSendTimeInput.value, current.summaries.sendTime),
     weekday: normalizeWeekday(notificationsWeekdayInput.value, current.summaries.weekday),
+    timezone: currentTimezone,
     include: {
       overdue: notificationsIncludeOverdueInput.checked,
       dueSoon: notificationsIncludeDueSoonInput.checked,
@@ -1353,7 +1381,12 @@ function renderNotificationsIfOpen() {
   }
 
   const draft = readNotificationsDraft();
-  const preview = buildEmailSummaryPreview(draft);
+  const preview = buildEmailSummaryPreviewShared({
+    store,
+    emailConfig: draft,
+    now: new Date(),
+    fallbackRecipientEmail: authState.user?.email || ""
+  });
   notificationsPreview.innerHTML = renderEmailSummaryPreview(preview);
   notificationsHistory.innerHTML = renderNotificationHistory(draft.history);
   syncNotificationActionState(draft);

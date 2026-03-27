@@ -2,6 +2,7 @@ export const DEFAULT_EMAIL_SUMMARY_SEND_TIME = "20:00";
 export const DEFAULT_EMAIL_SUMMARY_FREQUENCY = "daily";
 export const DEFAULT_EMAIL_SUMMARY_WEEKDAY = 0;
 export const MAX_NOTIFICATION_HISTORY_ENTRIES = 20;
+export const DEFAULT_NOTIFICATION_TIMEZONE = "America/Los_Angeles";
 
 export function normalizeNotifications(value) {
   const email = value?.email && typeof value.email === "object" ? value.email : {};
@@ -45,6 +46,7 @@ export function normalizeEmailSummaryConfig(value) {
     frequency: value?.frequency === "weekly" ? "weekly" : DEFAULT_EMAIL_SUMMARY_FREQUENCY,
     sendTime: normalizeNotificationTime(value?.sendTime, DEFAULT_EMAIL_SUMMARY_SEND_TIME),
     weekday: normalizeWeekday(value?.weekday, DEFAULT_EMAIL_SUMMARY_WEEKDAY),
+    timezone: normalizeNotificationTimezone(value?.timezone),
     include,
     updatedAt: typeof value?.updatedAt === "number" ? value.updatedAt : 0
   };
@@ -72,6 +74,19 @@ export function normalizeRecipientEmail(value) {
 export function normalizeNotificationTime(value, fallback = DEFAULT_EMAIL_SUMMARY_SEND_TIME) {
   const candidate = String(value || "").trim();
   return /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(candidate) ? candidate : fallback;
+}
+
+export function normalizeNotificationTimezone(value, fallback = getRuntimeNotificationTimezone()) {
+  const candidate = String(value || "").trim();
+  if (!candidate) {
+    return fallback;
+  }
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: candidate }).format(new Date());
+    return candidate;
+  } catch {
+    return fallback;
+  }
 }
 
 export function normalizeWeekday(value, fallback = DEFAULT_EMAIL_SUMMARY_WEEKDAY) {
@@ -106,6 +121,14 @@ export function appendEmailSummaryHistoryEntry(existingEntries, nextEntry) {
     nextEntry,
     ...normalizeEmailSummaryHistory(existingEntries)
   ]);
+}
+
+function getRuntimeNotificationTimezone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || DEFAULT_NOTIFICATION_TIMEZONE;
+  } catch {
+    return DEFAULT_NOTIFICATION_TIMEZONE;
+  }
 }
 
 function mergeNotificationHistory(localEntries, remoteEntries) {

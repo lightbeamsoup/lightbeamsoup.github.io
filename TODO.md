@@ -5,8 +5,6 @@
 - Widgets: Create a Travel Buddy widget.
 - Notifications:
   - [ ] Add email reminders.
-  - Email summary follow-up:
-    - [ ] Add a scheduler/dedupe layer so summaries send automatically and can later be reused for reminder emails.
 
 ## Recently completed
 
@@ -19,6 +17,7 @@
 - 2026-03-27: Notifications: Build reusable summary-generation logic for overdue tasks, due-soon tasks, recurring progress, widget highlights, and tree/point status.
 - 2026-03-27: Notifications: Add backend summary sending and send-history logging through the authenticated Google account.
 - 2026-03-27: Notifications: Add email summaries, including a manual developer trigger for daily summaries.
+- 2026-03-27: Notifications: Add a scheduler/dedupe layer so summaries send automatically from the backend and can later be reused for reminder emails.
 - 2026-03-26: Workout Coach: Scaffold the widget and register it in the widget menu.
 - 2026-03-26: Workout Coach: Add workout plans with workout type, duration, intensity, and daily/weekly linked schedules.
 - 2026-03-26: Workout Coach: Add widget-owned task metadata for workout sessions and weight check-ins.

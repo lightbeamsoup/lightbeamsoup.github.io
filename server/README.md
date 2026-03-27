@@ -10,6 +10,8 @@ This backend enables Google OAuth authorization code flow with refresh tokens fo
 - `TOKEN_SECRET`
 - `DATA_DIR` recommended in production for persistent token storage
 - `REQUEST_BODY_LIMIT` optional, defaults to `10mb`
+- `ENABLE_NOTIFICATION_SCHEDULER` optional, defaults to `true`
+- `SUMMARY_SCHEDULER_INTERVAL_MS` optional, defaults to `300000` (5 minutes)
 
 See `.env.example` for local development defaults.
 
@@ -35,6 +37,8 @@ Project follow-up items live in [`TODO.md`](/home/jbk/lightbeamsoup.github.io/TO
    - `DATA_DIR=/data`
    - `COOKIE_SECURE=true`
    - `REQUEST_BODY_LIMIT=10mb`
+   - `ENABLE_NOTIFICATION_SCHEDULER=true`
+   - `SUMMARY_SCHEDULER_INTERVAL_MS=300000`
 4. In Railway, attach the custom domain `www.joshcodes.ai` to this service and point DNS at Railway.
 5. Add these Google OAuth settings:
    - Authorized JavaScript origin: `https://www.joshcodes.ai`
@@ -42,6 +46,10 @@ Project follow-up items live in [`TODO.md`](/home/jbk/lightbeamsoup.github.io/TO
 6. Deploy and open `https://www.joshcodes.ai/lifetree/`
 
 Without a persistent volume, Railway restarts or redeploys will lose stored refresh tokens and sessions.
+
+## Email summary scheduler
+
+If email summaries are enabled in Lifetree, the backend polls saved user accounts on an interval, loads each user's Drive-backed Lifetree store, and sends due summaries through the connected Gmail account. The scheduler uses the summary send history stored in Lifetree data to dedupe sends per day or week.
 
 ## Recommended production shape
 
