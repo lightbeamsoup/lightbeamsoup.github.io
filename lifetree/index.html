@@ -299,6 +299,38 @@
               </div>
             </section>
 
+            <section class="reminder-panel composer-panel-section">
+              <button
+                type="button"
+                class="ghost-button composer-panel-toggle"
+                id="toggleReminderOptions"
+                aria-expanded="false"
+                aria-controls="reminderPanelBody"
+              >
+                Reminder options
+              </button>
+              <div id="reminderPanelBody" class="composer-panel-body hidden">
+                <label class="recurrence-toggle">
+                  <input id="taskRemindersEnabled" name="taskRemindersEnabled" type="checkbox" />
+                  <span class="settings-option-copy">
+                    <strong>Email reminders for this task</strong>
+                    <small>Off by default unless the task is marked important or a widget provides reminder defaults.</small>
+                  </span>
+                </label>
+                <div class="split">
+                  <label>
+                    <span>Due soon (minutes before)</span>
+                    <input id="taskReminderDueSoonMinutes" name="taskReminderDueSoonMinutes" type="number" min="0" step="1" placeholder="15" />
+                  </label>
+                  <label>
+                    <span>Overdue (minutes after)</span>
+                    <input id="taskReminderOverdueMinutes" name="taskReminderOverdueMinutes" type="number" min="0" step="1" placeholder="Grace period" />
+                  </label>
+                </div>
+                <p id="taskReminderDefaultsCopy" class="sync-status">Leave either field blank to use the default: 15 minutes before due, and the task grace period after due.</p>
+              </div>
+            </section>
+
             <section class="recurrence-panel composer-panel-section">
               <button
                 type="button"
@@ -686,8 +718,8 @@
       <div class="task-desk-header">
         <div>
           <p class="eyebrow">Notifications</p>
-          <h2 id="notificationsTitle">Email summaries</h2>
-          <p class="sync-status">Configure when Lifetree should send summaries, what they should include, preview the current email, and send a test summary through the connected Google account.</p>
+          <h2 id="notificationsTitle">Email notifications</h2>
+          <p class="sync-status">Configure summary delivery now and save reminder preferences for the next email-reminder phase, all through the connected Google account.</p>
         </div>
         <button type="button" class="ghost-button" id="closeNotifications">Close</button>
       </div>
@@ -735,6 +767,58 @@
               <option value="6">Saturday</option>
             </select>
           </label>
+        </section>
+
+        <section class="notifications-section">
+          <div class="notifications-section-header">
+            <div>
+              <p class="eyebrow">Reminders</p>
+              <h3>Save reminder preferences</h3>
+              <p class="sync-status">Per-task reminder timing is controlled on the task itself or by a widget. If a task leaves it blank, Lifetree will use 15 minutes before due and the task grace period after due.</p>
+            </div>
+          </div>
+          <label class="recurrence-toggle">
+            <input id="notificationsRemindersEnabled" name="notificationsRemindersEnabled" type="checkbox" />
+            <span class="settings-option-copy">
+              <strong>Enable email reminders</strong>
+              <small>Save your reminder preferences now. Delivery wiring will build on these settings.</small>
+            </span>
+          </label>
+          <div class="notifications-toggles">
+            <label class="recurrence-toggle">
+              <input id="notificationsReminderDueSoonEnabled" name="notificationsReminderDueSoonEnabled" type="checkbox" checked />
+              <span>Due soon reminders</span>
+            </label>
+            <label class="recurrence-toggle">
+              <input id="notificationsReminderOverdueEnabled" name="notificationsReminderOverdueEnabled" type="checkbox" checked />
+              <span>Overdue reminders</span>
+            </label>
+            <label class="recurrence-toggle">
+              <input id="notificationsReminderDailyAgendaEnabled" name="notificationsReminderDailyAgendaEnabled" type="checkbox" />
+              <span>Daily agenda email</span>
+            </label>
+            <label class="recurrence-toggle">
+              <input id="notificationsReminderQuietHoursEnabled" name="notificationsReminderQuietHoursEnabled" type="checkbox" />
+              <span>Use quiet hours</span>
+            </label>
+          </div>
+          <div class="split">
+            <label>
+              <span>Daily agenda time</span>
+              <input id="notificationsReminderDailyAgendaTime" name="notificationsReminderDailyAgendaTime" type="time" value="07:00" />
+            </label>
+            <div></div>
+          </div>
+          <div class="split">
+            <label>
+              <span>Quiet hours start</span>
+              <input id="notificationsReminderQuietHoursStart" name="notificationsReminderQuietHoursStart" type="time" value="21:00" />
+            </label>
+            <label>
+              <span>Quiet hours end</span>
+              <input id="notificationsReminderQuietHoursEnd" name="notificationsReminderQuietHoursEnd" type="time" value="07:00" />
+            </label>
+          </div>
         </section>
 
         <section class="notifications-section">

@@ -1,21 +1,26 @@
 export const DEFAULT_EMAIL_SUMMARY_SEND_TIME = "20:00";
 export const DEFAULT_EMAIL_SUMMARY_FREQUENCY = "daily";
 export const DEFAULT_EMAIL_SUMMARY_WEEKDAY = 0;
+export const DEFAULT_EMAIL_REMINDER_AGENDA_TIME = "07:00";
+export const DEFAULT_TASK_DUE_SOON_REMINDER_MINUTES = 15;
 export const MAX_NOTIFICATION_HISTORY_ENTRIES = 20;
 export const DEFAULT_NOTIFICATION_TIMEZONE = "America/Los_Angeles";
 
 export function normalizeNotifications(value) {
   const email = value?.email && typeof value.email === "object" ? value.email : {};
   const summaries = normalizeEmailSummaryConfig(email.summaries);
+  const reminders = normalizeEmailReminderConfig(email.reminders);
   const history = normalizeEmailSummaryHistory(email.history);
   return {
     email: {
       recipientEmail: normalizeRecipientEmail(email.recipientEmail),
       summaries,
+      reminders,
       history,
       updatedAt: Math.max(
         typeof email.updatedAt === "number" ? email.updatedAt : 0,
         summaries.updatedAt || 0,
+        reminders.updatedAt || 0,
         history[0]?.at || 0
       )
     }
@@ -33,6 +38,7 @@ export function choosePreferredNotifications(localValue, remoteValue) {
     email: {
       recipientEmail: preferredEmail.recipientEmail,
       summaries: preferredEmail.summaries,
+      reminders: preferredEmail.reminders,
       history: mergeNotificationHistory(local.email.history, remote.email.history),
       updatedAt: Math.max(local.email.updatedAt || 0, remote.email.updatedAt || 0)
     }
@@ -63,12 +69,34 @@ export function normalizeEmailSummaryInclude(value) {
   };
 }
 
+export function normalizeEmailReminderConfig(value) {
+  return {
+    enabled: value?.enabled === true,
+    dueSoonEnabled: value?.dueSoonEnabled !== false,
+    overdueEnabled: value?.overdueEnabled !== false,
+    dailyAgendaEnabled: value?.dailyAgendaEnabled === true,
+    dailyAgendaTime: normalizeNotificationTime(value?.dailyAgendaTime, DEFAULT_EMAIL_REMINDER_AGENDA_TIME),
+    quietHoursEnabled: value?.quietHoursEnabled === true,
+    quietHoursStart: normalizeNotificationTime(value?.quietHoursStart, "21:00"),
+    quietHoursEnd: normalizeNotificationTime(value?.quietHoursEnd, "07:00"),
+    updatedAt: typeof value?.updatedAt === "number" ? value.updatedAt : 0
+  };
+}
+
 export function normalizeRecipientEmail(value) {
   const candidate = String(value || "").trim().slice(0, 160);
   if (!candidate) {
     return "";
   }
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(candidate) ? candidate : "";
+}
+
+export function normalizeReminderMinutes(value, fallback = null) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return fallback;
+  }
+  return Math.round(parsed);
 }
 
 export function normalizeNotificationTime(value, fallback = DEFAULT_EMAIL_SUMMARY_SEND_TIME) {

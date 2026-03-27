@@ -45,11 +45,14 @@ import {
   renderEmailSummaryBodyText as renderEmailSummaryBodyTextShared
 } from "./modules/notificationSummary.js";
 import {
+  DEFAULT_TASK_DUE_SOON_REMINDER_MINUTES,
   appendEmailSummaryHistoryEntry,
   choosePreferredNotifications,
+  normalizeEmailReminderConfig,
   normalizeEmailSummaryConfig,
   normalizeNotifications,
   normalizeNotificationTimezone,
+  normalizeReminderMinutes,
   normalizeRecipientEmail,
   normalizeWeekday,
   normalizeNotificationTime
@@ -217,6 +220,14 @@ const notificationsFrequencyInput = document.getElementById("notificationsFreque
 const notificationsSendTimeInput = document.getElementById("notificationsSendTime");
 const notificationsWeekdayInput = document.getElementById("notificationsWeekday");
 const notificationsWeekdayRow = document.getElementById("notificationsWeekdayRow");
+const notificationsRemindersEnabledInput = document.getElementById("notificationsRemindersEnabled");
+const notificationsReminderDueSoonEnabledInput = document.getElementById("notificationsReminderDueSoonEnabled");
+const notificationsReminderOverdueEnabledInput = document.getElementById("notificationsReminderOverdueEnabled");
+const notificationsReminderDailyAgendaEnabledInput = document.getElementById("notificationsReminderDailyAgendaEnabled");
+const notificationsReminderDailyAgendaTimeInput = document.getElementById("notificationsReminderDailyAgendaTime");
+const notificationsReminderQuietHoursEnabledInput = document.getElementById("notificationsReminderQuietHoursEnabled");
+const notificationsReminderQuietHoursStartInput = document.getElementById("notificationsReminderQuietHoursStart");
+const notificationsReminderQuietHoursEndInput = document.getElementById("notificationsReminderQuietHoursEnd");
 const notificationsIncludeOverdueInput = document.getElementById("notificationsIncludeOverdue");
 const notificationsIncludeDueSoonInput = document.getElementById("notificationsIncludeDueSoon");
 const notificationsIncludeCompletedInput = document.getElementById("notificationsIncludeCompleted");
@@ -280,6 +291,12 @@ const addCategoryButton = document.getElementById("addCategory");
 const toggleDependenciesButton = document.getElementById("toggleDependencies");
 const dependenciesPanelBody = document.getElementById("dependenciesPanelBody");
 const dependenciesSelect = document.getElementById("dependencies");
+const toggleReminderOptionsButton = document.getElementById("toggleReminderOptions");
+const reminderPanelBody = document.getElementById("reminderPanelBody");
+const taskRemindersEnabledInput = document.getElementById("taskRemindersEnabled");
+const taskReminderDueSoonMinutesInput = document.getElementById("taskReminderDueSoonMinutes");
+const taskReminderOverdueMinutesInput = document.getElementById("taskReminderOverdueMinutes");
+const taskReminderDefaultsCopy = document.getElementById("taskReminderDefaultsCopy");
 const toggleRecurrenceOptionsButton = document.getElementById("toggleRecurrenceOptions");
 const recurrencePanelBody = document.getElementById("recurrencePanelBody");
 const recurrenceType = document.getElementById("recurrenceType");
@@ -365,7 +382,11 @@ const editState = {
 const composerPanelState = {
   categoryOptionsOpen: false,
   dependenciesOpen: false,
+  reminderOptionsOpen: false,
   recurrenceOpen: false
+};
+const composerReminderState = {
+  userTouched: false
 };
 
 const widgetMenuState = {
@@ -505,6 +526,7 @@ let autosaveController = createAutosaveController({
 
 updateRecurrenceVisibility();
 updateSkipVisibility();
+syncTaskReminderInputs();
 applyHeroState(loadHeroCollapsed());
 syncComposerPanelState();
 renderDailyInstanceTimes();
@@ -561,6 +583,10 @@ toggleDependenciesButton.addEventListener("click", () => {
   composerPanelState.dependenciesOpen = !composerPanelState.dependenciesOpen;
   syncComposerPanelState();
 });
+toggleReminderOptionsButton.addEventListener("click", () => {
+  composerPanelState.reminderOptionsOpen = !composerPanelState.reminderOptionsOpen;
+  syncComposerPanelState();
+});
 toggleRecurrenceOptionsButton.addEventListener("click", () => {
   composerPanelState.recurrenceOpen = !composerPanelState.recurrenceOpen;
   syncComposerPanelState();
@@ -579,8 +605,13 @@ addDailyInstanceTimeButton.addEventListener("click", () => {
 dailyInstanceTimes.addEventListener("click", handleDailyInstanceTimesClick);
 weeklyDayPicker.addEventListener("change", syncWeeklyWeekdayHiddenValue);
 skipRuleTypeInput.addEventListener("change", updateSkipVisibility);
+lateGraceMinutesInput.addEventListener("input", syncTaskReminderInputs);
 taskLengthInput.addEventListener("change", syncTaskPointsDefault);
 taskPointsInput.addEventListener("input", syncTaskPointsAutoState);
+taskImportanceInput.addEventListener("change", handleTaskImportanceChange);
+taskRemindersEnabledInput.addEventListener("change", handleTaskReminderInputChange);
+taskReminderDueSoonMinutesInput.addEventListener("input", handleTaskReminderInputChange);
+taskReminderOverdueMinutesInput.addEventListener("input", handleTaskReminderInputChange);
 statusFilter.addEventListener("change", renderTaskGrid);
 lengthFilter.addEventListener("change", renderTaskGrid);
 sortBy.addEventListener("change", renderTaskGrid);
@@ -935,12 +966,21 @@ function openNotifications() {
   }
   const notifications = normalizeNotifications(store.notifications);
   const summaries = notifications.email.summaries;
+  const reminders = notifications.email.reminders;
   const include = summaries.include;
   notificationsSummaryEnabledInput.checked = summaries.enabled;
   notificationsRecipientEmailInput.value = notifications.email.recipientEmail || authState.user?.email || "";
   notificationsSendTimeInput.value = summaries.sendTime;
   notificationsFrequencyInput.value = summaries.frequency;
   notificationsWeekdayInput.value = String(summaries.weekday);
+  notificationsRemindersEnabledInput.checked = reminders.enabled;
+  notificationsReminderDueSoonEnabledInput.checked = reminders.dueSoonEnabled;
+  notificationsReminderOverdueEnabledInput.checked = reminders.overdueEnabled;
+  notificationsReminderDailyAgendaEnabledInput.checked = reminders.dailyAgendaEnabled;
+  notificationsReminderDailyAgendaTimeInput.value = reminders.dailyAgendaTime;
+  notificationsReminderQuietHoursEnabledInput.checked = reminders.quietHoursEnabled;
+  notificationsReminderQuietHoursStartInput.value = reminders.quietHoursStart;
+  notificationsReminderQuietHoursEndInput.value = reminders.quietHoursEnd;
   notificationsIncludeOverdueInput.checked = include.overdue;
   notificationsIncludeDueSoonInput.checked = include.dueSoon;
   notificationsIncludeCompletedInput.checked = include.completed;
@@ -1133,6 +1173,14 @@ function syncNotificationsInputs() {
   const weekly = notificationsFrequencyInput.value === "weekly";
   notificationsWeekdayRow.classList.toggle("hidden", !weekly);
   notificationsWeekdayInput.disabled = !weekly;
+  const remindersEnabled = notificationsRemindersEnabledInput.checked;
+  notificationsReminderDueSoonEnabledInput.disabled = !remindersEnabled;
+  notificationsReminderOverdueEnabledInput.disabled = !remindersEnabled;
+  notificationsReminderDailyAgendaEnabledInput.disabled = !remindersEnabled;
+  notificationsReminderQuietHoursEnabledInput.disabled = !remindersEnabled;
+  notificationsReminderDailyAgendaTimeInput.disabled = !remindersEnabled || !notificationsReminderDailyAgendaEnabledInput.checked;
+  notificationsReminderQuietHoursStartInput.disabled = !remindersEnabled || !notificationsReminderQuietHoursEnabledInput.checked;
+  notificationsReminderQuietHoursEndInput.disabled = !remindersEnabled || !notificationsReminderQuietHoursEnabledInput.checked;
 }
 
 function syncNotificationActionState(draft = null) {
@@ -1181,6 +1229,17 @@ function readNotificationsDraft() {
       },
       updatedAt: current.summaries.updatedAt
     }),
+    reminders: normalizeEmailReminderConfig({
+      enabled: notificationsRemindersEnabledInput.checked,
+      dueSoonEnabled: notificationsReminderDueSoonEnabledInput.checked,
+      overdueEnabled: notificationsReminderOverdueEnabledInput.checked,
+      dailyAgendaEnabled: notificationsReminderDailyAgendaEnabledInput.checked,
+      dailyAgendaTime: normalizeNotificationTime(notificationsReminderDailyAgendaTimeInput.value, current.reminders.dailyAgendaTime),
+      quietHoursEnabled: notificationsReminderQuietHoursEnabledInput.checked,
+      quietHoursStart: normalizeNotificationTime(notificationsReminderQuietHoursStartInput.value, current.reminders.quietHoursStart),
+      quietHoursEnd: normalizeNotificationTime(notificationsReminderQuietHoursEndInput.value, current.reminders.quietHoursEnd),
+      updatedAt: current.reminders.updatedAt
+    }),
     history: current.history,
     updatedAt: current.updatedAt
   };
@@ -1194,6 +1253,10 @@ function persistNotificationsDraft(draft, { history = draft.history, updatedAt =
       recipientEmail: normalizeRecipientEmail(draft.recipientEmail || authState.user?.email || ""),
       summaries: normalizeEmailSummaryConfig({
         ...draft.summaries,
+        updatedAt
+      }),
+      reminders: normalizeEmailReminderConfig({
+        ...draft.reminders,
         updatedAt
       }),
       history,
@@ -1347,15 +1410,31 @@ function handleNotificationsSubmit(event) {
     ...comparableSummaries,
     updatedAt: Date.now()
   });
+  const comparableReminders = normalizeEmailReminderConfig({
+    enabled: notificationsRemindersEnabledInput.checked,
+    dueSoonEnabled: notificationsReminderDueSoonEnabledInput.checked,
+    overdueEnabled: notificationsReminderOverdueEnabledInput.checked,
+    dailyAgendaEnabled: notificationsReminderDailyAgendaEnabledInput.checked,
+    dailyAgendaTime: normalizeNotificationTime(notificationsReminderDailyAgendaTimeInput.value, current.reminders.dailyAgendaTime),
+    quietHoursEnabled: notificationsReminderQuietHoursEnabledInput.checked,
+    quietHoursStart: normalizeNotificationTime(notificationsReminderQuietHoursStartInput.value, current.reminders.quietHoursStart),
+    quietHoursEnd: normalizeNotificationTime(notificationsReminderQuietHoursEndInput.value, current.reminders.quietHoursEnd),
+    updatedAt: current.reminders.updatedAt
+  });
+  const nextReminders = normalizeEmailReminderConfig({
+    ...comparableReminders,
+    updatedAt: Date.now()
+  });
 
-  if (nextSummaries.enabled && !nextRecipientEmail) {
-    setSyncStatus("Choose a recipient email before enabling summaries.", "error");
+  if ((nextSummaries.enabled || nextReminders.enabled) && !nextRecipientEmail) {
+    setSyncStatus("Choose a recipient email before enabling email notifications.", "error");
     return;
   }
 
   const unchanged = (
     nextRecipientEmail === current.recipientEmail
     && JSON.stringify(comparableSummaries) === JSON.stringify(current.summaries)
+    && JSON.stringify(comparableReminders) === JSON.stringify(current.reminders)
   );
   if (unchanged) {
     closeNotifications();
@@ -1365,6 +1444,7 @@ function handleNotificationsSubmit(event) {
   persistNotificationsDraft({
     recipientEmail: nextRecipientEmail,
     summaries: nextSummaries,
+    reminders: nextReminders,
     history: current.history,
     updatedAt: current.updatedAt
   }, {
@@ -1372,7 +1452,7 @@ function handleNotificationsSubmit(event) {
     updatedAt: Date.now()
   });
   closeNotifications();
-  setSyncStatus(nextSummaries.enabled ? "Saved email summary settings." : "Saved notification settings.", "info");
+  setSyncStatus(nextSummaries.enabled || nextReminders.enabled ? "Saved email notification settings." : "Saved notification settings.", "info");
 }
 
 function renderNotificationsIfOpen() {
@@ -2338,17 +2418,25 @@ function buildTaskDraftFromForm(formData, { originalTask = null, skipRule, categ
     : buildSkipRule(formData, originalTask?.skipRule));
   const resolvedCategory = categorySnapshot || resolveCategorySnapshot(String(formData.get("category") || ""), originalTask);
   const resolvedRecurrence = recurrence || buildRecurrence(formData, originalTask?.recurrence);
+  const resolvedImportance = String(formData.get("importance") || originalTask?.importance || DEFAULT_IMPORTANCE);
+  const resolvedLateGraceMinutes = parsePositiveOrZeroNumber(formData.get("lateGraceMinutes")) ?? originalTask?.lateGraceMinutes ?? DEFAULT_LATE_GRACE_MINUTES;
   return {
     name: String(formData.get("name") || "").trim(),
     details: String(formData.get("details") || "").trim(),
     startDate: String(formData.get("startDate") || ""),
     dueDate: String(formData.get("dueDate") || ""),
     timeOfDay: String(formData.get("timeOfDay") || ""),
-    lateGraceMinutes: parsePositiveOrZeroNumber(formData.get("lateGraceMinutes")) ?? originalTask?.lateGraceMinutes ?? DEFAULT_LATE_GRACE_MINUTES,
+    lateGraceMinutes: resolvedLateGraceMinutes,
     points: formData.get("points"),
     length: String(formData.get("length") || "medium"),
     category: resolvedCategory.key,
-    importance: String(formData.get("importance") || originalTask?.importance || DEFAULT_IMPORTANCE),
+    importance: resolvedImportance,
+    reminders: buildTaskReminderDraftFromForm(formData, {
+      originalTask,
+      importance: resolvedImportance,
+      lateGraceMinutes: resolvedLateGraceMinutes,
+      widgetTaskMeta: originalTask?.widgetTaskMeta
+    }),
     skipRule: resolvedSkipRule,
     dependencies: Array.from(dependenciesSelect.selectedOptions).map((option) => option.value),
     recurrence: resolvedRecurrence
@@ -2371,6 +2459,14 @@ function buildTaskFromValues(values, originalTask = null, categorySnapshot = nul
     ? values.dependencies.filter((dependencyId) => typeof dependencyId === "string" && dependencyId)
     : [];
   const lateGraceMinutes = parsePositiveOrZeroNumber(values?.lateGraceMinutes) ?? originalTask?.lateGraceMinutes ?? DEFAULT_LATE_GRACE_MINUTES;
+  const normalizedImportance = normalizeImportance(String(values?.importance || originalTask?.importance || DEFAULT_IMPORTANCE));
+  const normalizedWidgetTaskMeta = normalizeWidgetTaskMeta(values?.widgetTaskMeta || originalTask?.widgetTaskMeta);
+  const normalizedReminders = normalizeTaskReminders(values?.reminders, {
+    originalReminders: originalTask?.reminders,
+    importance: normalizedImportance,
+    lateGraceMinutes,
+    widgetTaskMeta: normalizedWidgetTaskMeta
+  });
 
   return {
     id: originalTask?.id || createId(),
@@ -2395,7 +2491,7 @@ function buildTaskFromValues(values, originalTask = null, categorySnapshot = nul
     categoryKey: resolvedCategory.key,
     categoryLabel: resolvedCategory.label,
     categoryColor: resolvedCategory.color,
-    importance: normalizeImportance(String(values?.importance || originalTask?.importance || DEFAULT_IMPORTANCE)),
+    importance: normalizedImportance,
     status: originalTask?.status || "open",
     createdAt: originalTask?.createdAt || Date.now(),
     ownerWidgetId: originalTask?.ownerWidgetId || "",
@@ -2404,7 +2500,8 @@ function buildTaskFromValues(values, originalTask = null, categorySnapshot = nul
     widgetTaskKind: typeof values?.widgetTaskKind === "string"
       ? values.widgetTaskKind
       : (typeof originalTask?.widgetTaskKind === "string" ? originalTask.widgetTaskKind : ""),
-    widgetTaskMeta: normalizeWidgetTaskMeta(values?.widgetTaskMeta || originalTask?.widgetTaskMeta),
+    widgetTaskMeta: normalizedWidgetTaskMeta,
+    reminders: normalizedReminders,
     linkedSeries: normalizeLinkedSeries(values?.linkedSeries || originalTask?.linkedSeries),
     sequenceDependencyId: typeof values?.sequenceDependencyId === "string"
       ? values.sequenceDependencyId
@@ -5068,6 +5165,11 @@ function populateComposerFromHistory(task) {
   taskLengthInput.value = task.length;
   taskCategoryInput.value = task.categoryKey || DEFAULT_CATEGORY_KEY;
   taskImportanceInput.value = normalizeImportance(task.importance || DEFAULT_IMPORTANCE);
+  setTaskReminderFormValues(task.reminders, {
+    importance: task.importance || DEFAULT_IMPORTANCE,
+    lateGraceMinutes: task.lateGraceMinutes ?? DEFAULT_LATE_GRACE_MINUTES,
+    treatAsUserTouched: true
+  });
   skipRuleTypeInput.value = "none";
   skipGraceMinutesInput.value = 15;
   recurrenceType.value = "none";
@@ -5078,6 +5180,7 @@ function populateComposerFromHistory(task) {
     option.selected = false;
   });
   updateSkipVisibility();
+  syncTaskReminderInputs();
   updateRecurrenceVisibility();
   syncEditPanel();
   taskNameInput.focus();
@@ -5189,6 +5292,11 @@ function beginEdit(task, scope) {
   renderCategoryOptions();
   taskCategoryInput.value = primaryTemplate.categoryKey || DEFAULT_CATEGORY_KEY;
   taskImportanceInput.value = normalizeImportance(primaryTemplate.importance || DEFAULT_IMPORTANCE);
+  setTaskReminderFormValues(primaryTemplate.reminders, {
+    importance: primaryTemplate.importance || DEFAULT_IMPORTANCE,
+    lateGraceMinutes: primaryTemplate.lateGraceMinutes ?? DEFAULT_LATE_GRACE_MINUTES,
+    treatAsUserTouched: true
+  });
   const dependencySet = new Set(primaryTemplate.dependencies || []);
   Array.from(dependenciesSelect.options).forEach((option) => {
     option.selected = dependencySet.has(option.value);
@@ -5205,6 +5313,7 @@ function beginEdit(task, scope) {
     }
   }
   updateSkipVisibility();
+  syncTaskReminderInputs();
   updateRecurrenceVisibility();
   syncEditPanel();
 }
@@ -5259,16 +5368,22 @@ function clearEditState() {
 function resetComposer() {
   form.reset();
   composerPanelState.recurrenceOpen = false;
+  composerPanelState.reminderOptionsOpen = false;
   recurrenceForeverInput.checked = false;
   lateGraceMinutesInput.value = String(DEFAULT_LATE_GRACE_MINUTES);
   setTaskPointsInput(defaultPointsForLength(taskLengthInput.value || "medium"));
   taskCategoryInput.value = DEFAULT_CATEGORY_KEY;
   taskImportanceInput.value = DEFAULT_IMPORTANCE;
+  composerReminderState.userTouched = false;
+  taskRemindersEnabledInput.checked = false;
+  taskReminderDueSoonMinutesInput.value = "";
+  taskReminderOverdueMinutesInput.value = "";
   newCategoryColorInput.value = DEFAULT_CATEGORY_COLOR;
   renderDailyInstanceTimes([]);
   setWeeklyDaySelection([0]);
   updateRecurrenceVisibility();
   updateSkipVisibility();
+  syncTaskReminderInputs();
   Array.from(dependenciesSelect.options).forEach((option) => {
     option.selected = false;
   });
@@ -5683,6 +5798,9 @@ function normalizeTask(task) {
   const fallbackCategory = BASE_CATEGORIES.find((category) => category.key === (typeof task.categoryKey === "string" ? task.categoryKey : DEFAULT_CATEGORY_KEY))
     || BASE_CATEGORIES.find((category) => category.key === DEFAULT_CATEGORY_KEY)
     || BASE_CATEGORIES[0];
+  const normalizedImportance = normalizeImportance(task.importance);
+  const normalizedWidgetTaskMeta = normalizeWidgetTaskMeta(task.widgetTaskMeta);
+  const normalizedLateGraceMinutes = parsePositiveOrZeroNumber(task.lateGraceMinutes) ?? DEFAULT_LATE_GRACE_MINUTES;
   return {
     id: typeof task.id === "string" ? task.id : createId(),
     templateId: typeof task.templateId === "string" ? task.templateId : "",
@@ -5692,7 +5810,7 @@ function normalizeTask(task) {
     startDate: typeof task.startDate === "string" ? task.startDate : "",
     dueDate: typeof task.dueDate === "string" ? task.dueDate : "",
     timeOfDay: typeof task.timeOfDay === "string" ? task.timeOfDay : "",
-    lateGraceMinutes: parsePositiveOrZeroNumber(task.lateGraceMinutes) ?? DEFAULT_LATE_GRACE_MINUTES,
+    lateGraceMinutes: normalizedLateGraceMinutes,
     notBeforeAt: typeof task.notBeforeAt === "number"
       ? task.notBeforeAt
       : deriveTaskNotBeforeAt({
@@ -5707,14 +5825,19 @@ function normalizeTask(task) {
     categoryKey: typeof task.categoryKey === "string" ? task.categoryKey : DEFAULT_CATEGORY_KEY,
     categoryLabel: typeof task.categoryLabel === "string" ? task.categoryLabel : fallbackCategory.label,
     categoryColor: normalizeCategoryColor(task.categoryColor || fallbackCategory.color),
-    importance: normalizeImportance(task.importance),
+    importance: normalizedImportance,
     status: normalizeStatus(task),
     createdAt: typeof task.createdAt === "number" ? task.createdAt : Date.now(),
     ownerWidgetId: typeof task.ownerWidgetId === "string" ? task.ownerWidgetId : "",
     ownerWidgetType: typeof task.ownerWidgetType === "string" ? task.ownerWidgetType : "",
     ownerTaskKey: typeof task.ownerTaskKey === "string" ? task.ownerTaskKey : "",
     widgetTaskKind: typeof task.widgetTaskKind === "string" ? task.widgetTaskKind : "",
-    widgetTaskMeta: normalizeWidgetTaskMeta(task.widgetTaskMeta),
+    widgetTaskMeta: normalizedWidgetTaskMeta,
+    reminders: normalizeTaskReminders(task.reminders, {
+      importance: normalizedImportance,
+      lateGraceMinutes: normalizedLateGraceMinutes,
+      widgetTaskMeta: normalizedWidgetTaskMeta
+    }),
     linkedSeries: normalizeLinkedSeries(task.linkedSeries),
     sequenceDependencyId: typeof task.sequenceDependencyId === "string" ? task.sequenceDependencyId : "",
     widgetCompletion: normalizeWidgetCompletion(task.widgetCompletion),
@@ -6142,7 +6265,8 @@ function buildComparableStore(normalized) {
     notifications: {
       email: {
         recipientEmail: normalizedNotifications.email.recipientEmail,
-        summaries: sortObjectKeys(normalizedNotifications.email.summaries)
+        summaries: sortObjectKeys(normalizedNotifications.email.summaries),
+        reminders: sortObjectKeys(normalizedNotifications.email.reminders)
       }
     },
     tasks: normalized.tasks
@@ -6164,6 +6288,11 @@ function buildComparableStore(normalized) {
         categoryLabel: task.categoryLabel,
         categoryColor: task.categoryColor,
         importance: task.importance,
+        reminders: normalizeTaskReminders(task.reminders, {
+          importance: task.importance,
+          lateGraceMinutes: task.lateGraceMinutes,
+          widgetTaskMeta: task.widgetTaskMeta
+        }),
         status: task.status,
         createdAt: task.createdAt,
         ownerWidgetId: task.ownerWidgetId,
@@ -6316,6 +6445,15 @@ function choosePreferredTask(localTask, remoteTask, localUpdatedAt, remoteUpdate
     localTask.categoryColor !== remoteTask.categoryColor ||
     localTask.importance !== remoteTask.importance ||
     (localTask.dueDate || "") !== (remoteTask.dueDate || "") ||
+    JSON.stringify(normalizeTaskReminders(localTask.reminders, {
+      importance: localTask.importance,
+      lateGraceMinutes: localTask.lateGraceMinutes,
+      widgetTaskMeta: localTask.widgetTaskMeta
+    })) !== JSON.stringify(normalizeTaskReminders(remoteTask.reminders, {
+      importance: remoteTask.importance,
+      lateGraceMinutes: remoteTask.lateGraceMinutes,
+      widgetTaskMeta: remoteTask.widgetTaskMeta
+    })) ||
     (localTask.widgetTaskKind || "") !== (remoteTask.widgetTaskKind || "") ||
     JSON.stringify(normalizeWidgetTaskMeta(localTask.widgetTaskMeta)) !== JSON.stringify(normalizeWidgetTaskMeta(remoteTask.widgetTaskMeta))
   ) {
@@ -6713,6 +6851,36 @@ function syncTaskPointsAutoState() {
   taskPointsInput.dataset.auto = current === defaultPointsForLength(taskLengthInput.value || "medium") ? "true" : "false";
 }
 
+function handleTaskImportanceChange() {
+  if (editState.taskId || composerReminderState.userTouched) {
+    return;
+  }
+  taskRemindersEnabledInput.checked = normalizeImportance(taskImportanceInput.value) === "high";
+  syncTaskReminderInputs();
+}
+
+function handleTaskReminderInputChange() {
+  composerReminderState.userTouched = true;
+  syncTaskReminderInputs();
+}
+
+function syncTaskReminderInputs() {
+  const remindersEnabled = taskRemindersEnabledInput.checked;
+  taskReminderDueSoonMinutesInput.disabled = !remindersEnabled;
+  taskReminderOverdueMinutesInput.disabled = !remindersEnabled;
+  taskReminderDueSoonMinutesInput.placeholder = String(DEFAULT_TASK_DUE_SOON_REMINDER_MINUTES);
+  taskReminderOverdueMinutesInput.placeholder = String(parsePositiveOrZeroNumber(lateGraceMinutesInput.value) ?? DEFAULT_LATE_GRACE_MINUTES);
+  taskReminderDefaultsCopy.textContent = `Leave either field blank to use the default: ${DEFAULT_TASK_DUE_SOON_REMINDER_MINUTES} minutes before due, and ${taskReminderOverdueMinutesInput.placeholder} minute${taskReminderOverdueMinutesInput.placeholder === "1" ? "" : "s"} after due.`;
+}
+
+function setTaskReminderFormValues(reminders, { importance = DEFAULT_IMPORTANCE, lateGraceMinutes = DEFAULT_LATE_GRACE_MINUTES, treatAsUserTouched = false } = {}) {
+  const normalized = normalizeTaskReminders(reminders, { importance, lateGraceMinutes });
+  taskRemindersEnabledInput.checked = normalized.enabled;
+  taskReminderDueSoonMinutesInput.value = normalized.dueSoonMinutes == null ? "" : String(normalized.dueSoonMinutes);
+  taskReminderOverdueMinutesInput.value = normalized.overdueMinutes == null ? "" : String(normalized.overdueMinutes);
+  composerReminderState.userTouched = treatAsUserTouched;
+}
+
 function syncComposerPanelState() {
   syncComposerPanel(toggleCategoryOptionsButton, categoryPanelBody, composerPanelState.categoryOptionsOpen, {
     collapsedLabel: "Category options",
@@ -6721,6 +6889,10 @@ function syncComposerPanelState() {
   syncComposerPanel(toggleDependenciesButton, dependenciesPanelBody, composerPanelState.dependenciesOpen, {
     collapsedLabel: "Depends on",
     expandedLabel: "Hide dependencies"
+  });
+  syncComposerPanel(toggleReminderOptionsButton, reminderPanelBody, composerPanelState.reminderOptionsOpen, {
+    collapsedLabel: "Reminder options",
+    expandedLabel: "Hide reminder options"
   });
   syncComposerPanel(toggleRecurrenceOptionsButton, recurrencePanelBody, composerPanelState.recurrenceOpen, {
     collapsedLabel: "Repeat options",
@@ -6896,6 +7068,67 @@ function normalizeWidgetTaskMetaValue(value) {
     return normalizeWidgetTaskMeta(value);
   }
   return undefined;
+}
+
+function normalizeTaskReminders(value, {
+  originalReminders = null,
+  importance = DEFAULT_IMPORTANCE,
+  lateGraceMinutes = DEFAULT_LATE_GRACE_MINUTES,
+  widgetTaskMeta = null
+} = {}) {
+  const widgetDefaults = normalizeWidgetReminderDefaults(widgetTaskMeta?.reminderDefaults);
+  const explicitEnabled = typeof value?.enabled === "boolean"
+    ? value.enabled
+    : (typeof originalReminders?.enabled === "boolean" ? originalReminders.enabled : undefined);
+  const enabled = typeof explicitEnabled === "boolean"
+    ? explicitEnabled
+    : (typeof widgetDefaults?.enabled === "boolean"
+      ? widgetDefaults.enabled
+      : normalizeImportance(importance) === "high");
+  const dueSoonMinutes = value && Object.prototype.hasOwnProperty.call(value, "dueSoonMinutes")
+    ? normalizeReminderMinutes(value.dueSoonMinutes, null)
+    : (originalReminders && Object.prototype.hasOwnProperty.call(originalReminders, "dueSoonMinutes")
+      ? normalizeReminderMinutes(originalReminders.dueSoonMinutes, null)
+      : normalizeReminderMinutes(widgetDefaults?.dueSoonMinutes, null));
+  const overdueMinutes = value && Object.prototype.hasOwnProperty.call(value, "overdueMinutes")
+    ? normalizeReminderMinutes(value.overdueMinutes, null)
+    : (originalReminders && Object.prototype.hasOwnProperty.call(originalReminders, "overdueMinutes")
+      ? normalizeReminderMinutes(originalReminders.overdueMinutes, null)
+      : normalizeReminderMinutes(widgetDefaults?.overdueMinutes, null));
+
+  return {
+    enabled,
+    dueSoonMinutes,
+    overdueMinutes
+  };
+}
+
+function normalizeWidgetReminderDefaults(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const enabled = typeof value.enabled === "boolean" ? value.enabled : undefined;
+  const dueSoonMinutes = normalizeReminderMinutes(value.dueSoonMinutes, null);
+  const overdueMinutes = normalizeReminderMinutes(value.overdueMinutes, null);
+  return { enabled, dueSoonMinutes, overdueMinutes };
+}
+
+function buildTaskReminderDraftFromForm(formData, {
+  originalTask = null,
+  importance = DEFAULT_IMPORTANCE,
+  lateGraceMinutes = DEFAULT_LATE_GRACE_MINUTES,
+  widgetTaskMeta = null
+} = {}) {
+  return normalizeTaskReminders({
+    enabled: formData.get("taskRemindersEnabled") === "on",
+    dueSoonMinutes: normalizeReminderMinutes(formData.get("taskReminderDueSoonMinutes"), null),
+    overdueMinutes: normalizeReminderMinutes(formData.get("taskReminderOverdueMinutes"), null)
+  }, {
+    originalReminders: originalTask?.reminders,
+    importance,
+    lateGraceMinutes,
+    widgetTaskMeta
+  });
 }
 
 function normalizeSkipRule(value) {
