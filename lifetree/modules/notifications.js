@@ -139,7 +139,13 @@ export function normalizeEmailSummaryHistory(value) {
       recipientEmail: normalizeRecipientEmail(entry.recipientEmail),
       subject: typeof entry.subject === "string" ? entry.subject.slice(0, 200) : "",
       summaryKey: typeof entry.summaryKey === "string" ? entry.summaryKey.slice(0, 120) : "",
-      reminderKey: typeof entry.reminderKey === "string" ? entry.reminderKey.slice(0, 240) : ""
+      reminderKey: typeof entry.reminderKey === "string" ? entry.reminderKey.slice(0, 240) : "",
+      reminderEventKeys: Array.isArray(entry.reminderEventKeys)
+        ? entry.reminderEventKeys
+            .filter((item) => typeof item === "string" && item)
+            .map((item) => item.slice(0, 240))
+            .slice(0, 50)
+        : []
     }))
     .filter((entry) => entry.id && entry.at > 0)
     .sort((left, right) => right.at - left.at)

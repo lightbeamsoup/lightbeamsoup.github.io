@@ -14,7 +14,9 @@ export function buildEmailReminderPreview({
   emailConfig,
   now = new Date(),
   fallbackRecipientEmail = "",
-  respectQuietHours = false
+  respectQuietHours = false,
+  includeKinds = null,
+  requireDailyAgendaTime = false
 }) {
   const reminders = emailConfig?.reminders || {};
   const summaries = emailConfig?.summaries || {};
@@ -30,23 +32,26 @@ export function buildEmailReminderPreview({
     store,
     emailConfig,
     now,
-    timeZone
+    timeZone,
+    includeKinds,
+    requireDailyAgendaTime
   });
+  const eventKeys = buildReminderEventKeys(candidates);
   const sections = [];
 
-  if (reminders.enabled === true && reminders.dueSoonEnabled !== false && candidates.dueSoon.length > 0) {
+  if (reminders.enabled === true && candidates.dueSoon.length > 0) {
     sections.push({
       title: "Due soon",
       items: candidates.dueSoon.map((candidate) => formatReminderTaskLine(candidate.task, timeZone))
     });
   }
-  if (reminders.enabled === true && reminders.overdueEnabled !== false && candidates.overdue.length > 0) {
+  if (reminders.enabled === true && candidates.overdue.length > 0) {
     sections.push({
       title: "Overdue",
       items: candidates.overdue.map((candidate) => formatReminderTaskLine(candidate.task, timeZone))
     });
   }
-  if (reminders.enabled === true && reminders.dailyAgendaEnabled === true && candidates.dailyAgenda.length > 0) {
+  if (reminders.enabled === true && candidates.dailyAgenda.length > 0) {
     sections.push({
       title: "Today's agenda",
       items: candidates.dailyAgenda.map((candidate) => formatReminderTaskLine(candidate.task, timeZone))
@@ -61,25 +66,91 @@ export function buildEmailReminderPreview({
     sections,
     quietHoursActive,
     suppressedByQuietHours: respectQuietHours && quietHoursActive,
-    eventCount: candidates.all.length,
-    reminderKey: candidates.all.map((candidate) => candidate.key).sort().join("|").slice(0, 240)
+    eventCount: candidates.dueSoon.length + candidates.overdue.length + candidates.dailyAgenda.length,
+    eventKeys,
+    reminderKey: eventKeys.join("|").slice(0, 240)
   };
+}
+
+export function buildScheduledEmailReminderPreview({
+  store,
+  emailConfig,
+  now = new Date(),
+  fallbackRecipientEmail = ""
+}) {
+  const reminders = emailConfig?.reminders || {};
+  const summaries = emailConfig?.summaries || {};
+  const timeZone = normalizeNotificationTimezone(
+    summaries.timezone,
+    DEFAULT_NOTIFICATION_TIMEZONE
+  );
+  const quietHoursActive = reminders.quietHoursEnabled === true
+    && isTimeWithinWindow(getZonedTimeString(now, timeZone), reminders.quietHoursStart, reminders.quietHoursEnd);
+  if (quietHoursActive) {
+    return buildEmailReminderPreview({
+      store,
+      emailConfig,
+      now,
+      fallbackRecipientEmail,
+      respectQuietHours: true,
+      requireDailyAgendaTime: true
+    });
+  }
+
+  const sentKeys = buildSentReminderKeySet(emailConfig?.history);
+  const candidates = collectEmailReminderCandidates({
+    store,
+    emailConfig,
+    now,
+    timeZone,
+    requireDailyAgendaTime: true
+  });
+  const filteredCandidates = {
+    dueSoon: candidates.dueSoon.filter((candidate) => !sentKeys.has(candidate.key)),
+    overdue: candidates.overdue.filter((candidate) => !sentKeys.has(candidate.key)),
+    dailyAgenda: candidates.dailyAgendaKey && !sentKeys.has(candidates.dailyAgendaKey) ? candidates.dailyAgenda : [],
+    dailyAgendaKey: candidates.dailyAgendaKey && !sentKeys.has(candidates.dailyAgendaKey) ? candidates.dailyAgendaKey : "",
+    all: []
+  };
+  filteredCandidates.all = [
+    ...filteredCandidates.dueSoon,
+    ...filteredCandidates.overdue,
+    ...filteredCandidates.dailyAgenda
+  ];
+
+  return buildEmailReminderPreviewFromCandidates({
+    store,
+    emailConfig,
+    now,
+    fallbackRecipientEmail,
+    candidates: filteredCandidates,
+    quietHoursActive: false,
+    suppressedByQuietHours: false,
+    timeZone
+  });
 }
 
 export function collectEmailReminderCandidates({
   store,
   emailConfig,
   now = new Date(),
-  timeZone = DEFAULT_NOTIFICATION_TIMEZONE
+  timeZone = DEFAULT_NOTIFICATION_TIMEZONE,
+  includeKinds = null,
+  requireDailyAgendaTime = false
 }) {
   const reminders = emailConfig?.reminders || {};
   const tasks = Array.isArray(store?.tasks) ? store.tasks : [];
   const taskMap = new Map(tasks.map((task) => [task.id, task]));
   const currentDate = getZonedDateString(now, timeZone);
   const nowTimestamp = now.getTime();
+  const localTime = getZonedTimeString(now, timeZone);
   const dueSoon = [];
   const overdue = [];
   const dailyAgenda = [];
+  const dueSoonAllowed = includeKinds ? includeKinds.dueSoon !== false : reminders.dueSoonEnabled !== false;
+  const overdueAllowed = includeKinds ? includeKinds.overdue !== false : reminders.overdueEnabled !== false;
+  const dailyAgendaAllowed = includeKinds ? includeKinds.dailyAgenda !== false : reminders.dailyAgendaEnabled === true;
+  const dailyAgendaKey = dailyAgendaAllowed ? `agenda:${currentDate}` : "";
 
   for (const task of tasks) {
     if (!shouldIncludeTaskForReminder(task, { nowTimestamp, taskMap })) {
@@ -95,22 +166,26 @@ export function collectEmailReminderCandidates({
     const dueDate = task?.dueDate || task?.startDate || "";
     const baseKey = `${task.id}|${dueDate}|${task?.timeOfDay || "23:59"}`;
 
-    if (reminders.dueSoonEnabled !== false) {
+    if (dueSoonAllowed) {
       const dueSoonStart = dueTimestamp - dueSoonMinutes * 60_000;
       if (nowTimestamp >= dueSoonStart && nowTimestamp < dueTimestamp) {
         dueSoon.push({ key: `due-soon:${baseKey}`, task, dueTimestamp });
       }
     }
 
-    if (reminders.overdueEnabled !== false) {
+    if (overdueAllowed) {
       const overdueAt = dueTimestamp + overdueMinutes * 60_000;
       if (nowTimestamp >= overdueAt) {
         overdue.push({ key: `overdue:${baseKey}`, task, dueTimestamp });
       }
     }
 
-    if (reminders.dailyAgendaEnabled === true && dueDate === currentDate) {
-      dailyAgenda.push({ key: `agenda:${currentDate}:${baseKey}`, task, dueTimestamp });
+    if (
+      dailyAgendaAllowed
+      && dueDate === currentDate
+      && (!requireDailyAgendaTime || localTime >= normalizeNotificationTime(reminders.dailyAgendaTime, "07:00"))
+    ) {
+      dailyAgenda.push({ key: dailyAgendaKey, task, dueTimestamp });
     }
   }
 
@@ -124,12 +199,43 @@ export function collectEmailReminderCandidates({
     dueSoon,
     overdue,
     dailyAgenda,
+    dailyAgendaKey,
     all: [
       ...dueSoon,
       ...overdue,
       ...dailyAgenda
     ]
   };
+}
+
+export function buildSentReminderKeySet(historyEntries) {
+  const sentKeys = new Set();
+  for (const entry of Array.isArray(historyEntries) ? historyEntries : []) {
+    if (entry?.status !== "sent" || entry?.kind !== "reminder") {
+      continue;
+    }
+    if (Array.isArray(entry.reminderEventKeys)) {
+      for (const key of entry.reminderEventKeys) {
+        if (typeof key === "string" && key) {
+          sentKeys.add(key);
+        }
+      }
+    } else if (typeof entry.reminderKey === "string" && entry.reminderKey) {
+      sentKeys.add(entry.reminderKey);
+    }
+  }
+  return sentKeys;
+}
+
+export function buildReminderEventKeys(candidates) {
+  const keys = [
+    ...(Array.isArray(candidates?.dueSoon) ? candidates.dueSoon.map((candidate) => candidate.key) : []),
+    ...(Array.isArray(candidates?.overdue) ? candidates.overdue.map((candidate) => candidate.key) : [])
+  ];
+  if (Array.isArray(candidates?.dailyAgenda) && candidates.dailyAgenda.length > 0 && candidates?.dailyAgendaKey) {
+    keys.push(candidates.dailyAgendaKey);
+  }
+  return [...new Set(keys)].sort();
 }
 
 export function renderEmailReminderBodyHtml(preview) {
@@ -195,6 +301,53 @@ export function buildReminderScheduleLabel(remindersConfig, timeZone = DEFAULT_N
   }
   parts.push(timeZone);
   return parts.join(" · ");
+}
+
+function buildEmailReminderPreviewFromCandidates({
+  store,
+  emailConfig,
+  now,
+  fallbackRecipientEmail,
+  candidates,
+  quietHoursActive,
+  suppressedByQuietHours,
+  timeZone
+}) {
+  const reminders = emailConfig?.reminders || {};
+  const recipientEmail = normalizeRecipientEmail(emailConfig?.recipientEmail || fallbackRecipientEmail || "");
+  const displayName = String(store?.profile?.displayName || "").trim() || "Lifetree";
+  const eventKeys = buildReminderEventKeys(candidates);
+  const sections = [];
+  if (reminders.enabled === true && candidates.dueSoon.length > 0) {
+    sections.push({
+      title: "Due soon",
+      items: candidates.dueSoon.map((candidate) => formatReminderTaskLine(candidate.task, timeZone))
+    });
+  }
+  if (reminders.enabled === true && candidates.overdue.length > 0) {
+    sections.push({
+      title: "Overdue",
+      items: candidates.overdue.map((candidate) => formatReminderTaskLine(candidate.task, timeZone))
+    });
+  }
+  if (reminders.enabled === true && candidates.dailyAgenda.length > 0) {
+    sections.push({
+      title: "Today's agenda",
+      items: candidates.dailyAgenda.map((candidate) => formatReminderTaskLine(candidate.task, timeZone))
+    });
+  }
+  return {
+    subject: `${displayName} reminders · ${formatDateInTimeZone(now, timeZone)}`,
+    recipientEmail,
+    enabled: reminders.enabled === true,
+    scheduleLabel: buildReminderScheduleLabel(reminders, timeZone),
+    sections,
+    quietHoursActive,
+    suppressedByQuietHours,
+    eventCount: candidates.dueSoon.length + candidates.overdue.length + candidates.dailyAgenda.length,
+    eventKeys,
+    reminderKey: eventKeys.join("|").slice(0, 240)
+  };
 }
 
 function shouldIncludeTaskForReminder(task, { nowTimestamp, taskMap }) {

@@ -361,6 +361,7 @@ const copyWidgetDiagnosticsButton = document.getElementById("copyWidgetDiagnosti
 const downloadDriveDataButton = document.getElementById("downloadDriveData");
 const importDriveDataButton = document.getElementById("importDriveData");
 const sendDeveloperDailySummaryButton = document.getElementById("sendDeveloperDailySummary");
+const sendDeveloperDailyAgendaButton = document.getElementById("sendDeveloperDailyAgenda");
 const cleanWidgetDataButton = document.getElementById("cleanWidgetData");
 const clearWidgetDriveDataButton = document.getElementById("clearWidgetDriveData");
 const injectPointsButton = document.getElementById("injectPoints");
@@ -645,6 +646,7 @@ resetFruitGrowthButton.addEventListener("click", resetDeveloperFruitGrowth);
 copyWidgetDiagnosticsButton.addEventListener("click", copyWidgetDiagnostics);
 downloadDriveDataButton.addEventListener("click", downloadDriveData);
 sendDeveloperDailySummaryButton.addEventListener("click", sendDeveloperDailySummary);
+sendDeveloperDailyAgendaButton.addEventListener("click", sendDeveloperDailyAgenda);
 importDriveDataButton.addEventListener("click", openDeveloperImportPicker);
 developerImportJsonInput.addEventListener("change", handleDeveloperImportJson);
 cleanWidgetDataButton.addEventListener("click", runLocalWidgetCleanup);
@@ -1565,28 +1567,44 @@ async function handleSendNotificationSummary() {
   });
 }
 
-async function handleSendNotificationReminder() {
-  const draft = readNotificationsDraft();
-  await sendNotificationEmailDraft({
+async function sendNotificationReminderDraft({
+  draft = readNotificationsDraft(),
+  includeKinds = null,
+  requireDailyAgendaTime = false,
+  successMessage = "",
+  failurePrefix = "Reminder send failed"
+} = {}) {
+  return sendNotificationEmailDraft({
     kind: "reminder",
     draft,
     endpoint: "/api/notifications/send-reminder",
     requireContent: true,
-    successMessage: "",
+    successMessage,
     missingRecipientMessage: "Choose a recipient email before sending reminders.",
     missingAuthMessage: "Connect Google first to send email reminders.",
-    failurePrefix: "Reminder send failed",
+    failurePrefix,
     buildPreview: (now) => buildEmailReminderPreviewShared({
       store,
       emailConfig: draft,
       now,
-      fallbackRecipientEmail: authState.user?.email || ""
+      fallbackRecipientEmail: authState.user?.email || "",
+      includeKinds,
+      requireDailyAgendaTime
     }),
     renderHtml: renderEmailReminderBodyHtmlShared,
     renderText: renderEmailReminderBodyTextShared,
     historyEntry: (preview) => ({
-      reminderKey: preview.reminderKey || ""
+      reminderKey: preview.reminderKey || "",
+      reminderEventKeys: Array.isArray(preview.eventKeys) ? preview.eventKeys : []
     })
+  });
+}
+
+async function handleSendNotificationReminder() {
+  await sendNotificationReminderDraft({
+    draft: readNotificationsDraft(),
+    successMessage: "",
+    failurePrefix: "Reminder send failed"
   });
 }
 
@@ -6628,6 +6646,7 @@ function updateGoogleButtons() {
   clearWidgetDriveDataButton.disabled = !isDeveloperUser();
   downloadDriveDataButton.disabled = !isDeveloperUser();
   sendDeveloperDailySummaryButton.disabled = !authState.authenticated || notificationSendState.inFlight;
+  sendDeveloperDailyAgendaButton.disabled = !authState.authenticated || notificationSendState.inFlight;
   renderDeveloperPanel();
   renderSyncMeta();
   renderNotificationsIfOpen();
@@ -6697,10 +6716,15 @@ function renderDeveloperPanel() {
   grantTreeSkinButton.disabled = !hasSkins;
   removeTreeSkinButton.disabled = !hasSkins;
   importDriveDataButton.disabled = !visible;
-  sendDeveloperDailySummaryButton.disabled = !authState.authenticated || notificationSendState.inFlight;
-  sendDeveloperDailySummaryButton.textContent = notificationSendState.inFlight
+  const notificationsBusy = !authState.authenticated || notificationSendState.inFlight;
+  sendDeveloperDailySummaryButton.disabled = notificationsBusy;
+  sendDeveloperDailyAgendaButton.disabled = notificationsBusy;
+  sendDeveloperDailySummaryButton.textContent = notificationSendState.inFlight && notificationSendState.kind === "summary"
     ? "Sending…"
     : "Send daily summary email";
+  sendDeveloperDailyAgendaButton.textContent = notificationSendState.inFlight && notificationSendState.kind === "reminder"
+    ? "Sending…"
+    : "Send daily agenda email";
 
   const devSettings = normalizeDevSettings(store.devSettings);
   developerMaxTaskPoints.value = String(devSettings.maxTaskPoints);
@@ -6912,6 +6936,34 @@ async function sendDeveloperDailySummary() {
     frequencyOverride: "daily",
     successMessage: `Sent daily summary to ${recipientEmail || "the configured recipient"}.`,
     failurePrefix: "Daily summary send failed"
+  });
+}
+
+async function sendDeveloperDailyAgenda() {
+  if (!isDeveloperUser()) {
+    return;
+  }
+  const savedDraft = normalizeNotifications(store.notifications).email;
+  const recipientEmail = savedDraft.recipientEmail || authState.user?.email || "";
+  await sendNotificationReminderDraft({
+    draft: {
+      ...savedDraft,
+      recipientEmail,
+      reminders: normalizeEmailReminderConfig({
+        ...savedDraft.reminders,
+        enabled: true,
+        dailyAgendaEnabled: true,
+        updatedAt: savedDraft.reminders?.updatedAt || 0
+      })
+    },
+    includeKinds: {
+      dueSoon: false,
+      overdue: false,
+      dailyAgenda: true
+    },
+    requireDailyAgendaTime: false,
+    successMessage: `Sent daily agenda to ${recipientEmail || "the configured recipient"}.`,
+    failurePrefix: "Daily agenda send failed"
   });
 }
 

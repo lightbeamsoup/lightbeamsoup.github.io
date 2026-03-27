@@ -11,6 +11,12 @@ import {
   shouldEmailSummarySendNow
 } from "../lifetree/modules/notificationSummary.js";
 import {
+  buildScheduledEmailReminderPreview,
+  renderEmailReminderBodyHtml,
+  renderEmailReminderBodyText
+} from "../lifetree/modules/notificationReminders.js";
+import {
+  appendNotificationHistoryEntry,
   appendEmailSummaryHistoryEntry,
   normalizeNotifications,
   normalizeRecipientEmail
@@ -595,7 +601,7 @@ async function runNotificationScheduler() {
     const users = Object.values(store.users || {});
     for (const user of users) {
       try {
-        await processScheduledSummariesForUser(user);
+        await processScheduledNotificationsForUser(user);
       } catch (error) {
         console.error(`Notification scheduler failed for ${user?.email || user?.userId || "unknown user"}: ${error.message}`);
       }
@@ -605,7 +611,7 @@ async function runNotificationScheduler() {
   }
 }
 
-async function processScheduledSummariesForUser(user) {
+async function processScheduledNotificationsForUser(user) {
   if (!user?.refreshToken) {
     return;
   }
@@ -628,37 +634,70 @@ async function processScheduledSummariesForUser(user) {
   const payload = await response.json();
   const notifications = normalizeNotifications(payload.notifications);
   const emailConfig = notifications.email;
+  let history = emailConfig.history;
+  let changed = false;
+
   const dueCheck = shouldEmailSummarySendNow(emailConfig, new Date());
-  if (!dueCheck.due) {
-    return;
+  if (dueCheck.due) {
+    const preview = buildEmailSummaryPreview({
+      store: payload,
+      emailConfig,
+      now: new Date(),
+      fallbackRecipientEmail: normalizeRecipientEmail(user.email)
+    });
+    if (preview.recipientEmail) {
+      await sendGmailMessage(accessToken, {
+        fromEmail: normalizeRecipientEmail(user.email),
+        recipientEmail: preview.recipientEmail,
+        subject: preview.subject,
+        html: renderEmailSummaryBodyHtml(preview),
+        text: renderEmailSummaryBodyText(preview)
+      });
+
+      history = appendEmailSummaryHistoryEntry(history, {
+        id: crypto.randomUUID(),
+        at: Date.now(),
+        status: "sent",
+        recipientEmail: preview.recipientEmail,
+        subject: preview.subject,
+        summaryKey: preview.summaryKey || dueCheck.summaryKey
+      });
+      changed = true;
+    }
   }
 
-  const preview = buildEmailSummaryPreview({
+  const reminderPreview = buildScheduledEmailReminderPreview({
     store: payload,
     emailConfig,
     now: new Date(),
     fallbackRecipientEmail: normalizeRecipientEmail(user.email)
   });
-  if (!preview.recipientEmail) {
+  if (reminderPreview.recipientEmail && reminderPreview.sections.length > 0 && !reminderPreview.suppressedByQuietHours) {
+    await sendGmailMessage(accessToken, {
+      fromEmail: normalizeRecipientEmail(user.email),
+      recipientEmail: reminderPreview.recipientEmail,
+      subject: reminderPreview.subject,
+      html: renderEmailReminderBodyHtml(reminderPreview),
+      text: renderEmailReminderBodyText(reminderPreview)
+    });
+
+    history = appendNotificationHistoryEntry(history, {
+      id: crypto.randomUUID(),
+      at: Date.now(),
+      status: "sent",
+      kind: "reminder",
+      recipientEmail: reminderPreview.recipientEmail,
+      subject: reminderPreview.subject,
+      reminderKey: reminderPreview.reminderKey || "",
+      reminderEventKeys: Array.isArray(reminderPreview.eventKeys) ? reminderPreview.eventKeys : []
+    });
+    changed = true;
+  }
+
+  if (!changed) {
     return;
   }
 
-  await sendGmailMessage(accessToken, {
-    fromEmail: normalizeRecipientEmail(user.email),
-    recipientEmail: preview.recipientEmail,
-    subject: preview.subject,
-    html: renderEmailSummaryBodyHtml(preview),
-    text: renderEmailSummaryBodyText(preview)
-  });
-
-  const history = appendEmailSummaryHistoryEntry(emailConfig.history, {
-    id: crypto.randomUUID(),
-    at: Date.now(),
-    status: "sent",
-    recipientEmail: preview.recipientEmail,
-    subject: preview.subject,
-    summaryKey: preview.summaryKey || dueCheck.summaryKey
-  });
   payload.notifications = normalizeNotifications({
     ...payload.notifications,
     email: {
