@@ -59,6 +59,10 @@ export function buildEmailSummaryPreview({
     .filter((entry) => entry.type === "completed" && (entry.at || 0) >= nowTimestamp - summaryWindowMs)
     .slice(0, 5)
     .map((entry) => `${entry.taskName} · ${formatDateTimeInTimeZone(entry.at, timeZone)}`);
+  const recentSkipped = buildHistoryFeed(tasks)
+    .filter((entry) => entry.type === "skipped" && (entry.at || 0) >= nowTimestamp - summaryWindowMs)
+    .slice(0, 5)
+    .map((entry) => `${entry.taskName} · ${formatDateTimeInTimeZone(entry.at, timeZone)}`);
   const recurringProgress = buildRecurringProgressItems(tasks, localToday).slice(0, 6);
   const treeSummary = buildTreeSummary(store, timeZone);
   const widgetHighlights = buildWidgetHighlights(store?.widgets, now, timeZone).slice(0, 4);
@@ -75,6 +79,7 @@ export function buildEmailSummaryPreview({
   }
   if (summaryConfig.include?.completed) {
     sections.push({ title: "Recently completed", items: recentCompleted });
+    sections.push({ title: "Recently skipped", items: recentSkipped });
   }
   if (summaryConfig.include?.recurringProgress) {
     sections.push({ title: "Recurring progress", items: recurringProgress });

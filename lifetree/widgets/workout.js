@@ -965,23 +965,32 @@ function stageAdHocWorkoutLog(widget, values, helpers) {
 function syncWorkoutOwnedTaskTemplates(widget, store, helpers) {
   const desiredTemplates = buildDesiredWorkoutTemplates(widget, store, helpers);
   const existingTemplates = store.tasks.filter((task) => isWorkoutOwnedTemplate(task, widget.id));
-  const existingByKey = new Map(existingTemplates.map((task) => [task.ownerTaskKey || "", task]));
-  const desiredKeys = new Set(desiredTemplates.map((task) => task.ownerTaskKey));
+  const matchedExistingIds = new Set();
 
   for (const desired of desiredTemplates) {
-    const existing = existingByKey.get(desired.ownerTaskKey) || null;
+    const existing = findMatchingWorkoutTemplate(existingTemplates, desired, matchedExistingIds) || null;
+    const nextDesired = existing
+      ? {
+          ...desired,
+          startDate: existing.startDate || desired.startDate,
+          dueDate: existing.dueDate || desired.dueDate,
+          notBeforeAt: typeof existing.notBeforeAt === "number" ? existing.notBeforeAt : desired.notBeforeAt
+        }
+      : desired;
     if (!existing) {
-      store.tasks.unshift(desired);
-      helpers.regenerateSeries(desired.id, { preserveClosed: false });
+      store.tasks.unshift(nextDesired);
+      helpers.regenerateSeries(nextDesired.id, { preserveClosed: false });
       continue;
     }
 
-    if (!workoutTemplateChanged(existing, desired)) {
+    matchedExistingIds.add(existing.id);
+
+    if (!workoutTemplateChanged(existing, nextDesired)) {
       continue;
     }
 
     Object.assign(existing, {
-      ...desired,
+      ...nextDesired,
       id: existing.id,
       createdAt: existing.createdAt,
       status: existing.status,
@@ -992,7 +1001,7 @@ function syncWorkoutOwnedTaskTemplates(widget, store, helpers) {
   }
 
   for (const template of existingTemplates) {
-    if (!desiredKeys.has(template.ownerTaskKey || "")) {
+    if (!matchedExistingIds.has(template.id)) {
       helpers.retireWidgetOwnedSeries(template);
     }
   }
@@ -1031,7 +1040,7 @@ function buildWorkoutSessionTemplates(widget, plan, helpers, store) {
       : helpers.todayString();
     const ownerTaskKey = recurrence.type === "weekly"
       ? `workout-plan:${plan.id}:weekday:${slot.weekday}`
-      : `workout-plan:${plan.id}:time:${slot.timeOfDay}`;
+      : `workout-plan:${plan.id}:slot:${slotIndex}`;
     return {
       id: helpers.createId(),
       templateId: "",
@@ -1102,7 +1111,7 @@ function buildWeightCheckTemplates(widget, weightTracking, helpers) {
       : helpers.todayString();
     const ownerTaskKey = recurrence.type === "weekly"
       ? `weight-checkin:weekday:${slot.weekday}`
-      : `weight-checkin:time:${slot.timeOfDay}`;
+      : `weight-checkin:slot:${slotIndex}`;
     return {
       id: helpers.createId(),
       templateId: "",
@@ -1251,6 +1260,52 @@ function isWorkoutOwnedTemplate(task, widgetId = "") {
     (!widgetId || task.ownerWidgetId === widgetId) &&
     (task.widgetTaskKind === "workout-session" || task.widgetTaskKind === "weight-checkin")
   );
+}
+
+function findMatchingWorkoutTemplate(existingTemplates, desired, matchedExistingIds = new Set()) {
+  const exact = existingTemplates.find((task) => (
+    !matchedExistingIds.has(task.id)
+    && (task.ownerTaskKey || "") === (desired.ownerTaskKey || "")
+  ));
+  if (exact) {
+    return exact;
+  }
+
+  const desiredRecurrenceType = getWorkoutTemplateRecurrenceType(desired);
+  const desiredSlotIndex = desired.linkedSeries?.slotIndex ?? 0;
+  const desiredWeekday = Number(desired.recurrence?.weekday ?? -1);
+
+  return existingTemplates.find((task) => {
+    if (matchedExistingIds.has(task.id) || task.widgetTaskKind !== desired.widgetTaskKind) {
+      return false;
+    }
+
+    const taskRecurrenceType = getWorkoutTemplateRecurrenceType(task);
+    if (taskRecurrenceType !== desiredRecurrenceType) {
+      return false;
+    }
+
+    if (desired.widgetTaskKind === "workout-session") {
+      const desiredPlanId = desired.widgetTaskMeta?.planId || "";
+      const taskPlanId = task.widgetTaskMeta?.planId || "";
+      const legacyKeyMatch = desiredPlanId && String(task.ownerTaskKey || "").startsWith(`workout-plan:${desiredPlanId}:`);
+      if (desiredPlanId && taskPlanId !== desiredPlanId && !legacyKeyMatch) {
+        return false;
+      }
+    }
+
+    if (desiredRecurrenceType === "weekly") {
+      return Number(task.recurrence?.weekday ?? -2) === desiredWeekday;
+    }
+
+    return (task.linkedSeries?.slotIndex ?? 0) === desiredSlotIndex;
+  }) || null;
+}
+
+function getWorkoutTemplateRecurrenceType(task) {
+  return task?.recurrence?.type === "generated"
+    ? task?.recurrence?.sourceType || ""
+    : task?.recurrence?.type || "";
 }
 
 function workoutTemplateChanged(existing, desired) {

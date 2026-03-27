@@ -4431,6 +4431,8 @@ function renderHistoryPanel() {
   historyEmpty.classList.remove("visible");
 
   for (const item of feed) {
+    const task = store.tasks.find((candidate) => candidate.id === item.taskId) || null;
+    const canRestore = item.type === "skipped" && canRestoreHistoryTask(task, item.historyId);
     const entry = document.createElement("article");
     entry.className = "history-entry";
     entry.innerHTML = `
@@ -4442,6 +4444,7 @@ function renderHistoryPanel() {
       <div class="history-entry-actions">
         <span>${formatDateTime(item.at)}</span>
         ${item.timingLabel ? `<span class="history-indicator ${escapeHtml(historyIndicatorClass(item.timingStatus))}">${escapeHtml(item.timingLabel)}</span>` : ""}
+        ${canRestore ? `<button type="button" class="ghost-button" data-history-action="restore" data-task-id="${item.taskId}" data-history-id="${item.historyId}">Restore</button>` : ""}
         <button type="button" class="ghost-button" data-history-action="reuse" data-task-id="${item.taskId}">Reuse task</button>
         <button type="button" class="ghost-button" data-history-action="delete" data-task-id="${item.taskId}" data-history-id="${item.historyId}">Delete</button>
       </div>
@@ -4484,13 +4487,27 @@ function handleHistoryAction(event) {
   const taskId = event.currentTarget.getAttribute("data-task-id");
   const action = event.currentTarget.getAttribute("data-history-action");
   const task = store.tasks.find((item) => item.id === taskId);
-  if (action === "reuse" && !task) {
+  if ((action === "reuse" || action === "restore") && !task) {
     return;
   }
 
   if (action === "reuse") {
     populateComposerFromHistory(task);
     setSyncStatus(`Loaded ${task.name} into the new task form.`, "info");
+    return;
+  }
+
+  if (action === "restore") {
+    const historyId = event.currentTarget.getAttribute("data-history-id") || "";
+    if (!canRestoreHistoryTask(task, historyId)) {
+      setSyncStatus("That skipped task can no longer be restored from history.", "error");
+      return;
+    }
+    markTaskOpen(task);
+    reconcileRecurringSeries();
+    persistStore();
+    renderAll();
+    setSyncStatus(`Restored ${task.name}.`, "info");
     return;
   }
 
@@ -4509,6 +4526,23 @@ function handleHistoryAction(event) {
     renderAll();
     setSyncStatus("Deleted that history record.", "info");
   }
+}
+
+function canRestoreHistoryTask(task, historyId, now = new Date()) {
+  if (!task || task.archived || task.status !== "skipped" || !historyId) {
+    return false;
+  }
+
+  const latestLifecycle = getLatestLifecycleEntry(task);
+  if (!latestLifecycle || latestLifecycle.type !== "skipped" || latestLifecycle.id !== historyId) {
+    return false;
+  }
+
+  return !shouldSkipTask({
+    ...task,
+    archived: false,
+    status: "open"
+  }, now);
 }
 
 function clearSelectedHistorySource() {

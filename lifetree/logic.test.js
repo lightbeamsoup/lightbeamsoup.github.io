@@ -16,6 +16,7 @@ import {
   ,
   shouldAutoSkipTask
 } from "./logic.js";
+import { buildEmailSummaryPreview } from "./modules/notificationSummary.js";
 import { computeInitialReminderDate, findActiveEnergyCompletionTask, syncEnergyTaskChain } from "./widgets/energy.js";
 
 test("computes weekly recurrence dates", () => {
@@ -139,6 +140,60 @@ test("history feed respects task-specific late grace minutes", () => {
   assert.equal(energy.timingLabel, "On time");
   assert.equal(manual.timingStatus, "neutral");
   assert.equal(manual.timingLabel, "Skipped within grace period");
+});
+
+test("email summary preview includes skipped tasks from the summary window", () => {
+  const now = new Date("2026-03-27T18:00:00");
+  const preview = buildEmailSummaryPreview({
+    store: {
+      profile: { displayName: "Josh" },
+      tasks: [
+        {
+          id: "done-1",
+          name: "Dog walk",
+          status: "done",
+          dueDate: "2026-03-27",
+          timeOfDay: "07:00",
+          history: [{ id: "done-history-1", type: "completed", at: new Date("2026-03-27T07:15:00").getTime() }]
+        },
+        {
+          id: "skip-1",
+          name: "Laundry",
+          status: "skipped",
+          dueDate: "2026-03-27",
+          timeOfDay: "09:00",
+          history: [{ id: "skip-history-1", type: "skipped", at: new Date("2026-03-27T09:30:00").getTime() }]
+        }
+      ],
+      widgets: [],
+      pointLedger: [],
+      treeState: {},
+      categories: []
+    },
+    emailConfig: {
+      summaries: {
+        enabled: true,
+        frequency: "daily",
+        sendTime: "18:00",
+        include: {
+          overdue: false,
+          dueSoon: false,
+          completed: true,
+          recurringProgress: false,
+          treePoints: false,
+          widgetHighlights: false
+        }
+      },
+      history: []
+    },
+    now,
+    fallbackRecipientEmail: "josh@example.com"
+  });
+
+  const skippedSection = preview.sections.find((section) => section.title === "Recently skipped");
+  assert.ok(skippedSection);
+  assert.equal(skippedSection.items.length, 1);
+  assert.match(skippedSection.items[0], /Laundry/);
 });
 
 test("preserves deleted series template history through archived records", () => {
