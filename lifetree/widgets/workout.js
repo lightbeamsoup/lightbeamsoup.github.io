@@ -1,6 +1,6 @@
 export const WORKOUT_WIDGET_TYPE = "workout";
 
-const DEFAULT_WEIGHT_UNIT = "lb";
+const DEFAULT_WEIGHT_UNIT = "lbs";
 const DEFAULT_WORKOUT_INTENSITY = "moderate";
 const DEFAULT_WORKOUT_TIME = "07:00";
 const WORKOUT_COMPLETION_MECHANISM = "workout-log";
@@ -128,6 +128,10 @@ export const workoutWidgetDefinition = {
     const progressView = buildWorkoutProgressView(tasks, widget.id);
     const completionTasks = listReadyWorkoutTasks(tasks, widget.id);
     const recentWorkoutEntries = [...widget.data.workoutEntries].slice(-8).reverse();
+    const recentWeightEntries = [...widget.data.weightEntries].slice(-8).reverse();
+    const pendingWeightLog = getPendingActionForWidget?.(widget.id, "weight-log") || null;
+    const weightIntent = describeWeightLogIntent(tasks, widget.id, weightTracking, formatDateTime);
+    const weightScheduleDraft = weightTracking.schedule?.recurrence || createWeightScheduleDraft();
 
     return `
       <section class="energy-detail">
@@ -273,11 +277,73 @@ export const workoutWidgetDefinition = {
               <div>
                 <p class="eyebrow">Weight</p>
                 <h3>Weight logging</h3>
-                <p class="sync-status">Weight will support open logs and optional scheduled check-ins that complete widget-owned tasks when due.</p>
+                <p class="sync-status">${pendingWeightLog ? `Pending weight log: ${formatPendingWeightSummary(pendingWeightLog)}` : escapeHtml(weightIntent)}</p>
               </div>
             </div>
-            <p>Tracking: <strong>${weightTracking.enabled ? "On" : "Off"}</strong></p>
-            <p>Unit: <strong>${escapeHtml(weightTracking.unit)}</strong></p>
+            <form class="workout-log-form" data-weight-log-form>
+              <div class="quick-add-grid">
+                <label>
+                  <span>Weight (${escapeHtml(weightTracking.unit)})</span>
+                  <input type="number" min="1" max="2000" step="0.1" placeholder="Enter weight" data-weight-log-value ${!weightTracking.enabled || pendingWeightLog ? "disabled" : ""} />
+                </label>
+              </div>
+              <div class="widget-actions workout-inline-actions">
+                ${pendingWeightLog
+                  ? `<button type="button" class="ghost-button" data-weight-log-undo data-pending-key="${pendingWeightLog.key}">Undo</button>`
+                  : `<button type="submit" class="primary-button" ${!weightTracking.enabled ? "disabled" : ""}>Log weight</button>`}
+              </div>
+            </form>
+            <div class="workout-recurrence-panel">
+              <div class="quick-add-grid">
+                <label>
+                  <span>Track weight</span>
+                  <select data-weight-enabled>
+                    <option value="on" ${weightTracking.enabled ? "selected" : ""}>On</option>
+                    <option value="off" ${!weightTracking.enabled ? "selected" : ""}>Off</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Units</span>
+                  <select data-weight-unit>
+                    <option value="lbs" ${weightTracking.unit === "lbs" ? "selected" : ""}>lbs</option>
+                    <option value="kg" ${weightTracking.unit === "kg" ? "selected" : ""}>kg</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Scheduled check-ins</span>
+                  <select data-weight-schedule-enabled>
+                    <option value="off" ${!weightTracking.schedule ? "selected" : ""}>Off</option>
+                    <option value="on" ${weightTracking.schedule ? "selected" : ""}>On</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Pattern</span>
+                  <select data-weight-pattern ${!weightTracking.schedule ? "disabled" : ""}>
+                    <option value="daily" ${weightScheduleDraft.type !== "weekly" ? "selected" : ""}>Daily</option>
+                    <option value="weekly" ${weightScheduleDraft.type === "weekly" ? "selected" : ""}>Weekly</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Every</span>
+                  <input type="number" min="1" max="30" step="1" value="${weightScheduleDraft.interval}" data-weight-interval ${!weightTracking.schedule ? "disabled" : ""} />
+                </label>
+                <label>
+                  <span>Time of day</span>
+                  <input type="time" value="${escapeHtml(weightScheduleDraft.timeOfDay)}" data-weight-time ${!weightTracking.schedule ? "disabled" : ""} />
+                </label>
+              </div>
+              <div class="workout-recurrence-panel ${weightTracking.schedule && weightScheduleDraft.type === "weekly" ? "" : "hidden"}" data-weight-weekly-panel>
+                <div class="weekday-picker-panel">
+                  <span>Days in the week</span>
+                  <div class="weekday-picker">
+                    ${renderWeightWeekdayOptions(weightScheduleDraft.weekdays)}
+                  </div>
+                </div>
+              </div>
+              <div class="widget-actions workout-inline-actions">
+                <button type="button" class="primary-button" data-weight-save-settings>Save weight settings</button>
+              </div>
+            </div>
             <p>${latestWeight ? `Latest logged weight: ${escapeHtml(formatWeightEntry(latestWeight))} at ${formatDateTime(latestWeight.at)}` : "No weight entries yet."}</p>
           </section>
 
@@ -294,7 +360,11 @@ export const workoutWidgetDefinition = {
                 ? recentWorkoutEntries.map((entry) => renderWorkoutEntryCard(entry, escapeHtml, formatDateTime)).join("")
                 : `<p class="empty-state">No workout entries yet.</p>`}
             </div>
-            <p>${latestWeight ? `Latest weight: ${escapeHtml(formatWeightEntry(latestWeight))} at ${formatDateTime(latestWeight.at)}` : "No weight entries yet."}</p>
+            <div class="workout-entry-list">
+              ${recentWeightEntries.length
+                ? recentWeightEntries.map((entry) => renderWeightEntryCard(entry, escapeHtml, formatDateTime)).join("")
+                : `<p class="empty-state">No weight entries yet.</p>`}
+            </div>
           </section>
         </div>
       </section>
@@ -308,6 +378,13 @@ export const workoutWidgetDefinition = {
     const weeklyPanel = container.querySelector("[data-workout-weekly-panel]");
     const additionalTimes = container.querySelector("[data-workout-additional-times]");
     const cancelEditButton = container.querySelector("[data-workout-cancel-edit]");
+    const weightEnabledInput = container.querySelector("[data-weight-enabled]");
+    const weightUnitInput = container.querySelector("[data-weight-unit]");
+    const weightScheduleEnabledInput = container.querySelector("[data-weight-schedule-enabled]");
+    const weightPatternInput = container.querySelector("[data-weight-pattern]");
+    const weightIntervalInput = container.querySelector("[data-weight-interval]");
+    const weightTimeInput = container.querySelector("[data-weight-time]");
+    const weightWeeklyPanel = container.querySelector("[data-weight-weekly-panel]");
 
     if (!form || !patternInput || !dailyPanel || !weeklyPanel || !additionalTimes) {
       return null;
@@ -317,6 +394,18 @@ export const workoutWidgetDefinition = {
       const isDaily = patternInput.value !== "weekly";
       dailyPanel.classList.toggle("hidden", !isDaily);
       weeklyPanel.classList.toggle("hidden", isDaily);
+    };
+
+    const syncWeightPanels = () => {
+      const scheduleEnabled = weightScheduleEnabledInput?.value === "on";
+      const weekly = weightPatternInput?.value === "weekly";
+      weightPatternInput?.toggleAttribute("disabled", !scheduleEnabled);
+      weightIntervalInput?.toggleAttribute("disabled", !scheduleEnabled);
+      weightTimeInput?.toggleAttribute("disabled", !scheduleEnabled);
+      weightWeeklyPanel?.classList.toggle("hidden", !(scheduleEnabled && weekly));
+      Array.from(container.querySelectorAll("[data-weight-weekday]")).forEach((input) => {
+        input.toggleAttribute("disabled", !scheduleEnabled || !weekly);
+      });
     };
 
     const resetForm = () => {
@@ -405,7 +494,110 @@ export const workoutWidgetDefinition = {
         if (pendingKey) {
           helpers.undoPendingAction(pendingKey, "Undid the pending workout log.");
         }
+        return;
       }
+
+      const undoWeightLogButton = event.target.closest("[data-weight-log-undo]");
+      if (undoWeightLogButton) {
+        const pendingKey = undoWeightLogButton.getAttribute("data-pending-key");
+        if (pendingKey) {
+          helpers.undoPendingAction(pendingKey, "Undid the pending weight log.");
+        }
+        return;
+      }
+
+      const saveWeightSettingsButton = event.target.closest("[data-weight-save-settings]");
+      if (saveWeightSettingsButton) {
+        const weightEnabled = weightEnabledInput?.value !== "off";
+        const unit = normalizeWeightUnit(weightUnitInput?.value);
+        const scheduleEnabled = weightScheduleEnabledInput?.value === "on";
+        const pattern = weightPatternInput?.value === "weekly" ? "weekly" : "daily";
+        const interval = normalizePositiveInteger(weightIntervalInput?.value, 1);
+        const timeOfDay = normalizeTimeValue(weightTimeInput?.value, DEFAULT_WORKOUT_TIME);
+        const weekdays = getSelectedWeightWeekdays(container);
+
+        if (scheduleEnabled && pattern === "weekly" && weekdays.length === 0) {
+          helpers.setSyncStatus("Choose at least one weekday for scheduled weight check-ins.", "error");
+          return;
+        }
+
+        widget.settings.weightTracking = {
+          ...widget.settings.weightTracking,
+          enabled: weightEnabled,
+          unit,
+          allowOpenLogging: true,
+          schedule: scheduleEnabled
+            ? {
+              recurrence: {
+                type: pattern,
+                interval,
+                instancesPerPeriod: pattern === "weekly" ? weekdays.length : 1,
+                weekdays: pattern === "weekly" ? weekdays : [],
+                timeOfDay,
+                additionalTimes: []
+              },
+              timeOfDay
+            }
+            : null
+        };
+        widget.updatedAt = Date.now();
+        syncWorkoutOwnedTaskTemplates(widget, helpers.getStore(), helpers);
+        helpers.persistStore();
+        helpers.renderAll();
+        helpers.setSyncStatus("Saved the weight tracking settings.", "success");
+      }
+    };
+
+    const submitWeightLogHandler = (event) => {
+      const weightForm = event.target.closest("[data-weight-log-form]");
+      if (!weightForm) {
+        return;
+      }
+      event.preventDefault();
+
+      const weightValueInput = weightForm.querySelector("[data-weight-log-value]");
+      const weightValue = normalizeWeightValue(weightValueInput?.value);
+      if (!weightValue || weightValue <= 0) {
+        helpers.setSyncStatus("Enter a valid weight before logging.", "error");
+        return;
+      }
+      if (widget.settings.weightTracking.enabled === false) {
+        helpers.setSyncStatus("Weight tracking is currently turned off.", "error");
+        return;
+      }
+
+      const entryTime = Date.now();
+      helpers.stageWidgetAction(widget, "weight-log", {
+        value: weightValue,
+        unit: widget.settings.weightTracking.unit,
+        description: `Pending weight log of ${trimTrailingZero(weightValue)} ${widget.settings.weightTracking.unit}. Click undo within 5 seconds to cancel.`,
+        commit: () => {
+          helpers.applyAutoSkipRules(new Date(entryTime));
+          const completedTask = helpers.completeNextTaskFromWidget(widget, WEIGHT_COMPLETION_MECHANISM, entryTime);
+          upsertWeightEntry(widget, {
+            id: helpers.createId(),
+            at: entryTime,
+            value: weightValue,
+            unit: widget.settings.weightTracking.unit,
+            taskId: completedTask?.id || "",
+            taskName: completedTask?.name || "",
+            scheduledDate: completedTask?.dueDate || completedTask?.startDate || "",
+            scheduledTime: completedTask?.timeOfDay || "",
+            source: completedTask ? "task" : "extra"
+          });
+          widget.updatedAt = entryTime;
+
+          return completedTask
+            ? {
+              message: `Logged ${trimTrailingZero(weightValue)} ${widget.settings.weightTracking.unit} and completed ${completedTask.name}.`,
+              tone: "info"
+            }
+            : {
+              message: `Logged ${trimTrailingZero(weightValue)} ${widget.settings.weightTracking.unit}. Unscheduled weight logs do not award points.`,
+              tone: "info"
+            };
+        }
+      });
     };
 
     const submitLogHandler = (event) => {
@@ -540,14 +732,21 @@ export const workoutWidgetDefinition = {
     };
 
     patternInput.addEventListener("change", syncPanels);
+    weightPatternInput?.addEventListener("change", syncWeightPanels);
+    weightScheduleEnabledInput?.addEventListener("change", syncWeightPanels);
     container.addEventListener("click", clickHandler);
+    container.addEventListener("submit", submitWeightLogHandler);
     container.addEventListener("submit", submitLogHandler);
     form.addEventListener("submit", submitHandler);
     syncPanels();
+    syncWeightPanels();
 
     return () => {
       patternInput.removeEventListener("change", syncPanels);
+      weightPatternInput?.removeEventListener("change", syncWeightPanels);
+      weightScheduleEnabledInput?.removeEventListener("change", syncWeightPanels);
       container.removeEventListener("click", clickHandler);
+      container.removeEventListener("submit", submitWeightLogHandler);
       container.removeEventListener("submit", submitLogHandler);
       form.removeEventListener("submit", submitHandler);
     };
@@ -598,9 +797,10 @@ function buildDesiredWorkoutTemplates(widget, store, helpers) {
     desired.push(...buildWorkoutSessionTemplates(widget, plan, helpers, store));
   }
 
-  const weightSchedule = normalizeWeightSchedule(widget.settings?.weightTracking?.schedule);
+  const weightTracking = normalizeWeightTracking(widget.settings?.weightTracking);
+  const weightSchedule = weightTracking.enabled ? normalizeWeightSchedule(weightTracking.schedule) : null;
   if (weightSchedule) {
-    desired.push(...buildWeightCheckTemplates(widget, normalizeWeightTracking(widget.settings?.weightTracking), helpers, store));
+    desired.push(...buildWeightCheckTemplates(widget, weightTracking, helpers, store));
   }
 
   return desired.sort(compareWorkoutOwnedTemplateSchedule);
@@ -937,6 +1137,9 @@ function normalizeWeightEntries(value) {
       value: normalizeWeightValue(entry.value),
       unit: normalizeWeightUnit(entry.unit),
       taskId: typeof entry.taskId === "string" ? entry.taskId : "",
+      taskName: typeof entry.taskName === "string" ? entry.taskName.trim().slice(0, 120) : "",
+      scheduledDate: typeof entry.scheduledDate === "string" ? entry.scheduledDate : "",
+      scheduledTime: normalizeTimeValue(entry.scheduledTime, ""),
       source: normalizeEntrySource(entry.source)
     }))
     .sort((left, right) => left.at - right.at);
@@ -1054,6 +1257,24 @@ function formatWeightEntry(entry) {
   return `${trimTrailingZero(entry.value)} ${entry.unit}`;
 }
 
+function describeWeightLogIntent(tasks, widgetId, weightTracking, formatDateTime) {
+  if (weightTracking?.enabled === false) {
+    return "Weight tracking is off. Turn it back on below to log or schedule weight check-ins.";
+  }
+  const activeTask = findActiveWeightCheckTask(tasks, widgetId);
+  if (activeTask) {
+    return `A scheduled weight check-in is ready now. Logging weight will complete ${activeTask.name} due ${formatDateTime(`${activeTask.dueDate}T${activeTask.timeOfDay || "23:59"}:00`)}.`;
+  }
+  return "No scheduled weight check-in is due right now. Logging here will be stored as an extra entry with no points awarded.";
+}
+
+function formatPendingWeightSummary(pendingAction) {
+  if (!pendingAction) {
+    return "";
+  }
+  return `${trimTrailingZero(pendingAction.value)} ${pendingAction.unit}`;
+}
+
 function describeWorkoutEntry(entry) {
   const type = entry.workoutType || "Workout";
   const duration = entry.durationMinutes ? `${entry.durationMinutes} min` : "duration TBD";
@@ -1090,6 +1311,17 @@ function createPlanDraft() {
   };
 }
 
+function createWeightScheduleDraft() {
+  return {
+    type: "daily",
+    interval: 1,
+    instancesPerPeriod: 1,
+    weekdays: [1],
+    timeOfDay: DEFAULT_WORKOUT_TIME,
+    additionalTimes: []
+  };
+}
+
 function renderAdditionalTimeInputs(times, escapeHtml) {
   const safeTimes = normalizeAdditionalTimes(times);
   if (!safeTimes.length) {
@@ -1115,6 +1347,16 @@ function renderWeekdayOptions(selectedDays) {
   return WEEKDAY_OPTIONS.map((option) => `
     <label>
       <input type="checkbox" value="${option.value}" data-workout-weekday ${selected.has(option.value) ? "checked" : ""} />
+      <span>${option.label}</span>
+    </label>
+  `).join("");
+}
+
+function renderWeightWeekdayOptions(selectedDays) {
+  const selected = new Set(normalizeWeekdays(selectedDays));
+  return WEEKDAY_OPTIONS.map((option) => `
+    <label>
+      <input type="checkbox" value="${option.value}" data-weight-weekday ${selected.has(option.value) ? "checked" : ""} />
       <span>${option.label}</span>
     </label>
   `).join("");
@@ -1218,6 +1460,24 @@ function renderWorkoutEntryCard(entry, escapeHtml, formatDateTime) {
   `;
 }
 
+function renderWeightEntryCard(entry, escapeHtml, formatDateTime) {
+  return `
+    <article class="workout-entry-card">
+      <div class="workout-entry-card-header">
+        <div>
+          <h4>${escapeHtml(formatWeightEntry(entry))}</h4>
+          <p class="sync-status">${escapeHtml(entry.taskName || (entry.source === "extra" ? "Extra weight log" : "Scheduled weight check-in"))}</p>
+        </div>
+        <span class="workout-progress-chip done">${escapeHtml(entry.source === "extra" ? "Extra" : "Task")}</span>
+      </div>
+      <div class="workout-progress-stats">
+        <span><strong>Logged:</strong> ${escapeHtml(formatDateTime(entry.at))}</span>
+        ${entry.scheduledDate ? `<span><strong>Scheduled:</strong> ${escapeHtml(formatScheduledWorkoutSlot(entry))}</span>` : ""}
+      </div>
+    </article>
+  `;
+}
+
 function describeWorkoutPlan(plan) {
   const workoutType = plan.workoutType || plan.name || "Workout";
   const duration = plan.durationMinutes ? `${plan.durationMinutes} min` : "Duration TBD";
@@ -1271,6 +1531,15 @@ function buildWorkoutProgressView(tasks, widgetId, now = new Date()) {
       weekEnd
     })
   };
+}
+
+function findActiveWeightCheckTask(tasks, widgetId, at = Date.now()) {
+  const today = toDateString(new Date(at));
+  return [...(Array.isArray(tasks) ? tasks : [])]
+    .filter((task) => task?.ownerWidgetId === widgetId && task?.widgetCompletion?.mechanism === WEIGHT_COMPLETION_MECHANISM)
+    .filter((task) => task.status === "open" && !task.archived)
+    .filter((task) => !taskScheduleDate(task) || taskScheduleDate(task) <= today)
+    .sort(compareWorkoutTaskSchedule)[0] || null;
 }
 
 function listReadyWorkoutTasks(tasks, widgetId, at = Date.now()) {
@@ -1420,6 +1689,10 @@ function formatProgressDueText(task) {
   return date ? `${date} at ${time}` : time;
 }
 
+function taskScheduleDate(task) {
+  return task?.dueDate || task?.startDate || "";
+}
+
 function compareWorkoutTaskSchedule(left, right) {
   const leftDate = `${left.dueDate || left.startDate || ""}T${left.timeOfDay || "23:59"}`;
   const rightDate = `${right.dueDate || right.startDate || ""}T${right.timeOfDay || "23:59"}`;
@@ -1471,6 +1744,35 @@ function upsertWorkoutEntry(widget, entry) {
   widget.data.workoutEntries.sort((left, right) => left.at - right.at);
 }
 
+function upsertWeightEntry(widget, entry) {
+  const nextEntry = {
+    id: typeof entry.id === "string" ? entry.id : "",
+    at: typeof entry.at === "number" ? entry.at : Date.now(),
+    value: normalizeWeightValue(entry.value),
+    unit: normalizeWeightUnit(entry.unit),
+    taskId: typeof entry.taskId === "string" ? entry.taskId : "",
+    taskName: typeof entry.taskName === "string" ? entry.taskName.trim().slice(0, 120) : "",
+    scheduledDate: typeof entry.scheduledDate === "string" ? entry.scheduledDate : "",
+    scheduledTime: normalizeTimeValue(entry.scheduledTime, ""),
+    source: normalizeEntrySource(entry.source)
+  };
+
+  const existingIndex = nextEntry.taskId
+    ? widget.data.weightEntries.findIndex((item) => item.taskId === nextEntry.taskId && item.source === nextEntry.source)
+    : -1;
+
+  if (existingIndex >= 0) {
+    widget.data.weightEntries.splice(existingIndex, 1, {
+      ...widget.data.weightEntries[existingIndex],
+      ...nextEntry
+    });
+  } else {
+    widget.data.weightEntries.push(nextEntry);
+  }
+
+  widget.data.weightEntries.sort((left, right) => left.at - right.at);
+}
+
 function replaceAdditionalTimes(container, times) {
   if (!container) {
     return;
@@ -1488,6 +1790,12 @@ function setSelectedWeekdays(container, weekdays) {
 function getSelectedWeekdays(container) {
   return normalizeWeekdays(
     Array.from(container.querySelectorAll("[data-workout-weekday]:checked")).map((input) => Number(input.value))
+  );
+}
+
+function getSelectedWeightWeekdays(container) {
+  return normalizeWeekdays(
+    Array.from(container.querySelectorAll("[data-weight-weekday]:checked")).map((input) => Number(input.value))
   );
 }
 
