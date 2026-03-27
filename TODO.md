@@ -16,6 +16,10 @@
   - [x] Add widget-owned task metadata for workout sessions and weight check-ins.
   - [x] Add daily and weekly progress views that roll up repeated instances into one tracked card.
   - [x] Add workout completion logging with actual duration and intensity overrides.
+  - [x] Add ad hoc workout logging from the shell and modal.
+  - [x] Add calories-burned defaults for recurring workouts plus completion overrides.
+  - [x] Show weekly calories burned in the shell.
+  - [x] Track calories burned and weight together in the workout modal history chart.
   - [x] Add open weight logging plus optional scheduled weight check-ins.
   - [x] Add per-widget weight units and decide how points should work for unscheduled weight logs.
 

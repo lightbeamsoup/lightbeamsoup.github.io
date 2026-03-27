@@ -3,6 +3,7 @@ export const WORKOUT_WIDGET_TYPE = "workout";
 const DEFAULT_WEIGHT_UNIT = "lbs";
 const DEFAULT_WORKOUT_INTENSITY = "moderate";
 const DEFAULT_WORKOUT_TIME = "07:00";
+const DEFAULT_WORKOUT_CALORIES = 250;
 const WORKOUT_COMPLETION_MECHANISM = "workout-log";
 const WEIGHT_COMPLETION_MECHANISM = "weight-log";
 const WORKOUT_INTENSITY_OPTIONS = [
@@ -19,6 +20,7 @@ const WEEKDAY_OPTIONS = [
   { value: 5, label: "Fri" },
   { value: 6, label: "Sat" }
 ];
+const workoutShellUiState = new Map();
 
 export const workoutWidgetDefinition = {
   type: WORKOUT_WIDGET_TYPE,
@@ -102,6 +104,9 @@ export const workoutWidgetDefinition = {
     const weeklyPlans = widget.settings.workoutPlans.filter((plan) => plan.recurrence?.type === "weekly").length;
     const nextWorkoutTask = listReadyWorkoutTasks(tasks, widget.id)[0] || null;
     const pendingWorkoutLog = getPendingWorkoutLogAction(widget.id, getPendingActionForWidget);
+    const pendingAdHocWorkout = getPendingActionForWidget?.(widget.id, "workout-adhoc") || null;
+    const shellState = getWorkoutShellState(widget.id);
+    const weeklyCalories = sumWorkoutCaloriesForCurrentWeek(widget.data.workoutEntries);
 
     return `
       <div class="widget-slot-header">
@@ -114,6 +119,7 @@ export const workoutWidgetDefinition = {
       <p>Workout plans: <strong>${planCount}</strong> (${dailyPlans} daily, ${weeklyPlans} weekly)</p>
       <p>${latestWorkout ? `Latest workout: ${escapeHtml(latestWorkout.workoutType || "Workout")} at ${formatDateTime(latestWorkout.at)}` : "No workout logs yet."}</p>
       <p>${latestWeight ? `Latest weight: ${escapeHtml(formatWeightEntry(latestWeight))} at ${formatDateTime(latestWeight.at)}` : "No weight logs yet."}</p>
+      <p>Calories this week: <strong>${escapeHtml(formatCalories(weeklyCalories))}</strong></p>
       <p>${pendingWorkoutLog
         ? `Pending workout log: ${escapeHtml(formatPendingWorkoutSummary(pendingWorkoutLog))}`
         : nextWorkoutTask
@@ -125,9 +131,13 @@ export const workoutWidgetDefinition = {
           : nextWorkoutTask
             ? `<button type="button" class="primary-button" data-widget-action="quick-workout-complete" data-task-id="${nextWorkoutTask.id}">Quick complete</button>`
             : ""}
+        ${pendingAdHocWorkout
+          ? `<button type="button" class="ghost-button" data-widget-action="undo-adhoc-workout" data-pending-key="${pendingAdHocWorkout.key}">Undo quick workout</button>`
+          : `<button type="button" class="ghost-button" data-widget-action="toggle-adhoc-workout">${shellState.quickAdHocOpen ? "Close quick workout" : "Quick workout"}</button>`}
         <button type="button" class="ghost-button" data-widget-action="open-widget-detail">Open panel</button>
         <button type="button" class="ghost-button" data-widget-action="remove-widget">Remove widget</button>
       </div>
+      ${shellState.quickAdHocOpen && !pendingAdHocWorkout ? renderShellAdHocWorkoutForm(escapeHtml) : ""}
     `;
   },
 
@@ -142,12 +152,31 @@ export const workoutWidgetDefinition = {
     const recentWorkoutEntries = [...widget.data.workoutEntries].slice(-8).reverse();
     const recentWeightEntries = [...widget.data.weightEntries].slice(-8).reverse();
     const pendingWeightLog = getPendingActionForWidget?.(widget.id, "weight-log") || null;
+    const pendingAdHocWorkout = getPendingActionForWidget?.(widget.id, "workout-adhoc") || null;
     const weightIntent = describeWeightLogIntent(tasks, widget.id, weightTracking, formatDateTime);
     const weightScheduleDraft = weightTracking.schedule?.recurrence || createWeightScheduleDraft();
+    const weeklyCalories = sumWorkoutCaloriesForCurrentWeek(widget.data.workoutEntries);
 
     return `
       <section class="energy-detail">
         <div class="energy-detail-grid">
+          <section class="energy-detail-card workout-chart-card">
+            <div class="energy-detail-header">
+              <div>
+                <p class="eyebrow">History</p>
+                <h3>Calories and weight trend</h3>
+                <p class="sync-status">Workout calories burned and weight logs are tracked together here so you can see both signals over time.</p>
+              </div>
+            </div>
+            <div class="workout-chart-legend">
+              <span><i class="workout-chart-dot calories"></i>Calories burned</span>
+              <span><i class="workout-chart-dot weight"></i>Weight (${escapeHtml(weightTracking.unit)})</span>
+              <span class="workout-chart-summary">This week: <strong>${escapeHtml(formatCalories(weeklyCalories))}</strong></span>
+            </div>
+            <canvas class="workout-detail-chart" data-workout-chart></canvas>
+            <p class="empty-state hidden" data-workout-chart-empty>No workout calories or weight logs yet.</p>
+          </section>
+
           <section class="energy-detail-card energy-settings-card">
             <div class="energy-detail-header">
               <div>
@@ -200,6 +229,25 @@ export const workoutWidgetDefinition = {
           <section class="energy-detail-card">
             <div class="energy-detail-header">
               <div>
+                <p class="eyebrow">Ad hoc</p>
+                <h3>Log an extra workout</h3>
+                <p class="sync-status">${pendingAdHocWorkout
+                  ? `Pending ad hoc workout: ${escapeHtml(formatPendingAdHocWorkoutSummary(pendingAdHocWorkout))}`
+                  : "Use this when you work out outside the scheduled plans. These logs do not complete tasks or award points."}</p>
+              </div>
+            </div>
+            ${renderAdHocWorkoutForm({
+              escapeHtml,
+              pendingAction: pendingAdHocWorkout,
+              formAttribute: "data-workout-adhoc-form",
+              submitLabel: "Log ad hoc workout",
+              includeHeading: false
+            })}
+          </section>
+
+          <section class="energy-detail-card">
+            <div class="energy-detail-header">
+              <div>
                 <p class="eyebrow">Workout plans</p>
                 <h3>Plan workouts</h3>
                 <p class="sync-status">Create daily or weekly workout plans with linked schedule details. These plans are the source of truth for the widget's future tasks.</p>
@@ -222,6 +270,10 @@ export const workoutWidgetDefinition = {
                       <option value="${option.value}" ${planDraft.intensity === option.value ? "selected" : ""}>${option.label}</option>
                     `).join("")}
                   </select>
+                </label>
+                <label>
+                  <span>Default calories burned</span>
+                  <input type="number" min="0" max="5000" step="1" value="${planDraft.caloriesBurned}" data-workout-plan-calories />
                 </label>
                 <label>
                   <span>Pattern</span>
@@ -364,7 +416,7 @@ export const workoutWidgetDefinition = {
               <div>
                 <p class="eyebrow">History</p>
                 <h3>Recent activity</h3>
-                <p class="sync-status">Recent workout logs keep the actual duration and intensity that were recorded at completion time.</p>
+                <p class="sync-status">Recent workout logs keep the actual duration, calories, and intensity recorded at completion time.</p>
               </div>
             </div>
             <div class="workout-entry-list">
@@ -384,6 +436,8 @@ export const workoutWidgetDefinition = {
   },
 
   mountDetail({ widget, container, helpers }) {
+    const chartCanvas = container.querySelector("[data-workout-chart]");
+    const chartEmptyState = container.querySelector("[data-workout-chart-empty]");
     const form = container.querySelector("[data-workout-plan-form]");
     const patternInput = container.querySelector("[data-workout-plan-pattern]");
     const dailyPanel = container.querySelector("[data-workout-daily-panel]");
@@ -401,6 +455,13 @@ export const workoutWidgetDefinition = {
     if (!form || !patternInput || !dailyPanel || !weeklyPanel || !additionalTimes) {
       return null;
     }
+
+    const refreshChart = () => {
+      if (!chartCanvas || !chartEmptyState) {
+        return;
+      }
+      drawWorkoutHistoryChart(chartCanvas, chartEmptyState, buildCombinedWorkoutHistory(widget), widget.settings.weightTracking.unit);
+    };
 
     const syncPanels = () => {
       const isDaily = patternInput.value !== "weekly";
@@ -426,6 +487,7 @@ export const workoutWidgetDefinition = {
       const freshDraft = createPlanDraft();
       form.querySelector("[data-workout-plan-duration]").value = String(freshDraft.durationMinutes);
       form.querySelector("[data-workout-plan-intensity]").value = freshDraft.intensity;
+      form.querySelector("[data-workout-plan-calories]").value = String(freshDraft.caloriesBurned);
       patternInput.value = freshDraft.recurrence.type;
       form.querySelector("[data-workout-plan-interval]").value = String(freshDraft.recurrence.interval);
       form.querySelector("[data-workout-plan-time]").value = freshDraft.recurrence.timeOfDay;
@@ -440,6 +502,7 @@ export const workoutWidgetDefinition = {
       form.querySelector("[data-workout-plan-type]").value = plan.workoutType || plan.name || "";
       form.querySelector("[data-workout-plan-duration]").value = String(plan.durationMinutes || 30);
       form.querySelector("[data-workout-plan-intensity]").value = plan.intensity || DEFAULT_WORKOUT_INTENSITY;
+      form.querySelector("[data-workout-plan-calories]").value = String(normalizeCaloriesBurned(plan.caloriesBurned));
       patternInput.value = plan.recurrence?.type || "daily";
       form.querySelector("[data-workout-plan-interval]").value = String(plan.recurrence?.interval || 1);
       form.querySelector("[data-workout-plan-time]").value = plan.recurrence?.timeOfDay || DEFAULT_WORKOUT_TIME;
@@ -505,6 +568,15 @@ export const workoutWidgetDefinition = {
         const pendingKey = undoLogButton.getAttribute("data-pending-key");
         if (pendingKey) {
           helpers.undoPendingAction(pendingKey, "Undid the pending workout log.");
+        }
+        return;
+      }
+
+      const undoAdHocWorkoutButton = event.target.closest("[data-workout-adhoc-undo]");
+      if (undoAdHocWorkoutButton) {
+        const pendingKey = undoAdHocWorkoutButton.getAttribute("data-pending-key");
+        if (pendingKey) {
+          helpers.undoPendingAction(pendingKey, "Undid the pending ad hoc workout log.");
         }
         return;
       }
@@ -622,8 +694,10 @@ export const workoutWidgetDefinition = {
       const taskId = logForm.getAttribute("data-task-id") || "";
       const durationInput = logForm.querySelector("[data-workout-log-duration]");
       const intensityInput = logForm.querySelector("[data-workout-log-intensity]");
+      const caloriesInput = logForm.querySelector("[data-workout-log-calories]");
       const durationMinutes = normalizeDurationMinutes(durationInput?.value);
       const intensity = normalizeWorkoutIntensity(intensityInput?.value);
+      const caloriesBurned = normalizeCaloriesBurned(caloriesInput?.value);
 
       if (!taskId) {
         helpers.setSyncStatus("That workout task could not be identified.", "error");
@@ -639,7 +713,16 @@ export const workoutWidgetDefinition = {
         helpers.setSyncStatus("That workout task is no longer ready to log.", "error");
         return;
       }
-      stageWorkoutTaskLog(widget, task, { durationMinutes, intensity }, helpers);
+      stageWorkoutTaskLog(widget, task, { durationMinutes, intensity, caloriesBurned }, helpers);
+    };
+
+    const submitAdHocHandler = (event) => {
+      const adHocForm = event.target.closest("[data-workout-adhoc-form]");
+      if (!adHocForm) {
+        return;
+      }
+      event.preventDefault();
+      submitAdHocWorkoutForm(widget, adHocForm, helpers);
     };
 
     const submitHandler = (event) => {
@@ -648,6 +731,7 @@ export const workoutWidgetDefinition = {
       const workoutType = String(form.querySelector("[data-workout-plan-type]").value || "").trim().slice(0, 80);
       const durationMinutes = normalizeDurationMinutes(form.querySelector("[data-workout-plan-duration]").value);
       const intensity = normalizeWorkoutIntensity(form.querySelector("[data-workout-plan-intensity]").value);
+      const caloriesBurned = normalizeCaloriesBurned(form.querySelector("[data-workout-plan-calories]").value);
       const pattern = patternInput.value === "weekly" ? "weekly" : "daily";
       const interval = normalizePositiveInteger(form.querySelector("[data-workout-plan-interval]").value, 1);
       const timeOfDay = normalizeTimeValue(form.querySelector("[data-workout-plan-time]").value, DEFAULT_WORKOUT_TIME);
@@ -682,6 +766,7 @@ export const workoutWidgetDefinition = {
         workoutType,
         durationMinutes,
         intensity,
+        caloriesBurned,
         recurrence: {
           type: pattern,
           interval,
@@ -711,9 +796,12 @@ export const workoutWidgetDefinition = {
     container.addEventListener("click", clickHandler);
     container.addEventListener("submit", submitWeightLogHandler);
     container.addEventListener("submit", submitLogHandler);
+    container.addEventListener("submit", submitAdHocHandler);
     form.addEventListener("submit", submitHandler);
     syncPanels();
     syncWeightPanels();
+    refreshChart();
+    window.addEventListener("resize", refreshChart);
 
     return () => {
       patternInput.removeEventListener("change", syncPanels);
@@ -722,7 +810,9 @@ export const workoutWidgetDefinition = {
       container.removeEventListener("click", clickHandler);
       container.removeEventListener("submit", submitWeightLogHandler);
       container.removeEventListener("submit", submitLogHandler);
+      container.removeEventListener("submit", submitAdHocHandler);
       form.removeEventListener("submit", submitHandler);
+      window.removeEventListener("resize", refreshChart);
     };
   },
 
@@ -735,37 +825,62 @@ export const workoutWidgetDefinition = {
       return true;
     }
 
-    if (action !== "quick-workout-complete") {
-      return false;
-    }
-
-    const taskId = actionTarget.getAttribute("data-task-id") || "";
-    const task = helpers.getStore().tasks.find((entry) => entry.id === taskId);
-    if (!task || task.status !== "open" || task.widgetTaskKind !== "workout-session") {
-      helpers.setSyncStatus("That workout task is no longer ready to complete.", "error");
+    if (action === "toggle-adhoc-workout") {
+      setWorkoutShellQuickFormOpen(widget.id, !getWorkoutShellState(widget.id).quickAdHocOpen);
+      helpers.renderAll();
       return true;
     }
 
-    stageWorkoutTaskLog(widget, task, {
-      durationMinutes: normalizeDurationMinutes(task.widgetTaskMeta?.durationMinutes || 30),
-      intensity: normalizeWorkoutIntensity(task.widgetTaskMeta?.intensity)
-    }, helpers);
+    if (action === "undo-adhoc-workout") {
+      const pendingKey = actionTarget.getAttribute("data-pending-key");
+      if (pendingKey) {
+        helpers.undoPendingAction(pendingKey, "Undid the pending ad hoc workout log.");
+      }
+      return true;
+    }
+
+    if (action === "quick-workout-complete") {
+      const taskId = actionTarget.getAttribute("data-task-id") || "";
+      const task = helpers.getStore().tasks.find((entry) => entry.id === taskId);
+      if (!task || task.status !== "open" || task.widgetTaskKind !== "workout-session") {
+        helpers.setSyncStatus("That workout task is no longer ready to complete.", "error");
+        return true;
+      }
+
+      stageWorkoutTaskLog(widget, task, {
+        durationMinutes: normalizeDurationMinutes(task.widgetTaskMeta?.durationMinutes || 30),
+        intensity: normalizeWorkoutIntensity(task.widgetTaskMeta?.intensity),
+        caloriesBurned: normalizeCaloriesBurned(task.widgetTaskMeta?.caloriesBurned ?? DEFAULT_WORKOUT_CALORIES)
+      }, helpers);
+      return true;
+    }
+
+    return false;
+  },
+
+  handleSubmit({ form, widget, helpers }) {
+    if (!form.matches("[data-workout-shell-adhoc-form]")) {
+      return false;
+    }
+    submitAdHocWorkoutForm(widget, form, helpers);
     return true;
   }
 };
 
-function stageWorkoutTaskLog(widget, task, { durationMinutes, intensity }, helpers) {
+function stageWorkoutTaskLog(widget, task, { durationMinutes, intensity, caloriesBurned }, helpers) {
   const taskId = task?.id || "";
   if (!taskId) {
     return;
   }
   const normalizedDuration = normalizeDurationMinutes(durationMinutes);
   const normalizedIntensity = normalizeWorkoutIntensity(intensity);
+  const normalizedCalories = normalizeCaloriesBurned(caloriesBurned);
   const entryTime = Date.now();
   helpers.stageWidgetAction(widget, `workout-log:${taskId}`, {
     taskId,
     durationMinutes: normalizedDuration,
     intensity: normalizedIntensity,
+    caloriesBurned: normalizedCalories,
     description: `Pending workout log for ${task.name}. Click undo within 5 seconds to cancel.`,
     commit: () => {
       const currentTask = helpers.getStore().tasks.find((entry) => entry.id === taskId);
@@ -784,6 +899,7 @@ function stageWorkoutTaskLog(widget, task, { durationMinutes, intensity }, helpe
         workoutType: currentTask.widgetTaskMeta?.workoutType || currentTask.name || "Workout",
         durationMinutes: normalizedDuration,
         intensity: normalizedIntensity,
+        caloriesBurned: normalizedCalories,
         taskId: currentTask.id,
         taskName: currentTask.name || "",
         planId: currentTask.widgetTaskMeta?.planId || "",
@@ -794,11 +910,57 @@ function stageWorkoutTaskLog(widget, task, { durationMinutes, intensity }, helpe
       widget.updatedAt = entryTime;
 
       return {
-        message: `Logged ${currentTask.name} at ${normalizedDuration} min (${normalizedIntensity}) and completed the task.`,
+        message: `Logged ${currentTask.name} at ${normalizedDuration} min (${normalizedIntensity}, ${formatCalories(normalizedCalories)}) and completed the task.`,
         tone: "info"
       };
     }
   });
+}
+
+function stageAdHocWorkoutLog(widget, values, helpers) {
+  const normalizedType = String(values.workoutType || "").trim().slice(0, 80);
+  const normalizedDuration = normalizeDurationMinutes(values.durationMinutes);
+  const normalizedIntensity = normalizeWorkoutIntensity(values.intensity);
+  const normalizedCalories = normalizeCaloriesBurned(values.caloriesBurned);
+  if (!normalizedType) {
+    helpers.setSyncStatus("Workout type is required.", "error");
+    return false;
+  }
+  if (normalizedDuration < 1) {
+    helpers.setSyncStatus("Workout duration must be at least 1 minute.", "error");
+    return false;
+  }
+  const entryTime = Date.now();
+  helpers.stageWidgetAction(widget, "workout-adhoc", {
+    workoutType: normalizedType,
+    durationMinutes: normalizedDuration,
+    intensity: normalizedIntensity,
+    caloriesBurned: normalizedCalories,
+    description: `Pending ad hoc workout log for ${normalizedType}. Click undo within 5 seconds to cancel.`,
+    commit: () => {
+      upsertWorkoutEntry(widget, {
+        id: helpers.createId(),
+        at: entryTime,
+        workoutType: normalizedType,
+        durationMinutes: normalizedDuration,
+        intensity: normalizedIntensity,
+        caloriesBurned: normalizedCalories,
+        taskId: "",
+        taskName: "",
+        planId: "",
+        scheduledDate: "",
+        scheduledTime: "",
+        source: "extra"
+      });
+      widget.updatedAt = entryTime;
+      setWorkoutShellQuickFormOpen(widget.id, false);
+      return {
+        message: `Logged ${normalizedType} for ${normalizedDuration} min (${normalizedIntensity}, ${formatCalories(normalizedCalories)}). Unscheduled workout logs do not award points.`,
+        tone: "info"
+      };
+    }
+  });
+  return true;
 }
 
 function syncWorkoutOwnedTaskTemplates(widget, store, helpers) {
@@ -900,6 +1062,7 @@ function buildWorkoutSessionTemplates(widget, plan, helpers, store) {
         workoutType: plan.workoutType,
         durationMinutes: plan.durationMinutes,
         intensity: plan.intensity,
+        caloriesBurned: plan.caloriesBurned,
         recurrenceType: recurrence.type,
         slotKey: ownerTaskKey
       },
@@ -1014,7 +1177,7 @@ function buildTaskRecurrenceFromWorkoutSlot(recurrence, slot) {
 }
 
 function buildWorkoutTaskDetails(plan) {
-  return `Created by Workout Coach. Planned duration ${plan.durationMinutes} min. Intensity: ${plan.intensity}.`;
+  return `Created by Workout Coach. Planned duration ${plan.durationMinutes} min. Intensity: ${plan.intensity}. Calories burned: ${normalizeCaloriesBurned(plan.caloriesBurned)}.`;
 }
 
 function durationToTaskLength(durationMinutes) {
@@ -1134,6 +1297,7 @@ function normalizeWorkoutPlans(value) {
       workoutType: typeof plan.workoutType === "string" ? plan.workoutType.trim().slice(0, 80) : "",
       durationMinutes: normalizeDurationMinutes(plan.durationMinutes),
       intensity: normalizeWorkoutIntensity(plan.intensity),
+      caloriesBurned: normalizeCaloriesBurned(plan.caloriesBurned ?? DEFAULT_WORKOUT_CALORIES),
       recurrence: normalizeWorkoutRecurrence(plan.recurrence),
       categoryKey: typeof plan.categoryKey === "string" ? plan.categoryKey : "health",
       points: normalizePoints(plan.points),
@@ -1163,6 +1327,7 @@ function normalizeWorkoutEntries(value) {
       workoutType: typeof entry.workoutType === "string" ? entry.workoutType.trim().slice(0, 80) : "",
       durationMinutes: normalizeDurationMinutes(entry.durationMinutes),
       intensity: normalizeWorkoutIntensity(entry.intensity),
+      caloriesBurned: normalizeCaloriesBurned(entry.caloriesBurned),
       taskId: typeof entry.taskId === "string" ? entry.taskId : "",
       taskName: typeof entry.taskName === "string" ? entry.taskName.trim().slice(0, 120) : "",
       planId: typeof entry.planId === "string" ? entry.planId : "",
@@ -1245,6 +1410,14 @@ function normalizeDurationMinutes(value) {
     return 0;
   }
   return Math.round(number);
+}
+
+function normalizeCaloriesBurned(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0) {
+    return 0;
+  }
+  return Math.min(5000, Math.round(number));
 }
 
 function normalizePoints(value) {
@@ -1335,14 +1508,15 @@ function formatPendingWorkoutSummary(pendingAction) {
     return "";
   }
   const type = pendingAction.intensity ? humanizeIntensity(pendingAction.intensity) : "Workout";
-  return `${pendingAction.durationMinutes || 0} min · ${type}`;
+  return `${pendingAction.durationMinutes || 0} min · ${type} · ${formatCalories(pendingAction.caloriesBurned)}`;
 }
 
 function describeWorkoutEntry(entry) {
   const type = entry.workoutType || "Workout";
   const duration = entry.durationMinutes ? `${entry.durationMinutes} min` : "duration TBD";
   const intensity = humanizeIntensity(entry.intensity || DEFAULT_WORKOUT_INTENSITY);
-  return `${type} · ${duration} · ${intensity}`;
+  const calories = formatCalories(entry.caloriesBurned);
+  return `${type} · ${duration} · ${intensity} · ${calories}`;
 }
 
 function formatScheduledWorkoutSlot(entry) {
@@ -1363,6 +1537,7 @@ function createPlanDraft() {
     workoutType: "",
     durationMinutes: 30,
     intensity: DEFAULT_WORKOUT_INTENSITY,
+    caloriesBurned: DEFAULT_WORKOUT_CALORIES,
     recurrence: {
       type: "daily",
       interval: 1,
@@ -1469,6 +1644,7 @@ function renderWorkoutCompletionCard(task, widgetId, escapeHtml, getPendingActio
   const pendingAction = getPendingActionForWidget?.(widgetId, `workout-log:${task.id}`) || null;
   const durationMinutes = normalizeDurationMinutes(task.widgetTaskMeta?.durationMinutes || 30);
   const intensity = normalizeWorkoutIntensity(task.widgetTaskMeta?.intensity);
+  const caloriesBurned = normalizeCaloriesBurned(task.widgetTaskMeta?.caloriesBurned ?? DEFAULT_WORKOUT_CALORIES);
   const disabled = pendingAction ? "disabled" : "";
 
   return `
@@ -1493,6 +1669,10 @@ function renderWorkoutCompletionCard(task, widgetId, escapeHtml, getPendingActio
                 <option value="${option.value}" ${intensity === option.value ? "selected" : ""}>${option.label}</option>
               `).join("")}
             </select>
+          </label>
+          <label>
+            <span>Calories burned</span>
+            <input type="number" min="0" max="5000" step="1" value="${caloriesBurned}" data-workout-log-calories ${disabled} />
           </label>
         </div>
         <div class="widget-actions workout-inline-actions">
@@ -1545,8 +1725,9 @@ function describeWorkoutPlan(plan) {
   const workoutType = plan.workoutType || plan.name || "Workout";
   const duration = plan.durationMinutes ? `${plan.durationMinutes} min` : "Duration TBD";
   const intensity = humanizeIntensity(plan.intensity);
+  const calories = formatCalories(plan.caloriesBurned);
   const recurrence = describeWorkoutRecurrence(plan.recurrence);
-  return `${workoutType} · ${duration} · ${intensity} · ${recurrence}`;
+  return `${workoutType} · ${duration} · ${intensity} · ${calories} · ${recurrence}`;
 }
 
 function humanizeIntensity(value) {
@@ -1743,7 +1924,8 @@ function buildWorkoutProgressSummary(task, period) {
   }
   const duration = task.widgetTaskMeta?.durationMinutes ? `${task.widgetTaskMeta.durationMinutes} min` : "Duration TBD";
   const intensity = task.widgetTaskMeta?.intensity || "moderate";
-  return `${duration} · ${intensity}`;
+  const calories = formatCalories(task.widgetTaskMeta?.caloriesBurned ?? DEFAULT_WORKOUT_CALORIES);
+  return `${duration} · ${intensity} · ${calories}`;
 }
 
 function formatProgressDueText(task) {
@@ -1783,6 +1965,7 @@ function upsertWorkoutEntry(widget, entry) {
     workoutType: typeof entry.workoutType === "string" ? entry.workoutType.trim().slice(0, 80) : "",
     durationMinutes: normalizeDurationMinutes(entry.durationMinutes),
     intensity: normalizeWorkoutIntensity(entry.intensity),
+    caloriesBurned: normalizeCaloriesBurned(entry.caloriesBurned),
     taskId: typeof entry.taskId === "string" ? entry.taskId : "",
     taskName: typeof entry.taskName === "string" ? entry.taskName.trim().slice(0, 120) : "",
     planId: typeof entry.planId === "string" ? entry.planId : "",
@@ -1868,6 +2051,261 @@ function collectAdditionalTimes(container) {
     .filter(Boolean);
   const normalized = normalizeAdditionalTimes(values);
   return normalized.length === values.length ? normalized : null;
+}
+
+function getWorkoutShellState(widgetId) {
+  if (!workoutShellUiState.has(widgetId)) {
+    workoutShellUiState.set(widgetId, { quickAdHocOpen: false });
+  }
+  return workoutShellUiState.get(widgetId);
+}
+
+function setWorkoutShellQuickFormOpen(widgetId, quickAdHocOpen) {
+  workoutShellUiState.set(widgetId, {
+    ...getWorkoutShellState(widgetId),
+    quickAdHocOpen: Boolean(quickAdHocOpen)
+  });
+}
+
+function renderShellAdHocWorkoutForm(escapeHtml) {
+  return renderAdHocWorkoutForm({
+    escapeHtml,
+    pendingAction: null,
+    formAttribute: "data-workout-shell-adhoc-form",
+    submitLabel: "Log workout",
+    includeHeading: false,
+    compact: true
+  });
+}
+
+function renderAdHocWorkoutForm({ escapeHtml, pendingAction, formAttribute, submitLabel, includeHeading, compact = false }) {
+  const disabled = pendingAction ? "disabled" : "";
+  return `
+    <form class="workout-log-form ${compact ? "workout-shell-form" : ""}" ${formAttribute}>
+      ${includeHeading ? "<h4>Ad hoc workout</h4>" : ""}
+      <div class="quick-add-grid">
+        <label class="${compact ? "quick-add-title" : ""}">
+          <span>Workout type</span>
+          <input type="text" maxlength="80" placeholder="Run, lift, yoga..." data-workout-adhoc-type ${disabled} />
+        </label>
+        <label>
+          <span>Duration (minutes)</span>
+          <input type="number" min="1" max="600" step="1" value="30" data-workout-adhoc-duration ${disabled} />
+        </label>
+        <label>
+          <span>Intensity</span>
+          <select data-workout-adhoc-intensity ${disabled}>
+            ${WORKOUT_INTENSITY_OPTIONS.map((option) => `
+              <option value="${option.value}" ${option.value === DEFAULT_WORKOUT_INTENSITY ? "selected" : ""}>${option.label}</option>
+            `).join("")}
+          </select>
+        </label>
+        <label>
+          <span>Calories burned</span>
+          <input type="number" min="0" max="5000" step="1" value="${DEFAULT_WORKOUT_CALORIES}" data-workout-adhoc-calories ${disabled} />
+        </label>
+      </div>
+      <div class="widget-actions workout-inline-actions">
+        ${pendingAction
+          ? `<button type="button" class="ghost-button" data-workout-adhoc-undo data-pending-key="${pendingAction.key}">Undo</button>`
+          : `<button type="submit" class="primary-button">${escapeHtml(submitLabel)}</button>`}
+      </div>
+    </form>
+  `;
+}
+
+function submitAdHocWorkoutForm(widget, form, helpers) {
+  const workoutType = String(form.querySelector("[data-workout-adhoc-type]")?.value || "").trim().slice(0, 80);
+  const durationMinutes = normalizeDurationMinutes(form.querySelector("[data-workout-adhoc-duration]")?.value);
+  const intensity = normalizeWorkoutIntensity(form.querySelector("[data-workout-adhoc-intensity]")?.value);
+  const caloriesBurned = normalizeCaloriesBurned(form.querySelector("[data-workout-adhoc-calories]")?.value);
+  const staged = stageAdHocWorkoutLog(widget, { workoutType, durationMinutes, intensity, caloriesBurned }, helpers);
+  if (staged && form.matches("[data-workout-shell-adhoc-form]")) {
+    setWorkoutShellQuickFormOpen(widget.id, false);
+    helpers.renderAll();
+  }
+}
+
+function formatCalories(value) {
+  return `${normalizeCaloriesBurned(value)} cal`;
+}
+
+function sumWorkoutCaloriesForCurrentWeek(entries, now = new Date()) {
+  const weekStart = startOfWeek(now);
+  const weekEnd = addDays(weekStart, 6);
+  return normalizeWorkoutEntries(entries)
+    .filter((entry) => {
+      const date = toDateString(new Date(entry.at));
+      return date >= weekStart && date <= weekEnd;
+    })
+    .reduce((sum, entry) => sum + normalizeCaloriesBurned(entry.caloriesBurned), 0);
+}
+
+function formatPendingAdHocWorkoutSummary(pendingAction) {
+  if (!pendingAction) {
+    return "";
+  }
+  return `${pendingAction.workoutType || "Workout"} · ${pendingAction.durationMinutes || 0} min · ${humanizeIntensity(pendingAction.intensity)} · ${formatCalories(pendingAction.caloriesBurned)}`;
+}
+
+function buildCombinedWorkoutHistory(widget) {
+  const workoutEntries = normalizeWorkoutEntries(widget?.data?.workoutEntries).map((entry) => ({
+    at: entry.at,
+    type: "calories",
+    value: normalizeCaloriesBurned(entry.caloriesBurned),
+    label: entry.workoutType || entry.taskName || "Workout"
+  }));
+  const weightEntries = normalizeWeightEntries(widget?.data?.weightEntries).map((entry) => ({
+    at: entry.at,
+    type: "weight",
+    value: normalizeWeightValue(entry.value),
+    label: entry.taskName || "Weight"
+  }));
+  return [...workoutEntries, ...weightEntries]
+    .filter((entry) => entry.value > 0)
+    .sort((left, right) => left.at - right.at);
+}
+
+function drawWorkoutHistoryChart(canvas, emptyState, entries, weightUnit) {
+  const ctx = canvas.getContext("2d");
+  const bounds = canvas.getBoundingClientRect();
+  const width = Math.max(280, Math.floor(bounds.width || canvas.clientWidth || 720));
+  const height = Math.max(260, Math.floor(bounds.height || 280));
+  const ratio = window.devicePixelRatio || 1;
+  canvas.width = Math.floor(width * ratio);
+  canvas.height = Math.floor(height * ratio);
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+
+  if (!entries.length) {
+    canvas.classList.add("hidden");
+    emptyState.classList.remove("hidden");
+    return;
+  }
+
+  canvas.classList.remove("hidden");
+  emptyState.classList.add("hidden");
+
+  const padding = { top: 24, right: 56, bottom: 42, left: 56 };
+  const chartWidth = width - padding.left - padding.right;
+  const chartHeight = height - padding.top - padding.bottom;
+  const minTime = entries[0].at;
+  const maxTime = entries[entries.length - 1].at;
+  const timeSpan = Math.max(maxTime - minTime, 1);
+  const calorieValues = entries.filter((entry) => entry.type === "calories").map((entry) => entry.value);
+  const weightValues = entries.filter((entry) => entry.type === "weight").map((entry) => entry.value);
+  const calorieMax = Math.max(...calorieValues, 100);
+  const weightMin = weightValues.length ? Math.min(...weightValues) : 0;
+  const weightMax = weightValues.length ? Math.max(...weightValues) : 10;
+  const weightSpan = Math.max(weightMax - weightMin, 1);
+
+  ctx.strokeStyle = "rgba(124, 146, 173, 0.18)";
+  ctx.lineWidth = 1;
+  for (let index = 0; index <= 4; index += 1) {
+    const y = padding.top + (chartHeight / 4) * index;
+    ctx.beginPath();
+    ctx.moveTo(padding.left, y);
+    ctx.lineTo(width - padding.right, y);
+    ctx.stroke();
+  }
+
+  ctx.strokeStyle = "rgba(37, 50, 67, 0.78)";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(padding.left, padding.top);
+  ctx.lineTo(padding.left, height - padding.bottom);
+  ctx.lineTo(width - padding.right, height - padding.bottom);
+  ctx.stroke();
+
+  const caloriePoints = entries
+    .filter((entry) => entry.type === "calories")
+    .map((entry) => ({
+      x: padding.left + ((entry.at - minTime) / timeSpan) * chartWidth,
+      y: padding.top + chartHeight - (entry.value / calorieMax) * chartHeight,
+      value: entry.value
+    }));
+  const weightPoints = entries
+    .filter((entry) => entry.type === "weight")
+    .map((entry) => ({
+      x: padding.left + ((entry.at - minTime) / timeSpan) * chartWidth,
+      y: padding.top + chartHeight - ((entry.value - weightMin) / weightSpan) * chartHeight,
+      value: entry.value
+    }));
+
+  drawWorkoutSeries(ctx, caloriePoints, "#ff8c42", "rgba(255, 140, 66, 0.18)");
+  drawWorkoutSeries(ctx, weightPoints, "#4ea8de", "rgba(78, 168, 222, 0.18)");
+
+  ctx.fillStyle = "rgba(118, 138, 164, 0.92)";
+  ctx.font = "12px Sora, sans-serif";
+  ctx.textAlign = "right";
+  ctx.fillText("0 cal", padding.left - 10, height - padding.bottom + 4);
+  ctx.fillText(formatCalories(calorieMax), padding.left - 10, padding.top + 4);
+  ctx.textAlign = "left";
+  ctx.fillText(`${trimTrailingZero(weightMin)} ${weightUnit}`, width - padding.right + 10, height - padding.bottom + 4);
+  ctx.fillText(`${trimTrailingZero(weightMax)} ${weightUnit}`, width - padding.right + 10, padding.top + 4);
+
+  drawWorkoutChartLabels(ctx, entries, padding, chartWidth, height);
+}
+
+function drawWorkoutSeries(ctx, points, strokeStyle, fillStyle) {
+  if (!points.length) {
+    return;
+  }
+  ctx.strokeStyle = strokeStyle;
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  points.forEach((point, index) => {
+    if (index === 0) {
+      ctx.moveTo(point.x, point.y);
+    } else {
+      ctx.lineTo(point.x, point.y);
+    }
+  });
+  ctx.stroke();
+
+  points.forEach((point) => {
+    ctx.fillStyle = fillStyle;
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = strokeStyle;
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+function drawWorkoutChartLabels(ctx, entries, padding, chartWidth, height) {
+  if (!entries.length) {
+    return;
+  }
+  const sample = [entries[0]];
+  if (entries.length > 2) {
+    sample.push(entries[Math.floor(entries.length / 2)]);
+  }
+  if (entries.length > 1) {
+    sample.push(entries[entries.length - 1]);
+  }
+  const seen = new Set();
+  ctx.fillStyle = "rgba(118, 138, 164, 0.92)";
+  ctx.font = "12px Sora, sans-serif";
+  ctx.textAlign = "center";
+  const minTime = entries[0].at;
+  const maxTime = entries[entries.length - 1].at;
+  const timeSpan = Math.max(maxTime - minTime, 1);
+  sample.forEach((entry) => {
+    if (seen.has(entry.at)) {
+      return;
+    }
+    seen.add(entry.at);
+    const x = padding.left + ((entry.at - minTime) / timeSpan) * chartWidth;
+    ctx.fillText(formatChartDate(entry.at), x, height - 12);
+  });
+}
+
+function formatChartDate(timestamp) {
+  const date = new Date(timestamp);
+  return `${WEEKDAY_OPTIONS[date.getDay()]?.label || ""} ${date.getMonth() + 1}/${date.getDate()}`;
 }
 
 function compareWorkoutPlanDisplay(left, right) {

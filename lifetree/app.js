@@ -502,6 +502,7 @@ openTreeStyleButton.addEventListener("click", openTreeStyle);
 openTreeDetailButton.addEventListener("click", openTreeDetail);
 widgetSlots.forEach((slot) => {
   slot.addEventListener("click", handleWidgetSlotClick);
+  slot.addEventListener("submit", handleWidgetSlotSubmit);
 });
 document.addEventListener("keydown", handleGlobalKeydown);
 mobileTaskDeskQuery.addEventListener("change", applyTaskDeskPaneState);
@@ -1282,6 +1283,43 @@ function handleWidgetSlotClick(event) {
       return;
     }
     removeWidget(widget);
+  }
+}
+
+function handleWidgetSlotSubmit(event) {
+  const slot = event.currentTarget;
+  const slotIndex = Number(slot.getAttribute("data-slot-index"));
+  const formTarget = event.target.closest("form");
+  if (!formTarget) {
+    return;
+  }
+
+  const widget = store.widgets.find((item) => item.slotIndex === slotIndex);
+  const definition = getWidgetDefinition(widget?.type);
+  if (!widget || !definition?.handleSubmit) {
+    return;
+  }
+
+  if (definition.handleSubmit({
+    form: formTarget,
+    widget,
+    helpers: {
+      getStore: () => store,
+      createId,
+      applyAutoSkipRules,
+      completeNextTaskFromWidget,
+      completeWidgetTaskById,
+      openWidgetDetail,
+      stageWidgetAction,
+      getPendingActionForWidget,
+      undoPendingAction,
+      reconcileRecurringSeries,
+      persistStore,
+      renderAll,
+      setSyncStatus
+    }
+  })) {
+    event.preventDefault();
   }
 }
 
