@@ -29,6 +29,7 @@
             <span class="hero-clock-meta" id="heroClockMeta">Local time</span>
           </div>
         </div>
+        <button type="button" class="ghost-button" id="openNotifications">Notifications</button>
         <button type="button" class="ghost-button" id="openSettings">Settings</button>
         <button type="button" class="ghost-button hidden" id="openDeveloper">Developer</button>
         <button type="button" class="ghost-button" id="toggleHero">Collapse banner</button>
@@ -674,6 +675,126 @@
         <div class="form-actions">
           <button type="submit" class="primary-button">Save settings</button>
           <button type="button" class="ghost-button" id="cancelSettings">Cancel</button>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <div id="notificationsModal" class="widget-detail-modal hidden" aria-hidden="true">
+    <div class="task-desk-backdrop" id="closeNotificationsBackdrop"></div>
+    <section class="widget-detail-panel notifications-panel" role="dialog" aria-modal="true" aria-labelledby="notificationsTitle">
+      <div class="task-desk-header">
+        <div>
+          <p class="eyebrow">Notifications</p>
+          <h2 id="notificationsTitle">Email summaries</h2>
+          <p class="sync-status">Configure when Lifetree should send summaries, what they should include, and preview the current email before backend delivery is wired in.</p>
+        </div>
+        <button type="button" class="ghost-button" id="closeNotifications">Close</button>
+      </div>
+      <form id="notificationsForm" class="notifications-form">
+        <section class="notifications-section">
+          <div class="notifications-section-header">
+            <div>
+              <p class="eyebrow">Delivery</p>
+              <h3>Email destination</h3>
+            </div>
+          </div>
+          <label class="recurrence-toggle">
+            <input id="notificationsSummaryEnabled" name="notificationsSummaryEnabled" type="checkbox" />
+            <span class="settings-option-copy">
+              <strong>Enable email summaries</strong>
+              <small>Keep your preferred summary cadence saved in Lifetree.</small>
+            </span>
+          </label>
+          <label>
+            <span>Recipient email</span>
+            <input id="notificationsRecipientEmail" name="notificationsRecipientEmail" type="email" maxlength="160" placeholder="name@example.com" />
+          </label>
+          <div class="split">
+            <label>
+              <span>Frequency</span>
+              <select id="notificationsFrequency" name="notificationsFrequency">
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+              </select>
+            </label>
+            <label>
+              <span>Send time</span>
+              <input id="notificationsSendTime" name="notificationsSendTime" type="time" value="20:00" />
+            </label>
+          </div>
+          <label id="notificationsWeekdayRow">
+            <span>Weekly send day</span>
+            <select id="notificationsWeekday" name="notificationsWeekday">
+              <option value="0">Sunday</option>
+              <option value="1">Monday</option>
+              <option value="2">Tuesday</option>
+              <option value="3">Wednesday</option>
+              <option value="4">Thursday</option>
+              <option value="5">Friday</option>
+              <option value="6">Saturday</option>
+            </select>
+          </label>
+        </section>
+
+        <section class="notifications-section">
+          <div class="notifications-section-header">
+            <div>
+              <p class="eyebrow">Content</p>
+              <h3>Include in the summary</h3>
+            </div>
+          </div>
+          <div class="notifications-toggles">
+            <label class="recurrence-toggle">
+              <input id="notificationsIncludeOverdue" name="notificationsIncludeOverdue" type="checkbox" checked />
+              <span>Overdue tasks</span>
+            </label>
+            <label class="recurrence-toggle">
+              <input id="notificationsIncludeDueSoon" name="notificationsIncludeDueSoon" type="checkbox" checked />
+              <span>Due soon</span>
+            </label>
+            <label class="recurrence-toggle">
+              <input id="notificationsIncludeCompleted" name="notificationsIncludeCompleted" type="checkbox" checked />
+              <span>Recently completed</span>
+            </label>
+            <label class="recurrence-toggle">
+              <input id="notificationsIncludeRecurringProgress" name="notificationsIncludeRecurringProgress" type="checkbox" checked />
+              <span>Recurring progress</span>
+            </label>
+            <label class="recurrence-toggle">
+              <input id="notificationsIncludeTreePoints" name="notificationsIncludeTreePoints" type="checkbox" checked />
+              <span>Tree and points</span>
+            </label>
+            <label class="recurrence-toggle">
+              <input id="notificationsIncludeWidgetHighlights" name="notificationsIncludeWidgetHighlights" type="checkbox" checked />
+              <span>Widget highlights</span>
+            </label>
+          </div>
+        </section>
+
+        <section class="notifications-section">
+          <div class="notifications-section-header">
+            <div>
+              <p class="eyebrow">Preview</p>
+              <h3>Current email preview</h3>
+            </div>
+          </div>
+          <div id="notificationsPreview" class="notifications-preview"></div>
+        </section>
+
+        <section class="notifications-section">
+          <div class="notifications-section-header">
+            <div>
+              <p class="eyebrow">History</p>
+              <h3>Recent sends</h3>
+            </div>
+          </div>
+          <div id="notificationsHistory" class="notifications-history"></div>
+        </section>
+
+        <div class="form-actions">
+          <button type="submit" class="primary-button">Save notifications</button>
+          <button type="button" class="ghost-button" id="cancelNotifications">Cancel</button>
         </div>
       </form>
     </section>

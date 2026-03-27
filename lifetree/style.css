@@ -74,7 +74,11 @@ body[data-theme="dark"] .skip-panel,
 body[data-theme="dark"] .category-panel,
 body[data-theme="dark"] .dependency-panel,
 body[data-theme="dark"] .category-item,
-body[data-theme="dark"] .sync-meta-card {
+body[data-theme="dark"] .sync-meta-card,
+body[data-theme="dark"] .notifications-section,
+body[data-theme="dark"] .notifications-preview-card,
+body[data-theme="dark"] .notifications-preview-meta,
+body[data-theme="dark"] .notifications-history-item {
   background: rgba(15, 24, 38, 0.9);
   border-color: var(--line);
   box-shadow: var(--shadow);
@@ -347,7 +351,11 @@ body[data-theme="dark"] .tree-point-pill {
 body[data-theme="dark"] .tree-detail-stat,
 body[data-theme="dark"] .tree-detail-card,
 body[data-theme="dark"] .tree-detail-section,
-body[data-theme="dark"] .tree-detail-source-item {
+body[data-theme="dark"] .tree-detail-source-item,
+body[data-theme="dark"] .notifications-section,
+body[data-theme="dark"] .notifications-preview-card,
+body[data-theme="dark"] .notifications-preview-meta,
+body[data-theme="dark"] .notifications-history-item {
   background: rgba(18, 28, 42, 0.94);
   border-color: rgba(214, 228, 246, 0.14);
   box-shadow: var(--shadow);
@@ -355,14 +363,20 @@ body[data-theme="dark"] .tree-detail-source-item {
 
 body[data-theme="dark"] .tree-detail-stat strong,
 body[data-theme="dark"] .tree-detail-section-header h3,
-body[data-theme="dark"] .tree-detail-source-heading strong {
+body[data-theme="dark"] .tree-detail-source-heading strong,
+body[data-theme="dark"] .notifications-section-header h3,
+body[data-theme="dark"] .notifications-preview-card h4,
+body[data-theme="dark"] .notifications-preview-meta strong,
+body[data-theme="dark"] .notifications-history-item strong {
   color: var(--ink);
 }
 
 body[data-theme="dark"] .tree-detail-stat span,
 body[data-theme="dark"] .tree-detail-card p,
 body[data-theme="dark"] .tree-detail-source-meta,
-body[data-theme="dark"] .tree-detail-section .sync-status {
+body[data-theme="dark"] .tree-detail-section .sync-status,
+body[data-theme="dark"] .notifications-preview-section ul,
+body[data-theme="dark"] .notifications-history-item .sync-status {
   color: var(--muted);
 }
 
@@ -457,6 +471,7 @@ body.task-desk-open,
 body.widget-detail-open,
 body.tree-detail-open,
 body.quick-add-open,
+body.notifications-open,
 body.settings-open,
 body.tree-style-open,
 body.developer-open {
@@ -1477,6 +1492,12 @@ body.developer-open {
   max-height: calc(100dvh - 24px);
 }
 
+.notifications-panel {
+  width: min(860px, calc(100vw - 24px));
+  height: auto;
+  max-height: calc(100dvh - 24px);
+}
+
 .settings-form {
   display: grid;
   gap: 18px;
@@ -1487,6 +1508,106 @@ body.developer-open {
   overscroll-behavior: contain;
   padding-right: 6px;
   scrollbar-gutter: stable;
+}
+
+.notifications-form {
+  display: grid;
+  gap: 18px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding-right: 6px;
+  scrollbar-gutter: stable;
+}
+
+.notifications-section {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border-radius: 24px;
+  background: rgba(255, 250, 243, 0.9);
+  border: 1px solid rgba(37, 50, 67, 0.1);
+  box-shadow: var(--shadow);
+}
+
+.notifications-section-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: start;
+}
+
+.notifications-section-header h3,
+.notifications-preview-card h4 {
+  margin: 0;
+}
+
+.notifications-toggles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 14px;
+}
+
+.notifications-preview {
+  display: grid;
+  gap: 12px;
+}
+
+.notifications-preview-header {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.notifications-preview-meta {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.68);
+  border: 1px solid rgba(37, 50, 67, 0.1);
+}
+
+.notifications-preview-card {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(37, 50, 67, 0.1);
+}
+
+.notifications-preview-section {
+  display: grid;
+  gap: 8px;
+}
+
+.notifications-preview-section ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+}
+
+.notifications-preview-section li + li {
+  margin-top: 6px;
+}
+
+.notifications-history-list {
+  display: grid;
+  gap: 10px;
+}
+
+.notifications-history-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: start;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.68);
+  border: 1px solid rgba(37, 50, 67, 0.1);
 }
 
 .settings-form label {
@@ -3604,8 +3725,13 @@ textarea {
   .toolbar-group,
   .summary-row,
   .canopy-columns,
+  .notifications-preview-header,
   .quick-add-grid,
   .split {
+    grid-template-columns: 1fr;
+  }
+
+  .notifications-toggles {
     grid-template-columns: 1fr;
   }
 
@@ -3614,7 +3740,8 @@ textarea {
   }
 
   .history-panel-header,
-  .history-entry {
+  .history-entry,
+  .notifications-history-item {
     flex-direction: column;
     align-items: start;
   }

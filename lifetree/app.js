@@ -39,6 +39,14 @@ import {
   renderDeveloperPointsSummary as renderDeveloperPointsSummaryBase
 } from "./modules/points.js";
 import {
+  choosePreferredNotifications,
+  normalizeEmailSummaryConfig,
+  normalizeNotifications,
+  normalizeRecipientEmail,
+  normalizeWeekday,
+  normalizeNotificationTime
+} from "./modules/notifications.js";
+import {
   isDarkModeActive,
   choosePreferredProfile,
   normalizeThemeTime,
@@ -137,6 +145,7 @@ const toggleHeroButton = document.getElementById("toggleHero");
 const heroWelcome = document.getElementById("heroWelcome");
 const heroClock = document.getElementById("heroClock");
 const heroClockMeta = document.getElementById("heroClockMeta");
+const openNotificationsButton = document.getElementById("openNotifications");
 const openSettingsButton = document.getElementById("openSettings");
 const canopyColumns = document.getElementById("canopyColumns");
 const openQuickAddButton = document.getElementById("openQuickAdd");
@@ -189,6 +198,25 @@ const settingsAutoDarkModeStartInput = document.getElementById("settingsAutoDark
 const settingsAutoDarkModeEndInput = document.getElementById("settingsAutoDarkModeEnd");
 const settingsHelpTextEnabledInput = document.getElementById("settingsHelpTextEnabled");
 const settingsHelpTooltipDelayInput = document.getElementById("settingsHelpTooltipDelay");
+const notificationsModal = document.getElementById("notificationsModal");
+const closeNotificationsButton = document.getElementById("closeNotifications");
+const closeNotificationsBackdrop = document.getElementById("closeNotificationsBackdrop");
+const cancelNotificationsButton = document.getElementById("cancelNotifications");
+const notificationsForm = document.getElementById("notificationsForm");
+const notificationsSummaryEnabledInput = document.getElementById("notificationsSummaryEnabled");
+const notificationsRecipientEmailInput = document.getElementById("notificationsRecipientEmail");
+const notificationsFrequencyInput = document.getElementById("notificationsFrequency");
+const notificationsSendTimeInput = document.getElementById("notificationsSendTime");
+const notificationsWeekdayInput = document.getElementById("notificationsWeekday");
+const notificationsWeekdayRow = document.getElementById("notificationsWeekdayRow");
+const notificationsIncludeOverdueInput = document.getElementById("notificationsIncludeOverdue");
+const notificationsIncludeDueSoonInput = document.getElementById("notificationsIncludeDueSoon");
+const notificationsIncludeCompletedInput = document.getElementById("notificationsIncludeCompleted");
+const notificationsIncludeRecurringProgressInput = document.getElementById("notificationsIncludeRecurringProgress");
+const notificationsIncludeTreePointsInput = document.getElementById("notificationsIncludeTreePoints");
+const notificationsIncludeWidgetHighlightsInput = document.getElementById("notificationsIncludeWidgetHighlights");
+const notificationsPreview = document.getElementById("notificationsPreview");
+const notificationsHistory = document.getElementById("notificationsHistory");
 const taskDeskModal = document.getElementById("taskDeskModal");
 const openTaskDeskButton = document.getElementById("openTaskDesk");
 const closeTaskDeskButton = document.getElementById("closeTaskDesk");
@@ -475,6 +503,7 @@ window.setInterval(renderTemporalUi, TEMPORAL_REFRESH_MS);
 applyTaskDeskPaneState();
 
 toggleHeroButton.addEventListener("click", toggleHeroCollapsed);
+openNotificationsButton.addEventListener("click", openNotifications);
 openSettingsButton.addEventListener("click", openSettings);
 openQuickAddButton.addEventListener("click", openQuickAdd);
 openTaskDeskButton.addEventListener("click", () => handleOpenTaskDesk("composer"));
@@ -580,6 +609,12 @@ settingsForm.addEventListener("submit", handleSettingsSubmit);
 settingsAutosaveEnabledInput.addEventListener("change", syncSettingsAutosaveInputs);
 settingsDarkModeEnabledInput.addEventListener("change", handleThemeSettingModeChange);
 settingsAutoDarkModeEnabledInput.addEventListener("change", handleThemeSettingModeChange);
+closeNotificationsButton.addEventListener("click", closeNotifications);
+closeNotificationsBackdrop.addEventListener("click", closeNotifications);
+cancelNotificationsButton.addEventListener("click", closeNotifications);
+notificationsForm.addEventListener("submit", handleNotificationsSubmit);
+notificationsForm.addEventListener("input", renderNotificationsIfOpen);
+notificationsForm.addEventListener("change", handleNotificationsFormChange);
 closeTreeDetailButton.addEventListener("click", closeTreeDetail);
 closeTreeDetailBackdrop.addEventListener("click", closeTreeDetail);
 closeTreeStyleButton.addEventListener("click", closeTreeStyle);
@@ -751,6 +786,11 @@ function handleGlobalKeydown(event) {
     return;
   }
 
+  if (isNotificationsOpen()) {
+    closeNotifications();
+    return;
+  }
+
   if (isSettingsOpen()) {
     closeSettings();
     return;
@@ -848,6 +888,9 @@ function isCanopyDetailOpen() {
 }
 
 function openSettings() {
+  if (isNotificationsOpen()) {
+    closeNotifications();
+  }
   const profile = normalizeProfile(store.profile);
   settingsDisplayNameInput.value = profile.displayName;
   settingsAutosaveEnabledInput.checked = profile.autosaveEnabled;
@@ -864,6 +907,32 @@ function openSettings() {
   settingsModal.setAttribute("aria-hidden", "false");
   document.body.classList.add("settings-open");
   window.setTimeout(() => settingsDisplayNameInput.focus(), 0);
+}
+
+function openNotifications() {
+  if (isSettingsOpen()) {
+    closeSettings();
+  }
+  const notifications = normalizeNotifications(store.notifications);
+  const summaries = notifications.email.summaries;
+  const include = summaries.include;
+  notificationsSummaryEnabledInput.checked = summaries.enabled;
+  notificationsRecipientEmailInput.value = notifications.email.recipientEmail || authState.user?.email || "";
+  notificationsSendTimeInput.value = summaries.sendTime;
+  notificationsFrequencyInput.value = summaries.frequency;
+  notificationsWeekdayInput.value = String(summaries.weekday);
+  notificationsIncludeOverdueInput.checked = include.overdue;
+  notificationsIncludeDueSoonInput.checked = include.dueSoon;
+  notificationsIncludeCompletedInput.checked = include.completed;
+  notificationsIncludeRecurringProgressInput.checked = include.recurringProgress;
+  notificationsIncludeTreePointsInput.checked = include.treePoints;
+  notificationsIncludeWidgetHighlightsInput.checked = include.widgetHighlights;
+  syncNotificationsInputs();
+  notificationsModal.classList.remove("hidden");
+  notificationsModal.setAttribute("aria-hidden", "false");
+  document.body.classList.add("notifications-open");
+  renderNotificationsIfOpen();
+  window.setTimeout(() => notificationsRecipientEmailInput.focus(), 0);
 }
 
 function closeQuickAdd() {
@@ -884,6 +953,16 @@ function closeSettings() {
 
 function isSettingsOpen() {
   return !settingsModal.classList.contains("hidden");
+}
+
+function closeNotifications() {
+  notificationsModal.classList.add("hidden");
+  notificationsModal.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("notifications-open");
+}
+
+function isNotificationsOpen() {
+  return !notificationsModal.classList.contains("hidden");
 }
 
 function closeTreeDetail() {
@@ -1028,6 +1107,112 @@ function syncSettingsThemeInputs() {
   const enabled = settingsAutoDarkModeEnabledInput.checked;
   settingsAutoDarkModeStartInput.disabled = !enabled;
   settingsAutoDarkModeEndInput.disabled = !enabled;
+}
+
+function syncNotificationsInputs() {
+  const weekly = notificationsFrequencyInput.value === "weekly";
+  notificationsWeekdayRow.classList.toggle("hidden", !weekly);
+  notificationsWeekdayInput.disabled = !weekly;
+}
+
+function handleNotificationsFormChange() {
+  syncNotificationsInputs();
+  renderNotificationsIfOpen();
+}
+
+function readNotificationsDraft() {
+  const current = normalizeNotifications(store.notifications).email;
+  return {
+    recipientEmail: normalizeRecipientEmail(
+      notificationsRecipientEmailInput?.value
+      || current.recipientEmail
+      || authState.user?.email
+      || ""
+    ),
+    summaries: normalizeEmailSummaryConfig({
+      enabled: notificationsSummaryEnabledInput.checked,
+      frequency: notificationsFrequencyInput.value,
+      sendTime: normalizeNotificationTime(notificationsSendTimeInput.value, current.summaries.sendTime),
+      weekday: normalizeWeekday(notificationsWeekdayInput.value, current.summaries.weekday),
+      include: {
+        overdue: notificationsIncludeOverdueInput.checked,
+        dueSoon: notificationsIncludeDueSoonInput.checked,
+        completed: notificationsIncludeCompletedInput.checked,
+        recurringProgress: notificationsIncludeRecurringProgressInput.checked,
+        treePoints: notificationsIncludeTreePointsInput.checked,
+        widgetHighlights: notificationsIncludeWidgetHighlightsInput.checked
+      },
+      updatedAt: current.summaries.updatedAt
+    }),
+    history: current.history,
+    updatedAt: current.updatedAt
+  };
+}
+
+function handleNotificationsSubmit(event) {
+  event.preventDefault();
+  const current = normalizeNotifications(store.notifications).email;
+  const nextRecipientEmail = normalizeRecipientEmail(
+    notificationsRecipientEmailInput.value
+    || current.recipientEmail
+    || authState.user?.email
+    || ""
+  );
+  const nextSummaries = normalizeEmailSummaryConfig({
+    enabled: notificationsSummaryEnabledInput.checked,
+    frequency: notificationsFrequencyInput.value,
+    sendTime: normalizeNotificationTime(notificationsSendTimeInput.value, current.summaries.sendTime),
+    weekday: normalizeWeekday(notificationsWeekdayInput.value, current.summaries.weekday),
+    include: {
+      overdue: notificationsIncludeOverdueInput.checked,
+      dueSoon: notificationsIncludeDueSoonInput.checked,
+      completed: notificationsIncludeCompletedInput.checked,
+      recurringProgress: notificationsIncludeRecurringProgressInput.checked,
+      treePoints: notificationsIncludeTreePointsInput.checked,
+      widgetHighlights: notificationsIncludeWidgetHighlightsInput.checked
+    },
+    updatedAt: Date.now()
+  });
+
+  if (nextSummaries.enabled && !nextRecipientEmail) {
+    setSyncStatus("Choose a recipient email before enabling summaries.", "error");
+    return;
+  }
+
+  const unchanged = (
+    nextRecipientEmail === current.recipientEmail
+    && JSON.stringify(nextSummaries) === JSON.stringify(current.summaries)
+  );
+  if (unchanged) {
+    closeNotifications();
+    return;
+  }
+
+  store.notifications = normalizeNotifications({
+    ...store.notifications,
+    email: {
+      ...normalizeNotifications(store.notifications).email,
+      recipientEmail: nextRecipientEmail,
+      summaries: nextSummaries,
+      history: current.history,
+      updatedAt: Date.now()
+    }
+  });
+  persistStore();
+  renderNotificationsIfOpen();
+  closeNotifications();
+  setSyncStatus(nextSummaries.enabled ? "Saved email summary settings." : "Saved notification settings.", "info");
+}
+
+function renderNotificationsIfOpen() {
+  if (!isNotificationsOpen()) {
+    return;
+  }
+
+  const draft = readNotificationsDraft();
+  const preview = buildEmailSummaryPreview(draft);
+  notificationsPreview.innerHTML = renderEmailSummaryPreview(preview);
+  notificationsHistory.innerHTML = renderNotificationHistory(draft.history);
 }
 
 function handleThemeSettingModeChange(event) {
@@ -2471,6 +2656,7 @@ function renderAll() {
   renderCanopyDetailIfOpen();
   renderTreeStyleIfOpen();
   renderTreeDetailIfOpen();
+  renderNotificationsIfOpen();
   syncEditPanel();
   updateGoogleButtons();
 }
@@ -2949,6 +3135,184 @@ function renderSyncMeta(now = new Date()) {
 
   syncAutosaveCard.dataset.state = autosaveState;
   syncAutosaveValue.textContent = autosaveText;
+}
+
+function buildEmailSummaryPreview(emailConfig, now = new Date()) {
+  const nowTimestamp = now.getTime();
+  const summaryWindowMs = emailConfig.summaries.frequency === "weekly"
+    ? 7 * 24 * 60 * 60 * 1000
+    : 24 * 60 * 60 * 1000;
+  const subject = `${normalizeProfile(store.profile).displayName || "Lifetree"} ${emailConfig.summaries.frequency === "weekly" ? "weekly" : "daily"} summary · ${formatDate(now)}`;
+  const recipientEmail = emailConfig.recipientEmail || authState.user?.email || "";
+  const openTasks = store.tasks
+    .filter((task) => task.status === "open" && !task.archived && !task.historyOnly)
+    .map((task) => ({ task, dueAt: getNotificationTaskTimestamp(task) }));
+  const overdueTasks = openTasks
+    .filter((entry) => entry.dueAt > 0 && entry.dueAt < nowTimestamp)
+    .sort((left, right) => left.dueAt - right.dueAt)
+    .slice(0, 5)
+    .map((entry) => formatNotificationTaskLine(entry.task, entry.dueAt));
+  const dueSoonTasks = openTasks
+    .filter((entry) => entry.dueAt > 0 && entry.dueAt >= nowTimestamp && entry.dueAt <= nowTimestamp + summaryWindowMs)
+    .sort((left, right) => left.dueAt - right.dueAt)
+    .slice(0, 5)
+    .map((entry) => formatNotificationTaskLine(entry.task, entry.dueAt));
+  const recentCompleted = buildHistoryFeed(store.tasks)
+    .filter((entry) => entry.type === "completed" && (entry.at || 0) >= nowTimestamp - summaryWindowMs)
+    .slice(0, 5)
+    .map((entry) => `${entry.taskName} · ${formatDateTime(entry.at)}`);
+  const recurringProgress = canopyState.columns
+    .flatMap((column) => column.recurringGroups || [])
+    .flatMap((group) => (group.seriesCards || []).map((card) => `${group.label}: ${card.label} · ${card.completedCount}/${card.totalCount}`))
+    .slice(0, 6);
+  const treeDisplayState = getTreeDisplayState();
+  const pointSummary = getPointLedgerSummary();
+  const treeSummary = [
+    `${formatPointsLabel(pointSummary.total || 0)} banked reward points`,
+    `${formatPointsLabel(treeDisplayState.totalVisibleFruitPoints || 0)} growing on the tree`,
+    `${treeDisplayState.ripeFruitCount || 0} ripe fruit ready now`
+  ];
+  const widgetHighlights = buildNotificationWidgetHighlights();
+
+  const sections = [];
+  if (emailConfig.summaries.include.overdue) {
+    sections.push({ title: "Overdue tasks", items: overdueTasks });
+  }
+  if (emailConfig.summaries.include.dueSoon) {
+    sections.push({ title: emailConfig.summaries.frequency === "weekly" ? "Due in the next 7 days" : "Due in the next 24 hours", items: dueSoonTasks });
+  }
+  if (emailConfig.summaries.include.completed) {
+    sections.push({ title: "Recently completed", items: recentCompleted });
+  }
+  if (emailConfig.summaries.include.recurringProgress) {
+    sections.push({ title: "Recurring progress", items: recurringProgress });
+  }
+  if (emailConfig.summaries.include.treePoints) {
+    sections.push({ title: "Tree and points", items: treeSummary });
+  }
+  if (emailConfig.summaries.include.widgetHighlights) {
+    sections.push({ title: "Widget highlights", items: widgetHighlights });
+  }
+
+  return {
+    subject,
+    recipientEmail,
+    enabled: emailConfig.summaries.enabled,
+    scheduleLabel: buildNotificationScheduleLabel(emailConfig.summaries),
+    sections: sections.filter((section) => section.items.length > 0)
+  };
+}
+
+function renderEmailSummaryPreview(preview) {
+  const recipientCopy = preview.recipientEmail || "No recipient selected yet";
+  return `
+    <div class="notifications-preview-header">
+      <div class="notifications-preview-meta">
+        <span class="sync-status">Recipient</span>
+        <strong>${escapeHtml(recipientCopy)}</strong>
+      </div>
+      <div class="notifications-preview-meta">
+        <span class="sync-status">Schedule</span>
+        <strong>${escapeHtml(preview.scheduleLabel)}</strong>
+      </div>
+      <div class="notifications-preview-meta">
+        <span class="sync-status">Status</span>
+        <strong>${preview.enabled ? "Enabled" : "Saved only"}</strong>
+      </div>
+    </div>
+    <article class="notifications-preview-card">
+      <p class="eyebrow">Subject</p>
+      <h4>${escapeHtml(preview.subject)}</h4>
+      ${preview.sections.length > 0 ? preview.sections.map((section) => `
+        <section class="notifications-preview-section">
+          <strong>${escapeHtml(section.title)}</strong>
+          <ul>
+            ${section.items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
+          </ul>
+        </section>
+      `).join("") : `<p class="sync-status">No matching content yet. As tasks, widgets, and tree progress change, this preview will fill in automatically.</p>`}
+    </article>
+  `;
+}
+
+function renderNotificationHistory(historyEntries) {
+  const entries = Array.isArray(historyEntries) ? historyEntries : [];
+  if (entries.length === 0) {
+    return `<p class="sync-status">No email summaries have been sent yet. Send history will appear here once backend delivery is connected.</p>`;
+  }
+  return `
+    <div class="notifications-history-list">
+      ${entries.map((entry) => `
+        <article class="notifications-history-item">
+          <div>
+            <strong>${escapeHtml(entry.subject || "Email summary")}</strong>
+            <p class="sync-status">${escapeHtml(entry.recipientEmail || "No recipient")} · ${escapeHtml(formatDateTime(entry.at))}</p>
+          </div>
+          <span class="widget-badge">${entry.status === "error" ? "Error" : "Sent"}</span>
+        </article>
+      `).join("")}
+    </div>
+  `;
+}
+
+function buildNotificationScheduleLabel(summaryConfig) {
+  if (summaryConfig.frequency === "weekly") {
+    return `Weekly · ${WEEKDAY_LABELS[summaryConfig.weekday]} at ${formatNotificationTime(summaryConfig.sendTime)}`;
+  }
+  return `Daily · ${formatNotificationTime(summaryConfig.sendTime)}`;
+}
+
+function formatNotificationTime(value) {
+  const normalized = normalizeNotificationTime(value);
+  const [hours, minutes] = normalized.split(":").map((part) => Number(part));
+  return new Date(2000, 0, 1, hours, minutes, 0).toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit"
+  });
+}
+
+function getNotificationTaskTimestamp(task) {
+  const scheduledDate = task?.dueDate || task?.startDate || "";
+  if (!scheduledDate) {
+    return 0;
+  }
+  const scheduledTime = task?.timeOfDay || "23:59";
+  const timestamp = new Date(`${scheduledDate}T${scheduledTime}:00`).getTime();
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
+function formatNotificationTaskLine(task, dueAt) {
+  const recurringGroup = getCanopyRecurringGroup(task);
+  const recurringLabel = recurringGroup ? ` · ${capitalizeWord(recurringGroup)}` : "";
+  return `${task.name}${recurringLabel} · ${formatDateTime(dueAt)}`;
+}
+
+function buildNotificationWidgetHighlights() {
+  return store.widgets
+    .map((widget) => {
+      if (widget.type === "energy") {
+        const latest = widget.data?.entries?.[widget.data.entries.length - 1];
+        return latest ? `Energy: ${latest.level}/5 at ${formatDateTime(latest.at)}` : "Energy: no recent votes";
+      }
+      if (widget.type === "workout") {
+        const latestWorkout = widget.data?.workoutEntries?.[widget.data.workoutEntries.length - 1];
+        const calorieCopy = `${sumWorkoutCaloriesForCurrentWeek(widget.data?.workoutEntries || [])} cal this week`;
+        return latestWorkout
+          ? `Workout Coach: ${latestWorkout.workoutType || "Workout"} at ${formatDateTime(latestWorkout.at)} · ${calorieCopy}`
+          : `Workout Coach: ${calorieCopy}`;
+      }
+      const definition = getWidgetDefinition(widget.type);
+      return `${definition?.title || "Widget"} is active`;
+    })
+    .slice(0, 4);
+}
+
+function capitalizeWord(value) {
+  const text = String(value || "");
+  if (!text) {
+    return "";
+  }
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 function getCurrentStoreFingerprint() {
@@ -5005,10 +5369,11 @@ function normalizeStore(input) {
   });
   const pointHistorySource = Array.isArray(input.pointHistory) ? input.pointHistory : normalizedPointLedger;
   const normalized = {
-    version: 16,
+    version: 17,
     updatedAt: typeof input.updatedAt === "number" ? input.updatedAt : Date.now(),
     driveFileId: typeof input.driveFileId === "string" ? input.driveFileId : "",
     profile: normalizeProfile(input.profile),
+    notifications: normalizeNotifications(input.notifications),
     tasks,
     pointLedger: normalizedPointLedger,
     pointHistory: normalizePointHistoryBase(pointHistorySource, {
@@ -5365,11 +5730,12 @@ function persistLocalStore(nextStore) {
 function createEmptyStore() {
   const now = Date.now();
   const emptyStore = {
-    version: 16,
+    version: 17,
     updatedAt: now,
     userUpdatedAt: now,
     driveFileId: "",
     profile: normalizeProfile({}),
+    notifications: normalizeNotifications({}),
     tasks: [],
     pointLedger: [],
     pointHistory: [],
@@ -5423,12 +5789,13 @@ function mergeStores(localStore, remoteStore) {
   }
 
   return {
-    version: 16,
+    version: 17,
     updatedAt: Math.max(localStore.updatedAt || 0, remoteStore.updatedAt || 0),
     userUpdatedAt: preferredUserState.userUpdatedAt,
     userFingerprint: preferredUserState.userFingerprint,
     driveFileId: remoteStore.driveFileId || localStore.driveFileId || "",
     profile: choosePreferredProfile(localStore.profile, remoteStore.profile),
+    notifications: choosePreferredNotifications(localStore.notifications, remoteStore.notifications),
     tasks: Array.from(mergedById.values()).sort((a, b) => b.createdAt - a.createdAt).slice(0, MAX_TASKS),
     pointLedger: mergePointLedger(localStore.pointLedger, remoteStore.pointLedger),
     pointHistory: mergePointHistory(
@@ -5475,17 +5842,25 @@ function hashStringFNV1a64(value) {
 }
 
 function buildComparableStore(normalized) {
+  const normalizedProfile = normalizeProfile(normalized.profile);
+  const normalizedNotifications = normalizeNotifications(normalized.notifications);
   const comparable = {
     profile: {
-      displayName: normalizeProfile(normalized.profile).displayName,
-      autosaveEnabled: normalizeProfile(normalized.profile).autosaveEnabled,
-      autosaveIntervalMinutes: normalizeProfile(normalized.profile).autosaveIntervalMinutes,
-      darkModeEnabled: normalizeProfile(normalized.profile).darkModeEnabled,
-      autoDarkModeEnabled: normalizeProfile(normalized.profile).autoDarkModeEnabled,
-      autoDarkModeStart: normalizeProfile(normalized.profile).autoDarkModeStart,
-      autoDarkModeEnd: normalizeProfile(normalized.profile).autoDarkModeEnd,
-      helpTextEnabled: normalizeProfile(normalized.profile).helpTextEnabled,
-      helpTooltipDelayMs: normalizeProfile(normalized.profile).helpTooltipDelayMs
+      displayName: normalizedProfile.displayName,
+      autosaveEnabled: normalizedProfile.autosaveEnabled,
+      autosaveIntervalMinutes: normalizedProfile.autosaveIntervalMinutes,
+      darkModeEnabled: normalizedProfile.darkModeEnabled,
+      autoDarkModeEnabled: normalizedProfile.autoDarkModeEnabled,
+      autoDarkModeStart: normalizedProfile.autoDarkModeStart,
+      autoDarkModeEnd: normalizedProfile.autoDarkModeEnd,
+      helpTextEnabled: normalizedProfile.helpTextEnabled,
+      helpTooltipDelayMs: normalizedProfile.helpTooltipDelayMs
+    },
+    notifications: {
+      email: {
+        recipientEmail: normalizedNotifications.email.recipientEmail,
+        summaries: sortObjectKeys(normalizedNotifications.email.summaries)
+      }
     },
     tasks: normalized.tasks
       .map((task) => ({
