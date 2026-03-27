@@ -3,6 +3,7 @@
 ## Open items
 
 - Widgets: Create a Travel Buddy widget.
+- Widgets: Create a Hydration widget that tracks ounces consumed and grows a plant as you water it.
 - Drive sync: Make merge/conflict popups clearer about what happened and what each choice will do.
 
 ## Recently completed
