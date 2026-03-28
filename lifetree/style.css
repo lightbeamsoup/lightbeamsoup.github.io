@@ -166,6 +166,26 @@ body[data-theme="dark"] .canopy-group-task {
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
 }
 
+body[data-theme="dark"] .task-card.deadline-grace,
+body[data-theme="dark"] .canopy-task.deadline-grace,
+body[data-theme="dark"] .canopy-group-task.deadline-grace {
+  border-color: rgba(246, 213, 115, 0.46);
+  box-shadow:
+    0 0 0 1px rgba(246, 213, 115, 0.2),
+    0 0 0 5px rgba(246, 213, 115, 0.12),
+    0 18px 36px rgba(0, 0, 0, 0.24);
+}
+
+body[data-theme="dark"] .task-card.deadline-overdue,
+body[data-theme="dark"] .canopy-task.deadline-overdue,
+body[data-theme="dark"] .canopy-group-task.deadline-overdue {
+  border-color: rgba(255, 132, 120, 0.56);
+  box-shadow:
+    0 0 0 1px rgba(255, 132, 120, 0.3),
+    0 0 0 6px rgba(255, 132, 120, 0.16),
+    0 18px 38px rgba(116, 34, 28, 0.34);
+}
+
 body[data-theme="dark"] .canopy-bonus-panel {
   background:
     linear-gradient(180deg, rgba(24, 35, 52, 0.96), rgba(18, 28, 42, 0.96)),
@@ -689,6 +709,24 @@ body.developer-open {
 
 .canopy-task.pending {
   border-color: color-mix(in srgb, var(--canopy-category-color, #7dbf74) 52%, rgba(37, 50, 67, 0.12));
+}
+
+.canopy-task.deadline-grace,
+.canopy-group-task.deadline-grace {
+  border-color: rgba(201, 156, 47, 0.42);
+  box-shadow:
+    0 0 0 1px rgba(201, 156, 47, 0.14),
+    0 0 0 4px rgba(243, 201, 106, 0.14),
+    var(--shadow);
+}
+
+.canopy-task.deadline-overdue,
+.canopy-group-task.deadline-overdue {
+  border-color: rgba(187, 74, 62, 0.42);
+  box-shadow:
+    0 0 0 1px rgba(187, 74, 62, 0.18),
+    0 0 0 6px rgba(227, 124, 82, 0.16),
+    0 18px 36px rgba(139, 70, 43, 0.14);
 }
 
 .canopy-task-main {
@@ -3085,6 +3123,22 @@ textarea {
 
 .task-card.skipped {
   opacity: 0.62;
+}
+
+.task-card.deadline-grace {
+  border-color: rgba(201, 156, 47, 0.38);
+  box-shadow:
+    0 0 0 1px rgba(201, 156, 47, 0.12),
+    0 0 0 5px rgba(243, 201, 106, 0.12),
+    var(--shadow);
+}
+
+.task-card.deadline-overdue {
+  border-color: rgba(187, 74, 62, 0.42);
+  box-shadow:
+    0 0 0 1px rgba(187, 74, 62, 0.18),
+    0 0 0 7px rgba(227, 124, 82, 0.15),
+    0 22px 40px rgba(139, 70, 43, 0.16);
 }
 
 .task-card.blocked::before {

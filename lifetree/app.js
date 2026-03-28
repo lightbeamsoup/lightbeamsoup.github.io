@@ -10,6 +10,7 @@ import {
   formatTaskDisplayName,
   findNextWidgetCompletionTask,
   getLatestLifecycleEntry,
+  getOpenTaskDeadlineState,
   nthWeekdayOfMonth,
   shouldAutoSkipTask,
   toDateString
@@ -3246,6 +3247,7 @@ function renderCanopy() {
     .map((card) => ({
       ...card,
       surfacedRecurringGroup: getSurfacedCanopyRecurringGroup(card.task, today),
+      deadlineState: getOpenTaskDeadlineState(card.task),
       blocked: isBlocked(card.task),
       blockedNote: describeCompletionGate(card.task)
     }));
@@ -3326,6 +3328,7 @@ function buildRecurringCanopyEntries() {
       key: task.id,
       task,
       displayName: formatTaskDisplayName(task),
+      deadlineState: getOpenTaskDeadlineState(task),
       blocked: isBlocked(task),
       blockedNote: describeCompletionGate(task)
     }));
@@ -4766,8 +4769,9 @@ function renderTaskGrid() {
 
   for (const cardData of cards) {
     const blocked = isBlocked(cardData.task);
+    const deadlineState = getOpenTaskDeadlineState(cardData.task);
     const article = document.createElement("article");
-    article.className = `task-card${cardData.status === "done" ? " done" : ""}${cardData.status === "skipped" ? " skipped" : ""}${cardData.task.archived ? " archived" : ""}${blocked ? " blocked" : ""}`;
+    article.className = `task-card${cardData.status === "done" ? " done" : ""}${cardData.status === "skipped" ? " skipped" : ""}${cardData.task.archived ? " archived" : ""}${blocked ? " blocked" : ""}${deadlineState ? ` deadline-${deadlineState}` : ""}`;
     article.style.setProperty("--task-category-color", cardData.task.categoryColor || DEFAULT_CATEGORY_COLOR);
     article.innerHTML = `
       <h3>${escapeHtml(cardData.displayName)}</h3>

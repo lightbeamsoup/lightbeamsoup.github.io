@@ -333,7 +333,7 @@ function renderCanopyTask(item, formatDate, escapeHtml, getPendingActionForTask,
   }
 
   return `
-    <article class="canopy-task${item.blocked ? " blocked" : ""}" style="--canopy-category-color: ${taskColor}">
+    <article class="canopy-task${item.blocked ? " blocked" : ""}${item.deadlineState ? ` deadline-${item.deadlineState}` : ""}" style="--canopy-category-color: ${taskColor}">
       <div class="canopy-task-main">
         <strong>${escapeHtml(item.displayName)}</strong>
         <span>${escapeHtml(describeTaskDate(item.task, formatDate))}</span>
@@ -403,7 +403,7 @@ function renderRecurringDetailSeriesCard(series, formatDate, escapeHtml, getPend
   }
 
   return `
-    <article class="canopy-group-task${series.completedCount === series.totalCount ? " done" : ""}${series.skippedCount === series.totalCount ? " skipped" : ""}${blocked ? " blocked" : ""}" style="--canopy-category-color: ${taskColor}">
+    <article class="canopy-group-task${series.completedCount === series.totalCount ? " done" : ""}${series.skippedCount === series.totalCount ? " skipped" : ""}${blocked ? " blocked" : ""}${series.deadlineState ? ` deadline-${series.deadlineState}` : ""}" style="--canopy-category-color: ${taskColor}">
       <div class="canopy-group-main">
         <strong>${escapeHtml(series.displayName)}</strong>
         <span>${escapeHtml(series.progressLabel)}</span>
@@ -535,6 +535,7 @@ function finalizeRecurringSeriesCard(entries) {
       : "This period is fully resolved.",
     blocked: Boolean(nextOpen && !nextActionable),
     blockedNote: nextOpen && !nextActionable ? (nextOpen.blockedNote || "Blocked") : "",
+    deadlineState: nextActionable?.deadlineState || nextOpen?.deadlineState || "",
     isWidgetManaged,
     lockedNote: representativeTask?.ownerWidgetType
       ? `Managed in the ${representativeTask.ownerWidgetType} widget.`

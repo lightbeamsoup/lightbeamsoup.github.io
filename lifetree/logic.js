@@ -416,6 +416,25 @@ export function findNextWidgetCompletionTask(tasks, widgetId, mechanism, today =
     .sort(compareTaskSchedule)[0] || null;
 }
 
+export function getOpenTaskDeadlineState(task, now = new Date()) {
+  if (!task || task.status !== "open" || task.archived) {
+    return "";
+  }
+
+  if ((task.skipRule?.type || "none") !== "none") {
+    return "";
+  }
+
+  const dueAt = buildTaskDateTime(task, "23:59");
+  if (!dueAt || now.getTime() <= dueAt.getTime()) {
+    return "";
+  }
+
+  const graceMinutes = Math.max(Number(task.lateGraceMinutes) || 0, 0);
+  const graceCutoff = dueAt.getTime() + graceMinutes * 60_000;
+  return now.getTime() <= graceCutoff ? "grace" : "overdue";
+}
+
 function buildTaskDateTime(task, fallbackTime = "23:59") {
   const date = taskScheduleKey(task);
   if (!date) {

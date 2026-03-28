@@ -11,6 +11,7 @@ import {
   formatTaskDisplayName,
   findNextWidgetCompletionTask,
   getLatestLifecycleEntry,
+  getOpenTaskDeadlineState,
   isTaskEligibleForWidgetCompletion,
   nthWeekdayOfMonth
   ,
@@ -392,6 +393,21 @@ test("auto-skip can trigger after a due-time grace period", () => {
 
   assert.equal(shouldAutoSkipTask(task, new Date("2026-03-21T09:20:00")), false);
   assert.equal(shouldAutoSkipTask(task, new Date("2026-03-21T09:31:00")), true);
+});
+
+test("non-auto-skip tasks surface grace and overdue deadline states", () => {
+  const task = {
+    id: "manual-deadline",
+    status: "open",
+    dueDate: "2026-03-21",
+    timeOfDay: "09:00",
+    lateGraceMinutes: 30,
+    skipRule: { type: "none" }
+  };
+
+  assert.equal(getOpenTaskDeadlineState(task, new Date("2026-03-21T08:59:59")), "");
+  assert.equal(getOpenTaskDeadlineState(task, new Date("2026-03-21T09:10:00")), "grace");
+  assert.equal(getOpenTaskDeadlineState(task, new Date("2026-03-21T09:31:00")), "overdue");
 });
 
 test("auto-skip can trigger at end of scheduled day", () => {
