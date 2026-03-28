@@ -68,11 +68,12 @@ To keep email summaries and reminders sending even when no one has Lifetree open
    - `LIFETREE_SERVER_MODE=worker`
    - `ENABLE_NOTIFICATION_SCHEDULER=true`
    - `SUMMARY_SCHEDULER_INTERVAL_MS=300000`
-4. Use the start command:
+4. The repo `railway.json` start command is mode-aware, so this service can keep using the repo default start command as long as `LIFETREE_SERVER_MODE=worker` is set.
+5. If you override the Railway start command manually, use:
 
-```bash
-npm run start:worker
-```
+   ```bash
+   npm run start:worker
+   ```
 
 The web service should keep `ENABLE_NOTIFICATION_SCHEDULER=false` when this worker is running, so only one process is sending notification emails.
 
