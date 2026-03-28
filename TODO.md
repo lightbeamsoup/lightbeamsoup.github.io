@@ -4,6 +4,12 @@
 
 - Widgets: Create a Travel Buddy widget.
 - Widgets: Create a Hydration widget that tracks ounces consumed and grows a plant as you water it.
+- Integrations: Add Google Calendar integration.
+- Integrations: Add Apple Fitness integration.
+- Workout Coach: Clean up the workout modal by adding tabs.
+- Tasks: Create a preview for daily and weekly tasks.
+- Tasks: Understand and document how tasks get placed into weeklies versus monthlies.
+- Tree styles: Create a spring canopy skin.
 - Drive sync: Make merge/conflict popups clearer about what happened and what each choice will do.
 
 ## Recently completed
