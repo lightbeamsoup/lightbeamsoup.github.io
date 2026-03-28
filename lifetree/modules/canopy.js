@@ -295,7 +295,7 @@ function renderRecurringGroupPreview(group, escapeHtml) {
       ${previewItems.map((series) => `
         <div class="canopy-group-preview-item">
           <strong>${escapeHtml(series.displayName)}</strong>
-          <span>${escapeHtml(buildRecurringPreviewMeta(series))}</span>
+          <span>${escapeHtml(buildRecurringPreviewMeta(series, group.key))}</span>
         </div>
       `).join("")}
       ${(group.seriesCards || []).filter((series) => Boolean(series.nextOpenTaskId)).length > previewItems.length ? `
@@ -305,12 +305,24 @@ function renderRecurringGroupPreview(group, escapeHtml) {
   `;
 }
 
-function buildRecurringPreviewMeta(series) {
-  const dueCopy = series.nextActionDueLabel || series.nextDueLabel || series.blockedNote || "Still due this period";
+function buildRecurringPreviewMeta(series, groupKey = "") {
+  const dueCopy = formatRecurringPreviewDue(series, groupKey);
   if (series.totalCount > 1) {
     return `${series.completedCount}/${series.totalCount} complete · ${dueCopy}`;
   }
   return dueCopy;
+}
+
+function formatRecurringPreviewDue(series, groupKey = "") {
+  const rawDueCopy = series.nextActionDueLabel || series.nextDueLabel || series.blockedNote || "Still due this period";
+  if (groupKey === "daily") {
+    const timeMatch = rawDueCopy.match(/at\s+(.+)$/);
+    if (timeMatch?.[1]) {
+      return `Next ${timeMatch[1]}`;
+    }
+    return rawDueCopy.replace(/^\d{4}-\d{2}-\d{2}\s+/, "");
+  }
+  return rawDueCopy;
 }
 
 function renderRecurringBonusPanel(group, columnKey, escapeHtml, formatPointsLabel) {
