@@ -895,6 +895,12 @@ async function runNotificationScheduler() {
       userCount: users.length,
       at: new Date().toISOString()
     });
+    if (users.length === 0) {
+      logNotification("basic", "Scheduler found no authenticated users; check that the worker can read the same auth store as the web service", {
+        dataDir,
+        storePath
+      });
+    }
     for (const user of users) {
       try {
         await processScheduledNotificationsForUser(user);
