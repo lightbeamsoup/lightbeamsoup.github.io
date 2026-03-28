@@ -6,7 +6,6 @@
 - Widgets: Create a Hydration widget that tracks ounces consumed and grows a plant as you water it.
 - Integrations: Add Google Calendar integration.
 - Integrations: Add Apple Fitness integration.
-- Workout Coach: Clean up the workout modal by adding tabs.
 - Tree styles: Create a spring canopy skin.
 - Drive sync: Make merge/conflict popups clearer about what happened and what each choice will do.
 
@@ -27,6 +26,7 @@
 
 ### Workout Coach
 
+- 2026-03-28: Clean up the workout modal by splitting it into Overview, Plans, and Weight tabs.
 - 2026-03-26: Scaffold the widget and register it in the widget menu.
 - 2026-03-26: Add workout plans with workout type, duration, intensity, and daily/weekly linked schedules.
 - 2026-03-26: Add widget-owned task metadata for workout sessions and weight check-ins.

@@ -141,7 +141,7 @@ export const workoutWidgetDefinition = {
   },
 
   renderDetail({ widget, tasks, escapeHtml, formatDateTime, getPendingActionForWidget }) {
-    const latestWorkout = widget.data.workoutEntries[widget.data.workoutEntries.length - 1] || null;
+    const activeTab = getWorkoutDetailState(widget.id).detailTab;
     const latestWeight = widget.data.weightEntries[widget.data.weightEntries.length - 1] || null;
     const weightTracking = widget.settings.weightTracking;
     const planDraft = createPlanDraft();
@@ -159,284 +159,295 @@ export const workoutWidgetDefinition = {
 
     return `
       <section class="energy-detail">
+        <div class="workout-detail-tabs" role="tablist" aria-label="Workout detail sections">
+          ${renderWorkoutDetailTabButton("overview", "Overview", activeTab, escapeHtml)}
+          ${renderWorkoutDetailTabButton("plans", "Plans", activeTab, escapeHtml)}
+          ${renderWorkoutDetailTabButton("weight", "Weight", activeTab, escapeHtml)}
+        </div>
         <div class="energy-detail-grid">
-          <section class="energy-detail-card workout-chart-card">
-            <div class="energy-detail-header">
-              <div>
-                <p class="eyebrow">History</p>
-                <h3>Calories and weight trend</h3>
-                <p class="sync-status">Workout calories burned and weight logs are tracked together here so you can see both signals over time.</p>
-              </div>
-            </div>
-            <div class="workout-chart-legend">
-              <span><i class="workout-chart-dot calories"></i>Calories burned</span>
-              <span><i class="workout-chart-dot weight"></i>Weight (${escapeHtml(weightTracking.unit)})</span>
-              <span class="workout-chart-summary">This week: <strong>${escapeHtml(formatCalories(weeklyCalories))}</strong></span>
-            </div>
-            <canvas class="workout-detail-chart" data-workout-chart></canvas>
-            <p class="empty-state hidden" data-workout-chart-empty>No workout calories or weight logs yet.</p>
-          </section>
-
-          <section class="energy-detail-card energy-settings-card">
-            <div class="energy-detail-header">
-              <div>
-                <p class="eyebrow">Progress</p>
-                <h3>Current period progress</h3>
-                <p class="sync-status">Repeated same-period instances are rolled up into one tracked card per plan.</p>
-              </div>
-            </div>
-            <div class="workout-progress-grid">
-              <section class="workout-progress-section">
-                <div class="workout-progress-section-header">
-                  <h4>Today</h4>
-                  <span>${progressView.dailyCards.length}</span>
+          <div class="workout-detail-tab-panel${activeTab === "overview" ? "" : " hidden"}" data-workout-tab-panel="overview">
+            <section class="energy-detail-card workout-chart-card">
+              <div class="energy-detail-header">
+                <div>
+                  <p class="eyebrow">History</p>
+                  <h3>Calories and weight trend</h3>
+                  <p class="sync-status">Workout calories burned and weight logs are tracked together here so you can see both signals over time.</p>
                 </div>
-                <div class="workout-progress-list">
-                  ${progressView.dailyCards.length
-                    ? progressView.dailyCards.map((card) => renderWorkoutProgressCard(card, escapeHtml)).join("")
-                    : `<p class="empty-state">No daily workout or weight tasks are scheduled today.</p>`}
-                </div>
-              </section>
-              <section class="workout-progress-section">
-                <div class="workout-progress-section-header">
-                  <h4>This week</h4>
-                  <span>${progressView.weeklyCards.length}</span>
-                </div>
-                <div class="workout-progress-list">
-                  ${progressView.weeklyCards.length
-                    ? progressView.weeklyCards.map((card) => renderWorkoutProgressCard(card, escapeHtml)).join("")
-                    : `<p class="empty-state">No weekly workout or weight tasks are scheduled in this calendar week.</p>`}
-                </div>
-              </section>
-            </div>
-          </section>
+              </div>
+              <div class="workout-chart-legend">
+                <span><i class="workout-chart-dot calories"></i>Calories burned</span>
+                <span><i class="workout-chart-dot weight"></i>Weight (${escapeHtml(weightTracking.unit)})</span>
+                <span class="workout-chart-summary">This week: <strong>${escapeHtml(formatCalories(weeklyCalories))}</strong></span>
+              </div>
+              <canvas class="workout-detail-chart" data-workout-chart></canvas>
+              <p class="empty-state hidden" data-workout-chart-empty>No workout calories or weight logs yet.</p>
+            </section>
 
-          <section class="energy-detail-card">
-            <div class="energy-detail-header">
-              <div>
-                <p class="eyebrow">Logging</p>
-                <h3>Complete workouts</h3>
-                <p class="sync-status">Set the actual duration and intensity here before the widget marks a workout task complete.</p>
+            <section class="energy-detail-card energy-settings-card">
+              <div class="energy-detail-header">
+                <div>
+                  <p class="eyebrow">Progress</p>
+                  <h3>Current period progress</h3>
+                  <p class="sync-status">Repeated same-period instances are rolled up into one tracked card per plan.</p>
+                </div>
               </div>
-            </div>
-            <div class="workout-log-list">
-              ${completionTasks.length
-                ? completionTasks.map((task) => renderWorkoutCompletionCard(task, widget.id, escapeHtml, getPendingActionForWidget)).join("")
-                : `<p class="empty-state">No workout tasks are currently ready to log from the widget.</p>`}
-            </div>
-          </section>
+              <div class="workout-progress-grid">
+                <section class="workout-progress-section">
+                  <div class="workout-progress-section-header">
+                    <h4>Today</h4>
+                    <span>${progressView.dailyCards.length}</span>
+                  </div>
+                  <div class="workout-progress-list">
+                    ${progressView.dailyCards.length
+                      ? progressView.dailyCards.map((card) => renderWorkoutProgressCard(card, escapeHtml)).join("")
+                      : `<p class="empty-state">No daily workout or weight tasks are scheduled today.</p>`}
+                  </div>
+                </section>
+                <section class="workout-progress-section">
+                  <div class="workout-progress-section-header">
+                    <h4>This week</h4>
+                    <span>${progressView.weeklyCards.length}</span>
+                  </div>
+                  <div class="workout-progress-list">
+                    ${progressView.weeklyCards.length
+                      ? progressView.weeklyCards.map((card) => renderWorkoutProgressCard(card, escapeHtml)).join("")
+                      : `<p class="empty-state">No weekly workout or weight tasks are scheduled in this calendar week.</p>`}
+                  </div>
+                </section>
+              </div>
+            </section>
 
-          <section class="energy-detail-card">
-            <div class="energy-detail-header">
-              <div>
-                <p class="eyebrow">Ad hoc</p>
-                <h3>Log an extra workout</h3>
-                <p class="sync-status">${pendingAdHocWorkout
-                  ? `Pending ad hoc workout: ${escapeHtml(formatPendingAdHocWorkoutSummary(pendingAdHocWorkout))}`
-                  : "Use this when you work out outside the scheduled plans. These logs do not complete tasks or award points."}</p>
+            <section class="energy-detail-card">
+              <div class="energy-detail-header">
+                <div>
+                  <p class="eyebrow">Logging</p>
+                  <h3>Complete workouts</h3>
+                  <p class="sync-status">Set the actual duration and intensity here before the widget marks a workout task complete.</p>
+                </div>
               </div>
-            </div>
-            ${renderAdHocWorkoutForm({
-              escapeHtml,
-              pendingAction: pendingAdHocWorkout,
-              formAttribute: "data-workout-adhoc-form",
-              submitLabel: "Log ad hoc workout",
-              includeHeading: false
-            })}
-          </section>
+              <div class="workout-log-list">
+                ${completionTasks.length
+                  ? completionTasks.map((task) => renderWorkoutCompletionCard(task, widget.id, escapeHtml, getPendingActionForWidget)).join("")
+                  : `<p class="empty-state">No workout tasks are currently ready to log from the widget.</p>`}
+              </div>
+            </section>
 
-          <section class="energy-detail-card">
-            <div class="energy-detail-header">
-              <div>
-                <p class="eyebrow">Workout plans</p>
-                <h3>Plan workouts</h3>
-                <p class="sync-status">Create daily or weekly workout plans with linked schedule details. These plans are the source of truth for the widget's future tasks.</p>
+            <section class="energy-detail-card">
+              <div class="energy-detail-header">
+                <div>
+                  <p class="eyebrow">Ad hoc</p>
+                  <h3>Log an extra workout</h3>
+                  <p class="sync-status">${pendingAdHocWorkout
+                    ? `Pending ad hoc workout: ${escapeHtml(formatPendingAdHocWorkoutSummary(pendingAdHocWorkout))}`
+                    : "Use this when you work out outside the scheduled plans. These logs do not complete tasks or award points."}</p>
+                </div>
               </div>
-            </div>
-            <form class="workout-plan-form" data-workout-plan-form data-editing-plan-id="">
-              <div class="quick-add-grid">
-                <label class="quick-add-title">
-                  <span>Workout type</span>
-                  <input type="text" maxlength="80" value="${escapeHtml(planDraft.workoutType)}" placeholder="Strength, run, yoga, swim..." data-workout-plan-type required />
-                </label>
-                <label>
-                  <span>Duration (minutes)</span>
-                  <input type="number" min="1" max="600" step="1" value="${planDraft.durationMinutes}" data-workout-plan-duration required />
-                </label>
-                <label>
-                  <span>Intensity</span>
-                  <select data-workout-plan-intensity>
-                    ${WORKOUT_INTENSITY_OPTIONS.map((option) => `
-                      <option value="${option.value}" ${planDraft.intensity === option.value ? "selected" : ""}>${option.label}</option>
-                    `).join("")}
-                  </select>
-                </label>
-                <label>
-                  <span>Default calories burned</span>
-                  <input type="number" min="0" max="5000" step="1" value="${planDraft.caloriesBurned}" data-workout-plan-calories />
-                </label>
-                <label>
-                  <span>Pattern</span>
-                  <select data-workout-plan-pattern>
-                    <option value="daily" selected>Daily</option>
-                    <option value="weekly">Weekly</option>
-                  </select>
-                </label>
-                <label>
-                  <span>Every</span>
-                  <input type="number" min="1" max="30" step="1" value="${planDraft.recurrence.interval}" data-workout-plan-interval />
-                </label>
-                <label>
-                  <span>Time of day</span>
-                  <input type="time" value="${escapeHtml(planDraft.recurrence.timeOfDay)}" data-workout-plan-time />
-                </label>
+              ${renderAdHocWorkoutForm({
+                escapeHtml,
+                pendingAction: pendingAdHocWorkout,
+                formAttribute: "data-workout-adhoc-form",
+                submitLabel: "Log ad hoc workout",
+                includeHeading: false
+              })}
+            </section>
+
+            <section class="energy-detail-card">
+              <div class="energy-detail-header">
+                <div>
+                  <p class="eyebrow">History</p>
+                  <h3>Recent activity</h3>
+                  <p class="sync-status">Recent workout logs keep the actual duration, calories, and intensity recorded at completion time. Missing shell quick-complete logs can be rebuilt from the scheduled defaults.</p>
+                </div>
+                ${repairableWorkoutLogs.length ? `
+                  <div class="widget-actions workout-inline-actions">
+                    <button type="button" class="ghost-button" data-workout-repair-logs>
+                      Repair ${repairableWorkoutLogs.length} missing log${repairableWorkoutLogs.length === 1 ? "" : "s"}
+                    </button>
+                  </div>
+                ` : ""}
               </div>
-              <div class="workout-recurrence-panel" data-workout-daily-panel>
-                <div class="energy-detail-header">
-                  <div>
-                    <h3>Additional same-day times</h3>
-                    <p class="sync-status">Use these to create linked daily instances after the main time above.</p>
+              <div class="workout-entry-list">
+                ${recentWorkoutEntries.length
+                  ? recentWorkoutEntries.map((entry) => renderWorkoutEntryCard(entry, escapeHtml, formatDateTime)).join("")
+                  : `<p class="empty-state">No workout entries yet.</p>`}
+              </div>
+              <div class="workout-entry-list">
+                ${recentWeightEntries.length
+                  ? recentWeightEntries.map((entry) => renderWeightEntryCard(entry, escapeHtml, formatDateTime)).join("")
+                  : `<p class="empty-state">No weight entries yet.</p>`}
+              </div>
+            </section>
+          </div>
+
+          <div class="workout-detail-tab-panel${activeTab === "plans" ? "" : " hidden"}" data-workout-tab-panel="plans">
+            <section class="energy-detail-card">
+              <div class="energy-detail-header">
+                <div>
+                  <p class="eyebrow">Workout plans</p>
+                  <h3>Plan workouts</h3>
+                  <p class="sync-status">Create daily or weekly workout plans with linked schedule details. These plans are the source of truth for the widget's future tasks.</p>
+                </div>
+              </div>
+              <form class="workout-plan-form" data-workout-plan-form data-editing-plan-id="">
+                <div class="quick-add-grid">
+                  <label class="quick-add-title">
+                    <span>Workout type</span>
+                    <input type="text" maxlength="80" value="${escapeHtml(planDraft.workoutType)}" placeholder="Strength, run, yoga, swim..." data-workout-plan-type required />
+                  </label>
+                  <label>
+                    <span>Duration (minutes)</span>
+                    <input type="number" min="1" max="600" step="1" value="${planDraft.durationMinutes}" data-workout-plan-duration required />
+                  </label>
+                  <label>
+                    <span>Intensity</span>
+                    <select data-workout-plan-intensity>
+                      ${WORKOUT_INTENSITY_OPTIONS.map((option) => `
+                        <option value="${option.value}" ${planDraft.intensity === option.value ? "selected" : ""}>${option.label}</option>
+                      `).join("")}
+                    </select>
+                  </label>
+                  <label>
+                    <span>Default calories burned</span>
+                    <input type="number" min="0" max="5000" step="1" value="${planDraft.caloriesBurned}" data-workout-plan-calories />
+                  </label>
+                  <label>
+                    <span>Pattern</span>
+                    <select data-workout-plan-pattern>
+                      <option value="daily" selected>Daily</option>
+                      <option value="weekly">Weekly</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Every</span>
+                    <input type="number" min="1" max="30" step="1" value="${planDraft.recurrence.interval}" data-workout-plan-interval />
+                  </label>
+                  <label>
+                    <span>Time of day</span>
+                    <input type="time" value="${escapeHtml(planDraft.recurrence.timeOfDay)}" data-workout-plan-time />
+                  </label>
+                </div>
+                <div class="workout-recurrence-panel" data-workout-daily-panel>
+                  <div class="energy-detail-header">
+                    <div>
+                      <h3>Additional same-day times</h3>
+                      <p class="sync-status">Use these to create linked daily instances after the main time above.</p>
+                    </div>
+                  </div>
+                  <div class="energy-reminder-editor" data-workout-additional-times>
+                    ${renderAdditionalTimeInputs(planDraft.recurrence.additionalTimes, escapeHtml)}
+                  </div>
+                  <div class="widget-actions workout-inline-actions">
+                    <button type="button" class="ghost-button" data-workout-add-time>Add time</button>
                   </div>
                 </div>
-                <div class="energy-reminder-editor" data-workout-additional-times>
-                  ${renderAdditionalTimeInputs(planDraft.recurrence.additionalTimes, escapeHtml)}
+                <div class="workout-recurrence-panel hidden" data-workout-weekly-panel>
+                  <div class="weekday-picker-panel">
+                    <span>Days in the week</span>
+                    <div class="weekday-picker">
+                      ${renderWeekdayOptions(planDraft.recurrence.weekdays)}
+                    </div>
+                  </div>
                 </div>
                 <div class="widget-actions workout-inline-actions">
-                  <button type="button" class="ghost-button" data-workout-add-time>Add time</button>
+                  <button type="submit" class="primary-button">Save plan</button>
+                  <button type="button" class="ghost-button hidden" data-workout-cancel-edit>Cancel edit</button>
+                </div>
+              </form>
+              <p class="sync-status">These plans create the widget-owned recurring tasks that feed the progress cards and workout logging flow above.</p>
+            </section>
+
+            <section class="energy-detail-card">
+              <div class="energy-detail-header">
+                <div>
+                  <p class="eyebrow">Saved plans</p>
+                  <h3>Current workout plans</h3>
+                  <p class="sync-status">${widget.settings.workoutPlans.length ? `Edit or remove stored workout plans here. ${ownedTemplateCount} widget-owned template${ownedTemplateCount === 1 ? "" : "s"} currently exist.` : "No plans yet. Save one from the editor to start building the widget schedule."}</p>
                 </div>
               </div>
-              <div class="workout-recurrence-panel hidden" data-workout-weekly-panel>
-                <div class="weekday-picker-panel">
-                  <span>Days in the week</span>
-                  <div class="weekday-picker">
-                    ${renderWeekdayOptions(planDraft.recurrence.weekdays)}
-                  </div>
+              <div class="workout-plan-list">
+                ${widget.settings.workoutPlans.length
+                  ? widget.settings.workoutPlans.map((plan) => renderWorkoutPlanCard(plan, escapeHtml)).join("")
+                  : `<p class="empty-state">No workout plans yet.</p>`}
+              </div>
+            </section>
+          </div>
+
+          <div class="workout-detail-tab-panel${activeTab === "weight" ? "" : " hidden"}" data-workout-tab-panel="weight">
+            <section class="energy-detail-card">
+              <div class="energy-detail-header">
+                <div>
+                  <p class="eyebrow">Weight</p>
+                  <h3>Weight logging</h3>
+                  <p class="sync-status">${pendingWeightLog ? `Pending weight log: ${formatPendingWeightSummary(pendingWeightLog)}` : escapeHtml(weightIntent)}</p>
                 </div>
               </div>
-              <div class="widget-actions workout-inline-actions">
-                <button type="submit" class="primary-button">Save plan</button>
-                <button type="button" class="ghost-button hidden" data-workout-cancel-edit>Cancel edit</button>
-              </div>
-            </form>
-            <p class="sync-status">These plans create the widget-owned recurring tasks that feed the progress cards and workout logging flow above.</p>
-          </section>
-
-          <section class="energy-detail-card">
-            <div class="energy-detail-header">
-              <div>
-                <p class="eyebrow">Saved plans</p>
-                <h3>Current workout plans</h3>
-                <p class="sync-status">${widget.settings.workoutPlans.length ? `Edit or remove stored workout plans here. ${ownedTemplateCount} widget-owned template${ownedTemplateCount === 1 ? "" : "s"} currently exist.` : "No plans yet. Save one from the editor to start building the widget schedule."}</p>
-              </div>
-            </div>
-            <div class="workout-plan-list">
-              ${widget.settings.workoutPlans.length
-                ? widget.settings.workoutPlans.map((plan) => renderWorkoutPlanCard(plan, escapeHtml)).join("")
-                : `<p class="empty-state">No workout plans yet.</p>`}
-            </div>
-          </section>
-
-          <section class="energy-detail-card">
-            <div class="energy-detail-header">
-              <div>
-                <p class="eyebrow">Weight</p>
-                <h3>Weight logging</h3>
-                <p class="sync-status">${pendingWeightLog ? `Pending weight log: ${formatPendingWeightSummary(pendingWeightLog)}` : escapeHtml(weightIntent)}</p>
-              </div>
-            </div>
-            <form class="workout-log-form" data-weight-log-form>
-              <div class="quick-add-grid">
-                <label>
-                  <span>Weight (${escapeHtml(weightTracking.unit)})</span>
-                  <input type="number" min="1" max="2000" step="0.1" placeholder="Enter weight" data-weight-log-value ${!weightTracking.enabled || pendingWeightLog ? "disabled" : ""} />
-                </label>
-              </div>
-              <div class="widget-actions workout-inline-actions">
-                ${pendingWeightLog
-                  ? `<button type="button" class="ghost-button" data-weight-log-undo data-pending-key="${pendingWeightLog.key}">Undo</button>`
-                  : `<button type="submit" class="primary-button" ${!weightTracking.enabled ? "disabled" : ""}>Log weight</button>`}
-              </div>
-            </form>
-            <div class="workout-recurrence-panel">
-              <div class="quick-add-grid">
-                <label>
-                  <span>Track weight</span>
-                  <select data-weight-enabled>
-                    <option value="on" ${weightTracking.enabled ? "selected" : ""}>On</option>
-                    <option value="off" ${!weightTracking.enabled ? "selected" : ""}>Off</option>
-                  </select>
-                </label>
-                <label>
-                  <span>Units</span>
-                  <select data-weight-unit>
-                    <option value="lbs" ${weightTracking.unit === "lbs" ? "selected" : ""}>lbs</option>
-                    <option value="kg" ${weightTracking.unit === "kg" ? "selected" : ""}>kg</option>
-                  </select>
-                </label>
-                <label>
-                  <span>Scheduled check-ins</span>
-                  <select data-weight-schedule-enabled>
-                    <option value="off" ${!weightTracking.schedule ? "selected" : ""}>Off</option>
-                    <option value="on" ${weightTracking.schedule ? "selected" : ""}>On</option>
-                  </select>
-                </label>
-                <label>
-                  <span>Pattern</span>
-                  <select data-weight-pattern ${!weightTracking.schedule ? "disabled" : ""}>
-                    <option value="daily" ${weightScheduleDraft.type !== "weekly" ? "selected" : ""}>Daily</option>
-                    <option value="weekly" ${weightScheduleDraft.type === "weekly" ? "selected" : ""}>Weekly</option>
-                  </select>
-                </label>
-                <label>
-                  <span>Every</span>
-                  <input type="number" min="1" max="30" step="1" value="${weightScheduleDraft.interval}" data-weight-interval ${!weightTracking.schedule ? "disabled" : ""} />
-                </label>
-                <label>
-                  <span>Time of day</span>
-                  <input type="time" value="${escapeHtml(weightScheduleDraft.timeOfDay)}" data-weight-time ${!weightTracking.schedule ? "disabled" : ""} />
-                </label>
-              </div>
-              <div class="workout-recurrence-panel ${weightTracking.schedule && weightScheduleDraft.type === "weekly" ? "" : "hidden"}" data-weight-weekly-panel>
-                <div class="weekday-picker-panel">
-                  <span>Days in the week</span>
-                  <div class="weekday-picker">
-                    ${renderWeightWeekdayOptions(weightScheduleDraft.weekdays)}
-                  </div>
+              <form class="workout-log-form" data-weight-log-form>
+                <div class="quick-add-grid">
+                  <label>
+                    <span>Weight (${escapeHtml(weightTracking.unit)})</span>
+                    <input type="number" min="1" max="2000" step="0.1" placeholder="Enter weight" data-weight-log-value ${!weightTracking.enabled || pendingWeightLog ? "disabled" : ""} />
+                  </label>
                 </div>
-              </div>
-              <div class="widget-actions workout-inline-actions">
-                <button type="button" class="primary-button" data-weight-save-settings>Save weight settings</button>
-              </div>
-            </div>
-            <p>${latestWeight ? `Latest logged weight: ${escapeHtml(formatWeightEntry(latestWeight))} at ${formatDateTime(latestWeight.at)}` : "No weight entries yet."}</p>
-          </section>
-
-          <section class="energy-detail-card">
-            <div class="energy-detail-header">
-              <div>
-                <p class="eyebrow">History</p>
-                <h3>Recent activity</h3>
-                <p class="sync-status">Recent workout logs keep the actual duration, calories, and intensity recorded at completion time. Missing shell quick-complete logs can be rebuilt from the scheduled defaults.</p>
-              </div>
-              ${repairableWorkoutLogs.length ? `
                 <div class="widget-actions workout-inline-actions">
-                  <button type="button" class="ghost-button" data-workout-repair-logs>
-                    Repair ${repairableWorkoutLogs.length} missing log${repairableWorkoutLogs.length === 1 ? "" : "s"}
-                  </button>
+                  ${pendingWeightLog
+                    ? `<button type="button" class="ghost-button" data-weight-log-undo data-pending-key="${pendingWeightLog.key}">Undo</button>`
+                    : `<button type="submit" class="primary-button" ${!weightTracking.enabled ? "disabled" : ""}>Log weight</button>`}
                 </div>
-              ` : ""}
-            </div>
-            <div class="workout-entry-list">
-              ${recentWorkoutEntries.length
-                ? recentWorkoutEntries.map((entry) => renderWorkoutEntryCard(entry, escapeHtml, formatDateTime)).join("")
-                : `<p class="empty-state">No workout entries yet.</p>`}
-            </div>
-            <div class="workout-entry-list">
-              ${recentWeightEntries.length
-                ? recentWeightEntries.map((entry) => renderWeightEntryCard(entry, escapeHtml, formatDateTime)).join("")
-                : `<p class="empty-state">No weight entries yet.</p>`}
-            </div>
-          </section>
+              </form>
+              <div class="workout-recurrence-panel">
+                <div class="quick-add-grid">
+                  <label>
+                    <span>Track weight</span>
+                    <select data-weight-enabled>
+                      <option value="on" ${weightTracking.enabled ? "selected" : ""}>On</option>
+                      <option value="off" ${!weightTracking.enabled ? "selected" : ""}>Off</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Units</span>
+                    <select data-weight-unit>
+                      <option value="lbs" ${weightTracking.unit === "lbs" ? "selected" : ""}>lbs</option>
+                      <option value="kg" ${weightTracking.unit === "kg" ? "selected" : ""}>kg</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Scheduled check-ins</span>
+                    <select data-weight-schedule-enabled>
+                      <option value="off" ${!weightTracking.schedule ? "selected" : ""}>Off</option>
+                      <option value="on" ${weightTracking.schedule ? "selected" : ""}>On</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Pattern</span>
+                    <select data-weight-pattern ${!weightTracking.schedule ? "disabled" : ""}>
+                      <option value="daily" ${weightScheduleDraft.type !== "weekly" ? "selected" : ""}>Daily</option>
+                      <option value="weekly" ${weightScheduleDraft.type === "weekly" ? "selected" : ""}>Weekly</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Every</span>
+                    <input type="number" min="1" max="30" step="1" value="${weightScheduleDraft.interval}" data-weight-interval ${!weightTracking.schedule ? "disabled" : ""} />
+                  </label>
+                  <label>
+                    <span>Time of day</span>
+                    <input type="time" value="${escapeHtml(weightScheduleDraft.timeOfDay)}" data-weight-time ${!weightTracking.schedule ? "disabled" : ""} />
+                  </label>
+                </div>
+                <div class="workout-recurrence-panel ${weightTracking.schedule && weightScheduleDraft.type === "weekly" ? "" : "hidden"}" data-weight-weekly-panel>
+                  <div class="weekday-picker-panel">
+                    <span>Days in the week</span>
+                    <div class="weekday-picker">
+                      ${renderWeightWeekdayOptions(weightScheduleDraft.weekdays)}
+                    </div>
+                  </div>
+                </div>
+                <div class="widget-actions workout-inline-actions">
+                  <button type="button" class="primary-button" data-weight-save-settings>Save weight settings</button>
+                </div>
+              </div>
+              <p>${latestWeight ? `Latest logged weight: ${escapeHtml(formatWeightEntry(latestWeight))} at ${formatDateTime(latestWeight.at)}` : "No weight entries yet."}</p>
+            </section>
+          </div>
         </div>
       </section>
     `;
@@ -520,6 +531,16 @@ export const workoutWidgetDefinition = {
     };
 
     const clickHandler = (event) => {
+      const detailTabButton = event.target.closest("[data-workout-detail-tab]");
+      if (detailTabButton) {
+        const nextTab = normalizeWorkoutDetailTab(detailTabButton.getAttribute("data-workout-detail-tab"));
+        if (nextTab !== getWorkoutDetailState(widget.id).detailTab) {
+          setWorkoutDetailTab(widget.id, nextTab);
+          helpers.renderAll();
+        }
+        return;
+      }
+
       const addTimeButton = event.target.closest("[data-workout-add-time]");
       if (addTimeButton) {
         const row = document.createElement("div");
@@ -2187,9 +2208,13 @@ function collectAdditionalTimes(container) {
   return normalized.length === values.length ? normalized : null;
 }
 
+function normalizeWorkoutDetailTab(value) {
+  return value === "plans" || value === "weight" ? value : "overview";
+}
+
 function getWorkoutShellState(widgetId) {
   if (!workoutShellUiState.has(widgetId)) {
-    workoutShellUiState.set(widgetId, { quickAdHocOpen: false });
+    workoutShellUiState.set(widgetId, { quickAdHocOpen: false, detailTab: "overview" });
   }
   return workoutShellUiState.get(widgetId);
 }
@@ -2199,6 +2224,34 @@ function setWorkoutShellQuickFormOpen(widgetId, quickAdHocOpen) {
     ...getWorkoutShellState(widgetId),
     quickAdHocOpen: Boolean(quickAdHocOpen)
   });
+}
+
+function getWorkoutDetailState(widgetId) {
+  return {
+    ...getWorkoutShellState(widgetId),
+    detailTab: normalizeWorkoutDetailTab(getWorkoutShellState(widgetId).detailTab)
+  };
+}
+
+function setWorkoutDetailTab(widgetId, detailTab) {
+  workoutShellUiState.set(widgetId, {
+    ...getWorkoutShellState(widgetId),
+    detailTab: normalizeWorkoutDetailTab(detailTab)
+  });
+}
+
+function renderWorkoutDetailTabButton(key, label, activeTab, escapeHtml) {
+  const active = activeTab === key;
+  return `
+    <button
+      type="button"
+      class="workout-detail-tab${active ? " is-active" : ""}"
+      data-workout-detail-tab="${key}"
+      role="tab"
+      aria-selected="${active ? "true" : "false"}"
+      title="${escapeHtml(label)}"
+    >${escapeHtml(label)}</button>
+  `;
 }
 
 function renderShellAdHocWorkoutForm(escapeHtml) {
