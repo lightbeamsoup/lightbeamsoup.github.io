@@ -36,6 +36,8 @@ const SUMMARY_SCHEDULER_INTERVAL_MS = Math.max(
   Number(process.env.SUMMARY_SCHEDULER_INTERVAL_MS || 300_000) || 300_000
 );
 const ENABLE_NOTIFICATION_SCHEDULER = process.env.ENABLE_NOTIFICATION_SCHEDULER !== "false";
+const SERVER_MODE = resolveServerMode(process.env.LIFETREE_SERVER_MODE, process.argv.slice(2));
+const RUNS_WEB_SERVER = SERVER_MODE !== "worker";
 const SESSION_COOKIE = "lifetree_session";
 const DRIVE_FILE_NAME = "task-deck-store.json";
 const DEV_EMAIL = "jbkallman@gmail.com";
@@ -303,9 +305,18 @@ app.use((error, _req, res, next) => {
 
 app.use(express.static(rootDir, { extensions: ["html"] }));
 
-app.listen(PORT, () => {
-  console.log(`Lifetree server listening on http://localhost:${PORT}`);
-});
+if (RUNS_WEB_SERVER) {
+  app.listen(PORT, () => {
+    console.log(`Lifetree server listening on http://localhost:${PORT}`);
+  });
+} else {
+  console.log("Lifetree notification worker starting without the web server.");
+}
+
+if (!RUNS_WEB_SERVER && !ENABLE_NOTIFICATION_SCHEDULER) {
+  console.error("Worker mode requires ENABLE_NOTIFICATION_SCHEDULER=true.");
+  process.exit(1);
+}
 
 if (ENABLE_NOTIFICATION_SCHEDULER) {
   startNotificationScheduler();
@@ -358,6 +369,13 @@ function assertOAuthEnv() {
       throw new Error(`Missing required environment variable: ${key}`);
     }
   }
+}
+
+function resolveServerMode(envValue, argv) {
+  if (Array.isArray(argv) && argv.includes("--worker")) {
+    return "worker";
+  }
+  return String(envValue || "").toLowerCase() === "worker" ? "worker" : "web";
 }
 
 function requireUser(req) {

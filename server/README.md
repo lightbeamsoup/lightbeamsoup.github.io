@@ -9,6 +9,7 @@ This backend enables Google OAuth authorization code flow with refresh tokens fo
 - `GOOGLE_REDIRECT_URI`
 - `TOKEN_SECRET`
 - `DATA_DIR` recommended in production for persistent token storage
+- `LIFETREE_SERVER_MODE` optional, defaults to `web`; set to `worker` for a notifications-only process
 - `REQUEST_BODY_LIMIT` optional, defaults to `10mb`
 - `ENABLE_NOTIFICATION_SCHEDULER` optional, defaults to `true`
 - `SUMMARY_SCHEDULER_INTERVAL_MS` optional, defaults to `300000` (5 minutes)
@@ -25,6 +26,12 @@ Project follow-up items live in [`TODO.md`](/home/jbk/lightbeamsoup.github.io/TO
 4. `npm start`
 5. Open `http://localhost:3000/lifetree/`
 
+If you want to test the email scheduler as a standalone backend process locally, run:
+
+```bash
+npm run start:worker
+```
+
 ## Railway deployment
 
 1. Create a new Railway project from this repo.
@@ -35,9 +42,10 @@ Project follow-up items live in [`TODO.md`](/home/jbk/lightbeamsoup.github.io/TO
    - `GOOGLE_REDIRECT_URI=https://www.joshcodes.ai/api/auth/google/callback`
    - `TOKEN_SECRET` as a long random secret
    - `DATA_DIR=/data`
+   - `LIFETREE_SERVER_MODE=web`
    - `COOKIE_SECURE=true`
    - `REQUEST_BODY_LIMIT=10mb`
-   - `ENABLE_NOTIFICATION_SCHEDULER=true`
+   - `ENABLE_NOTIFICATION_SCHEDULER=false`
    - `SUMMARY_SCHEDULER_INTERVAL_MS=300000`
 4. In Railway, attach the custom domain `www.joshcodes.ai` to this service and point DNS at Railway.
 5. Add these Google OAuth settings:
@@ -45,11 +53,34 @@ Project follow-up items live in [`TODO.md`](/home/jbk/lightbeamsoup.github.io/TO
    - Authorized redirect URI: `https://www.joshcodes.ai/api/auth/google/callback`
 6. Deploy and open `https://www.joshcodes.ai/lifetree/`
 
+## Always-on notification worker
+
+To keep email summaries and reminders sending even when no one has Lifetree open in a browser, run a second backend process from the same repo:
+
+1. Create a second Railway service or worker from this repo.
+2. Mount the same persistent volume path used by the web service, for example `/data`.
+3. Set environment variables:
+   - `GOOGLE_CLIENT_ID`
+   - `GOOGLE_CLIENT_SECRET`
+   - `GOOGLE_REDIRECT_URI=https://www.joshcodes.ai/api/auth/google/callback`
+   - `TOKEN_SECRET`
+   - `DATA_DIR=/data`
+   - `LIFETREE_SERVER_MODE=worker`
+   - `ENABLE_NOTIFICATION_SCHEDULER=true`
+   - `SUMMARY_SCHEDULER_INTERVAL_MS=300000`
+4. Use the start command:
+
+```bash
+npm run start:worker
+```
+
+The web service should keep `ENABLE_NOTIFICATION_SCHEDULER=false` when this worker is running, so only one process is sending notification emails.
+
 Without a persistent volume, Railway restarts or redeploys will lose stored refresh tokens and sessions.
 
 ## Email summary scheduler
 
-If email summaries are enabled in Lifetree, the backend polls saved user accounts on an interval, loads each user's Drive-backed Lifetree store, and sends due summaries through the connected Gmail account. The scheduler uses the summary send history stored in Lifetree data to dedupe sends per day or week.
+If email summaries or reminders are enabled in Lifetree, the backend polls saved user accounts on an interval, loads each user's Drive-backed Lifetree store, and sends due notifications through the connected Gmail account. The scheduler uses notification history stored in Lifetree data to dedupe sends per time window or reminder event.
 
 ## Recommended production shape
 

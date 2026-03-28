@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node server/app.js",
     "dev": "node server/app.js",
+    "start:worker": "node server/app.js --worker",
     "test": "node --test lifetree/logic.test.js"
   },
   "dependencies": {
