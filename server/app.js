@@ -39,6 +39,7 @@ const SUMMARY_SCHEDULER_INTERVAL_MS = Math.max(
   Number(process.env.SUMMARY_SCHEDULER_INTERVAL_MS || 300_000) || 300_000
 );
 const REMINDER_LOOKBACK_WINDOW_MS = SUMMARY_SCHEDULER_INTERVAL_MS + 15_000;
+const NOTIFICATION_LOG_LEVEL = normalizeNotificationLogLevel(process.env.NOTIFICATION_LOG_LEVEL);
 const ENABLE_NOTIFICATION_SCHEDULER = process.env.ENABLE_NOTIFICATION_SCHEDULER !== "false";
 const SERVER_MODE = resolveServerMode(process.env.LIFETREE_SERVER_MODE, process.argv.slice(2));
 const RUNS_WEB_SERVER = SERVER_MODE !== "worker";
@@ -557,6 +558,38 @@ if (ENABLE_NOTIFICATION_SCHEDULER) {
   startNotificationScheduler();
 }
 
+function normalizeNotificationLogLevel(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "verbose") {
+    return "verbose";
+  }
+  if (normalized === "basic") {
+    return "basic";
+  }
+  return "off";
+}
+
+function shouldLogNotifications(level) {
+  if (NOTIFICATION_LOG_LEVEL === "verbose") {
+    return true;
+  }
+  if (NOTIFICATION_LOG_LEVEL === "basic") {
+    return level !== "verbose";
+  }
+  return false;
+}
+
+function logNotification(level, message, context = null) {
+  if (!shouldLogNotifications(level)) {
+    return;
+  }
+  if (context && Object.keys(context).length > 0) {
+    console.log(`[notifications] ${message} ${JSON.stringify(context)}`);
+    return;
+  }
+  console.log(`[notifications] ${message}`);
+}
+
 async function handleNotificationSendRequest(req, res, {
   missingRecipientMessage,
   missingSubjectMessage,
@@ -836,6 +869,11 @@ function startNotificationScheduler() {
   if (notificationSchedulerState.timerId) {
     return;
   }
+  logNotification("basic", "Scheduler started", {
+    intervalMs: SUMMARY_SCHEDULER_INTERVAL_MS,
+    reminderLookbackWindowMs: REMINDER_LOOKBACK_WINDOW_MS,
+    mode: SERVER_MODE
+  });
   notificationSchedulerState.timerId = setInterval(() => {
     void runNotificationScheduler();
   }, SUMMARY_SCHEDULER_INTERVAL_MS);
@@ -846,12 +884,17 @@ function startNotificationScheduler() {
 
 async function runNotificationScheduler() {
   if (notificationSchedulerState.inFlight) {
+    logNotification("verbose", "Scheduler tick skipped because a prior run is still in flight");
     return;
   }
   notificationSchedulerState.inFlight = true;
   try {
     const store = loadStore();
     const users = Object.values(store.users || {});
+    logNotification("verbose", "Scheduler tick started", {
+      userCount: users.length,
+      at: new Date().toISOString()
+    });
     for (const user of users) {
       try {
         await processScheduledNotificationsForUser(user);
@@ -866,12 +909,18 @@ async function runNotificationScheduler() {
 
 async function processScheduledNotificationsForUser(user) {
   if (!user?.refreshToken) {
+    logNotification("verbose", "Skipping user without refresh token", {
+      userEmail: normalizeRecipientEmail(user?.email || "")
+    });
     return;
   }
 
   const accessToken = await refreshAccessToken(user);
   const file = await findDriveFile(accessToken);
   if (!file) {
+    logNotification("verbose", "No Drive store found for user", {
+      userEmail: normalizeRecipientEmail(user?.email || "")
+    });
     return;
   }
 
@@ -889,22 +938,46 @@ async function processScheduledNotificationsForUser(user) {
   const emailConfig = notifications.email;
   let history = emailConfig.history;
   let changed = false;
-
-  const dueCheck = shouldEmailSummarySendNow(emailConfig, new Date());
+  const now = new Date();
+  const userEmail = normalizeRecipientEmail(user.email);
+  const reminderCandidates = collectEmailReminderCandidates({
+    store: payload,
+    emailConfig,
+    now,
+    timeZone: emailConfig.summaries.timezone,
+    requireDailyAgendaTime: true,
+    lookbackWindowMs: REMINDER_LOOKBACK_WINDOW_MS
+  });
+  const dueCheck = shouldEmailSummarySendNow(emailConfig, now);
+  logNotification("verbose", "Evaluated notification state for user", {
+    userEmail,
+    fileId: file.id,
+    summaryDue: dueCheck.due,
+    summaryReason: dueCheck.reason || (dueCheck.due ? "due" : ""),
+    dueSoonCount: reminderCandidates.dueSoon.length,
+    overdueCount: reminderCandidates.overdue.length,
+    dailyAgendaCount: reminderCandidates.dailyAgenda.length
+  });
   if (dueCheck.due) {
     const preview = buildEmailSummaryPreview({
       store: payload,
       emailConfig,
-      now: new Date(),
-      fallbackRecipientEmail: normalizeRecipientEmail(user.email)
+      now,
+      fallbackRecipientEmail: userEmail
     });
     if (preview.recipientEmail) {
       await sendGmailMessage(accessToken, {
-        fromEmail: normalizeRecipientEmail(user.email),
+        fromEmail: userEmail,
         recipientEmail: preview.recipientEmail,
         subject: preview.subject,
         html: renderEmailSummaryBodyHtml(preview),
         text: renderEmailSummaryBodyText(preview)
+      });
+      logNotification("basic", "Sent summary email", {
+        userEmail,
+        recipientEmail: preview.recipientEmail,
+        subject: preview.subject,
+        summaryKey: preview.summaryKey || dueCheck.summaryKey
       });
 
       history = appendEmailSummaryHistoryEntry(history, {
@@ -922,9 +995,18 @@ async function processScheduledNotificationsForUser(user) {
   const reminderTemplates = buildScheduledEmailReminderTemplates({
     store: payload,
     emailConfig,
-    now: new Date(),
-    fallbackRecipientEmail: normalizeRecipientEmail(user.email),
+    now,
+    fallbackRecipientEmail: userEmail,
     lookbackWindowMs: REMINDER_LOOKBACK_WINDOW_MS
+  });
+  logNotification("verbose", "Built scheduled reminder templates", {
+    userEmail,
+    templates: reminderTemplates.map((template) => ({
+      templateKind: template.templateKind,
+      eventCount: template.eventCount,
+      suppressedByQuietHours: template.suppressedByQuietHours,
+      subject: template.subject
+    }))
   });
   for (const reminderPreview of reminderTemplates) {
     if (!reminderPreview.recipientEmail || reminderPreview.items.length === 0 || reminderPreview.suppressedByQuietHours) {
@@ -932,11 +1014,18 @@ async function processScheduledNotificationsForUser(user) {
     }
 
     await sendGmailMessage(accessToken, {
-      fromEmail: normalizeRecipientEmail(user.email),
+      fromEmail: userEmail,
       recipientEmail: reminderPreview.recipientEmail,
       subject: reminderPreview.subject,
       html: renderEmailReminderBodyHtml(reminderPreview),
       text: renderEmailReminderBodyText(reminderPreview)
+    });
+    logNotification("basic", "Sent reminder email", {
+      userEmail,
+      recipientEmail: reminderPreview.recipientEmail,
+      templateKind: reminderPreview.templateKind,
+      eventCount: reminderPreview.eventCount,
+      subject: reminderPreview.subject
     });
 
     history = appendNotificationHistoryEntry(history, {
@@ -954,6 +1043,9 @@ async function processScheduledNotificationsForUser(user) {
   }
 
   if (!changed) {
+    logNotification("verbose", "No scheduled notifications sent for user", {
+      userEmail
+    });
     return;
   }
 
@@ -966,6 +1058,10 @@ async function processScheduledNotificationsForUser(user) {
     }
   });
   await upsertDriveFile(accessToken, payload, file.id);
+  logNotification("verbose", "Persisted notification history back to Drive", {
+    userEmail,
+    fileId: file.id
+  });
 }
 
 function buildRawEmailMessage({ fromEmail, recipientEmail, subject, html, text }) {
