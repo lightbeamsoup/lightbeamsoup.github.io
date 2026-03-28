@@ -99,6 +99,25 @@ export function buildCanopyColumnsData({ standardCards, recurringEntries, today 
   });
 }
 
+export function getCanopyRecurringGroupKey(task) {
+  const baseGroupKey = getBaseRecurringGroupKey(task);
+  if (!baseGroupKey) {
+    return "";
+  }
+  if (baseGroupKey === "monthly") {
+    return "monthly";
+  }
+
+  const occurrencesPerWeek = estimateOccurrencesPerWeek(task, baseGroupKey);
+  if (occurrencesPerWeek < 1) {
+    return "monthly";
+  }
+  if (baseGroupKey === "daily" && occurrencesPerWeek <= 1) {
+    return "weekly";
+  }
+  return baseGroupKey;
+}
+
 export function renderCanopyColumns(container, {
   columns,
   escapeHtml,
@@ -481,7 +500,8 @@ function compareRecurringEntries(left, right) {
 }
 
 function buildRecurringSeriesKey(task, groupKey) {
-  if (groupKey === "daily" || groupKey === "weekly") {
+  const baseGroupKey = getBaseRecurringGroupKey(task);
+  if (baseGroupKey === "daily" || baseGroupKey === "weekly") {
     if (task?.linkedSeries?.groupId) {
       return `linked:${task.linkedSeries.groupId}`;
     }
@@ -688,6 +708,10 @@ function findColumn(columns, key) {
 }
 
 function getRecurringGroupKey(task) {
+  return getCanopyRecurringGroupKey(task);
+}
+
+function getBaseRecurringGroupKey(task) {
   if (!task?.recurrence || task.recurrence.type === "none") {
     return "";
   }
@@ -706,6 +730,21 @@ function getRecurringGroupKey(task) {
     return "monthly";
   }
   return "";
+}
+
+function estimateOccurrencesPerWeek(task, baseGroupKey) {
+  const interval = Math.max(1, Number(task?.recurrence?.interval || 1));
+  const slotCount = Math.max(1, Number(task?.linkedSeries?.slotCount || 1));
+  if (baseGroupKey === "daily") {
+    return (7 * slotCount) / interval;
+  }
+  if (baseGroupKey === "weekly") {
+    return slotCount / interval;
+  }
+  if (baseGroupKey === "monthly") {
+    return 1 / Math.max(1, interval);
+  }
+  return 0;
 }
 
 function isCurrentRecurringPeriod(task, today) {

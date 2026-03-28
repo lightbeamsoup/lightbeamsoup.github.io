@@ -17,6 +17,7 @@ import {
 } from "./logic.js";
 import {
   buildCanopyColumnsData,
+  getCanopyRecurringGroupKey,
   renderCanopyColumns,
   renderCanopyDetailContent
 } from "./modules/canopy.js";
@@ -3287,7 +3288,7 @@ function getSurfacedCanopyRecurringGroup(task, today = todayString()) {
   if (!taskDate) {
     return "";
   }
-  const recurringGroup = getCanopyRecurringGroup(task);
+  const recurringGroup = getCanopyRecurringGroupKey(task);
   const weekStart = startOfWeekString(today);
   const weekEnd = addDaysToDateString(weekStart, 6);
 
@@ -3301,24 +3302,7 @@ function getSurfacedCanopyRecurringGroup(task, today = todayString()) {
 }
 
 function getCanopyRecurringGroup(task) {
-  if (!task?.recurrence || task.recurrence.type === "none") {
-    return "";
-  }
-  if (task.recurrence.type === "daily" || task.recurrence.sourceType === "daily") {
-    return "daily";
-  }
-  if (task.recurrence.type === "weekly" || task.recurrence.sourceType === "weekly") {
-    return "weekly";
-  }
-  if (
-    task.recurrence.type === "monthly-date"
-    || task.recurrence.type === "monthly-weekday"
-    || task.recurrence.sourceType === "monthly-date"
-    || task.recurrence.sourceType === "monthly-weekday"
-  ) {
-    return "monthly";
-  }
-  return "";
+  return getCanopyRecurringGroupKey(task);
 }
 
 function buildRecurringCanopyEntries() {
