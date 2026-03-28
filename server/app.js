@@ -44,6 +44,7 @@ const RUNS_WEB_SERVER = SERVER_MODE !== "worker";
 const SESSION_COOKIE = "lifetree_session";
 const DRIVE_FILE_NAME = "task-deck-store.json";
 const DEV_EMAIL = "jbkallman@gmail.com";
+const LIFETREE_APP_URL = "https://www.joshcodes.ai/lifetree";
 const OAUTH_SCOPES = [
   "openid",
   "email",
@@ -287,6 +288,76 @@ app.post("/api/notifications/send-reminder", async (req, res) => {
     });
   } catch (error) {
     const message = String(error?.message || "Email reminder send failed");
+    const statusCode = message === "Not authenticated" || message === "Missing stored user"
+      ? 401
+      : message.includes("(403)")
+        ? 403
+        : 500;
+    res.status(statusCode).json({ error: message });
+  }
+});
+
+app.post("/api/notifications/dev-send-test", async (req, res) => {
+  try {
+    const user = requireUser(req);
+    if (normalizeRecipientEmail(user.email) !== DEV_EMAIL) {
+      res.status(403).json({ error: "Developer test email is restricted to the owner account." });
+      return;
+    }
+
+    const accessToken = await refreshAccessToken(user);
+    const recipientEmail = normalizeRecipientEmail(req.body?.recipientEmail) || normalizeRecipientEmail(user.email);
+    if (!recipientEmail) {
+      res.status(400).json({ error: "Choose a valid recipient email before sending a test notification." });
+      return;
+    }
+
+    const sentAt = Date.now();
+    const timestamp = new Date(sentAt).toISOString();
+    const subject = `Lifetree test notification · ${timestamp}`;
+    const html = `<!doctype html>
+<html lang="en">
+  <body style="margin: 0; padding: 24px; background: #f5efe4; color: #253243; font-family: Georgia, 'Times New Roman', serif;">
+    <main style="max-width: 720px; margin: 0 auto; background: #fffaf3; border: 1px solid rgba(37, 50, 67, 0.1); border-radius: 24px; padding: 28px; box-shadow: 0 24px 60px rgba(37, 50, 67, 0.12);">
+      <p style="margin: 0 0 8px; text-transform: uppercase; letter-spacing: 0.12em; font-size: 12px; color: #e57b4b;">Lifetree dev test</p>
+      <h1 style="margin: 0 0 10px; font-size: 28px; line-height: 1.2; color: #253243;">Test notification delivery</h1>
+      <p style="margin: 0 0 14px; color: #4f637a;">This email bypasses normal summary/reminder timing and dedupe checks.</p>
+      <ul style="margin: 0; padding-left: 20px; color: #4f637a; line-height: 1.55;">
+        <li>Sent at: ${escapeHtml(timestamp)}</li>
+        <li>Server mode: ${escapeHtml(SERVER_MODE)}</li>
+        <li>Scheduler enabled: ${ENABLE_NOTIFICATION_SCHEDULER ? "true" : "false"}</li>
+      </ul>
+      <p style="margin: 24px 0 0; color: #4f637a;">Open Lifetree: <a href="${LIFETREE_APP_URL}" style="color: #e57b4b;">${LIFETREE_APP_URL}</a></p>
+    </main>
+  </body>
+</html>`;
+    const text = [
+      "Lifetree dev test",
+      "",
+      "This email bypasses normal summary/reminder timing and dedupe checks.",
+      `Sent at: ${timestamp}`,
+      `Server mode: ${SERVER_MODE}`,
+      `Scheduler enabled: ${ENABLE_NOTIFICATION_SCHEDULER ? "true" : "false"}`,
+      "",
+      `Open Lifetree: ${LIFETREE_APP_URL}`
+    ].join("\n");
+
+    const delivery = await sendGmailMessage(accessToken, {
+      fromEmail: normalizeRecipientEmail(user.email),
+      recipientEmail,
+      subject,
+      html,
+      text
+    });
+
+    res.json({
+      ok: true,
+      id: delivery.id || "",
+      threadId: delivery.threadId || "",
+      sentAt
+    });
+  } catch (error) {
+    const message = String(error?.message || "Test notification send failed");
     const statusCode = message === "Not authenticated" || message === "Missing stored user"
       ? 401
       : message.includes("(403)")

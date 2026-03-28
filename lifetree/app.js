@@ -102,6 +102,8 @@ import {
 const LOCAL_STORE_KEY = "task_deck_store_v2";
 const LEGACY_COOKIE_NAME = "task_deck_store";
 const MAX_TASKS = 3000;
+const MAX_DELETION_MARKERS = 300;
+const DELETION_MARKER_RETENTION_MS = 1000 * 60 * 60 * 24 * 45;
 const MAX_ROLLING_SERIES_INSTANCES = 7;
 const MAX_WIDGETS = 5;
 const MAX_VISIBLE_HISTORY_ENTRIES = 25;
@@ -363,6 +365,7 @@ const copyWidgetDiagnosticsButton = document.getElementById("copyWidgetDiagnosti
 const copyNotificationDiagnosticsButton = document.getElementById("copyNotificationDiagnostics");
 const downloadDriveDataButton = document.getElementById("downloadDriveData");
 const importDriveDataButton = document.getElementById("importDriveData");
+const sendDeveloperNotificationTestButton = document.getElementById("sendDeveloperNotificationTest");
 const sendDeveloperDailySummaryButton = document.getElementById("sendDeveloperDailySummary");
 const sendDeveloperDailyAgendaButton = document.getElementById("sendDeveloperDailyAgenda");
 const cleanWidgetDataButton = document.getElementById("cleanWidgetData");
@@ -649,6 +652,7 @@ resetFruitGrowthButton.addEventListener("click", resetDeveloperFruitGrowth);
 copyWidgetDiagnosticsButton.addEventListener("click", copyWidgetDiagnostics);
 copyNotificationDiagnosticsButton.addEventListener("click", copyNotificationDiagnostics);
 downloadDriveDataButton.addEventListener("click", downloadDriveData);
+sendDeveloperNotificationTestButton.addEventListener("click", sendDeveloperNotificationTest);
 sendDeveloperDailySummaryButton.addEventListener("click", sendDeveloperDailySummary);
 sendDeveloperDailyAgendaButton.addEventListener("click", sendDeveloperDailyAgenda);
 importDriveDataButton.addEventListener("click", openDeveloperImportPicker);
@@ -6052,7 +6056,7 @@ function normalizeStore(input) {
   });
   const pointHistorySource = Array.isArray(input.pointHistory) ? input.pointHistory : normalizedPointLedger;
   const normalized = {
-    version: 17,
+    version: 18,
     updatedAt: typeof input.updatedAt === "number" ? input.updatedAt : Date.now(),
     driveFileId: typeof input.driveFileId === "string" ? input.driveFileId : "",
     profile: normalizeProfile(input.profile),
@@ -6070,7 +6074,8 @@ function normalizeStore(input) {
     categories,
     widgets,
     retiredWidgets,
-    recurringBonusSelections: normalizeRecurringBonusSelections(input.recurringBonusSelections)
+    recurringBonusSelections: normalizeRecurringBonusSelections(input.recurringBonusSelections),
+    deletionMarkers: normalizeDeletionMarkers(input.deletionMarkers)
   };
   normalized.userUpdatedAt = typeof input.userUpdatedAt === "number"
     ? input.userUpdatedAt
@@ -6195,6 +6200,103 @@ function normalizeLinkedSeries(linkedSeries) {
 
 function hasLinkedSeriesGroup(task) {
   return Boolean(task?.linkedSeries?.groupId && task.linkedSeries.slotCount > 1);
+}
+
+function normalizeDeletionMarkers(value, now = Date.now()) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const cutoff = now - DELETION_MARKER_RETENTION_MS;
+  const mergedByKey = new Map();
+  for (const entry of value) {
+    const type = entry?.type === "task-id" || entry?.type === "task-key" || entry?.type === "series-id"
+      ? entry.type
+      : "";
+    const markerValue = typeof entry?.value === "string" ? entry.value.slice(0, 240) : "";
+    const deletedAt = typeof entry?.deletedAt === "number" ? entry.deletedAt : 0;
+    if (!type || !markerValue || deletedAt <= 0 || deletedAt < cutoff) {
+      continue;
+    }
+    const key = `${type}:${markerValue}`;
+    const existing = mergedByKey.get(key);
+    if (!existing || deletedAt >= existing.deletedAt) {
+      mergedByKey.set(key, {
+        type,
+        value: markerValue,
+        deletedAt
+      });
+    }
+  }
+
+  return Array.from(mergedByKey.values())
+    .sort((left, right) => right.deletedAt - left.deletedAt || left.type.localeCompare(right.type) || left.value.localeCompare(right.value))
+    .slice(0, MAX_DELETION_MARKERS);
+}
+
+function mergeDeletionMarkers(localMarkers = [], remoteMarkers = [], now = Date.now()) {
+  return normalizeDeletionMarkers([
+    ...normalizeDeletionMarkers(localMarkers, now),
+    ...normalizeDeletionMarkers(remoteMarkers, now)
+  ], now);
+}
+
+function buildDeletionMarkerMaps(markers = []) {
+  const taskIds = new Map();
+  const taskKeys = new Map();
+  const seriesIds = new Map();
+  for (const marker of normalizeDeletionMarkers(markers)) {
+    const target = marker.type === "task-id"
+      ? taskIds
+      : marker.type === "task-key"
+        ? taskKeys
+        : seriesIds;
+    const existing = target.get(marker.value) || 0;
+    if (marker.deletedAt >= existing) {
+      target.set(marker.value, marker.deletedAt);
+    }
+  }
+  return { taskIds, taskKeys, seriesIds };
+}
+
+function deletionMarkerSuppressesTask(task, deletionMarkerMaps) {
+  if (!task || !deletionMarkerMaps) {
+    return false;
+  }
+
+  const latestTaskAt = latestTaskTimestampForMerge(task);
+  const taskIdDeletedAt = deletionMarkerMaps.taskIds.get(task.id) || 0;
+  if (taskIdDeletedAt >= latestTaskAt) {
+    return true;
+  }
+
+  const logicalKey = buildLogicalWidgetTaskKey(task);
+  const taskKeyDeletedAt = logicalKey ? (deletionMarkerMaps.taskKeys.get(logicalKey) || 0) : 0;
+  if (taskKeyDeletedAt >= latestTaskAt) {
+    return true;
+  }
+
+  const seriesDeletedAt = Math.max(
+    deletionMarkerMaps.seriesIds.get(task.id) || 0,
+    task.templateId ? (deletionMarkerMaps.seriesIds.get(task.templateId) || 0) : 0
+  );
+  return seriesDeletedAt >= latestTaskAt;
+}
+
+function addDeletionMarker(type, value, deletedAt = Date.now()) {
+  const markerType = type === "task-id" || type === "task-key" || type === "series-id" ? type : "";
+  const markerValue = typeof value === "string" ? value.trim().slice(0, 240) : "";
+  if (!markerType || !markerValue) {
+    return;
+  }
+  store.deletionMarkers = normalizeDeletionMarkers([
+    {
+      type: markerType,
+      value: markerValue,
+      deletedAt
+    },
+    ...(Array.isArray(store.deletionMarkers) ? store.deletionMarkers : [])
+  ], deletedAt);
 }
 
 function normalizeCategoryDefinitions(value) {
@@ -6404,6 +6506,7 @@ function mergeRecurringBonusSelections(localSelections = [], remoteSelections = 
 function persistStore({ touchUpdatedAt = true, touchUserUpdatedAt = touchUpdatedAt } = {}) {
   const now = Date.now();
   store.pointHistory = normalizePointHistory(store.pointHistory, store.devSettings);
+  store.deletionMarkers = normalizeDeletionMarkers(store.deletionMarkers, now);
   if (touchUpdatedAt) {
     store.updatedAt = now;
   }
@@ -6421,7 +6524,7 @@ function persistLocalStore(nextStore) {
 function createEmptyStore() {
   const now = Date.now();
   const emptyStore = {
-    version: 17,
+    version: 18,
     updatedAt: now,
     userUpdatedAt: now,
     driveFileId: "",
@@ -6435,7 +6538,8 @@ function createEmptyStore() {
     categories: normalizeCategoryDefinitions([]),
     widgets: [],
     retiredWidgets: [],
-    recurringBonusSelections: []
+    recurringBonusSelections: [],
+    deletionMarkers: []
   };
   emptyStore.userFingerprint = computeUserContentFingerprintFromNormalized(emptyStore);
   return emptyStore;
@@ -6455,6 +6559,8 @@ function mergeStores(localStore, remoteStore) {
   const mergedCategories = mergeCategoryDefinitions(localStore.categories, remoteStore.categories);
   const mergedWidgets = mergeWidgetLists(localStore.widgets, remoteStore.widgets, widgetRegistryHelpers(), MAX_WIDGETS);
   const preferredUserState = choosePreferredUserSyncState(localStore, remoteStore);
+  const mergedDeletionMarkers = mergeDeletionMarkers(localStore.deletionMarkers, remoteStore.deletionMarkers);
+  const deletionMarkerMaps = buildDeletionMarkerMaps(mergedDeletionMarkers);
   const mergedDevSettings = (localStore.updatedAt || 0) >= (remoteStore.updatedAt || 0)
     ? normalizeDevSettings(localStore.devSettings)
     : normalizeDevSettings(remoteStore.devSettings);
@@ -6470,17 +6576,17 @@ function mergeStores(localStore, remoteStore) {
       mergedById.set(taskId, choosePreferredTask(localTask, remoteTask, localStore.updatedAt, remoteStore.updatedAt));
       continue;
     }
-    if (localTask && shouldKeepUnpairedTask(localTask, remoteStore.updatedAt || 0)) {
+    if (localTask && !deletionMarkerSuppressesTask(localTask, deletionMarkerMaps) && shouldKeepUnpairedTask(localTask, remoteStore.updatedAt || 0)) {
       mergedById.set(taskId, localTask);
       continue;
     }
-    if (remoteTask && shouldKeepUnpairedTask(remoteTask, localStore.updatedAt || 0)) {
+    if (remoteTask && !deletionMarkerSuppressesTask(remoteTask, deletionMarkerMaps) && shouldKeepUnpairedTask(remoteTask, localStore.updatedAt || 0)) {
       mergedById.set(taskId, remoteTask);
     }
   }
 
   return {
-    version: 17,
+    version: 18,
     updatedAt: Math.max(localStore.updatedAt || 0, remoteStore.updatedAt || 0),
     userUpdatedAt: preferredUserState.userUpdatedAt,
     userFingerprint: preferredUserState.userFingerprint,
@@ -6499,7 +6605,8 @@ function mergeStores(localStore, remoteStore) {
     categories: mergedCategories,
     widgets: mergedWidgets,
     retiredWidgets: mergeRetiredWidgets(localStore.retiredWidgets, remoteStore.retiredWidgets, mergedWidgets),
-    recurringBonusSelections: mergeRecurringBonusSelections(localStore.recurringBonusSelections, remoteStore.recurringBonusSelections)
+    recurringBonusSelections: mergeRecurringBonusSelections(localStore.recurringBonusSelections, remoteStore.recurringBonusSelections),
+    deletionMarkers: mergedDeletionMarkers
   };
 }
 
@@ -6634,7 +6741,15 @@ function buildComparableStore(normalized) {
       .sort(compareWidgetFingerprints),
     recurringBonusSelections: normalizeRecurringBonusSelections(normalized.recurringBonusSelections)
       .map((entry) => sortObjectKeys(entry))
-      .sort((left, right) => left.key.localeCompare(right.key))
+      .sort((left, right) => left.key.localeCompare(right.key)),
+    deletionMarkers: normalizeDeletionMarkers(normalized.deletionMarkers)
+      .map((entry) => sortObjectKeys(entry))
+      .sort((left, right) => {
+        if (left.type !== right.type) {
+          return left.type.localeCompare(right.type);
+        }
+        return left.value.localeCompare(right.value);
+      })
   };
   return comparable;
 }
@@ -6843,8 +6958,12 @@ function renderDeveloperPanel() {
   importDriveDataButton.disabled = !visible;
   const notificationsBusy = !authState.authenticated || notificationSendState.inFlight;
   copyNotificationDiagnosticsButton.disabled = !authState.authenticated;
+  sendDeveloperNotificationTestButton.disabled = notificationsBusy;
   sendDeveloperDailySummaryButton.disabled = notificationsBusy;
   sendDeveloperDailyAgendaButton.disabled = notificationsBusy;
+  sendDeveloperNotificationTestButton.textContent = notificationSendState.inFlight && notificationSendState.kind === "test"
+    ? "Sending…"
+    : "Send test notification email";
   sendDeveloperDailySummaryButton.textContent = notificationSendState.inFlight && notificationSendState.kind === "summary"
     ? "Sending…"
     : "Send daily summary email";
@@ -7063,6 +7182,53 @@ async function sendDeveloperDailySummary() {
     successMessage: `Sent daily summary to ${recipientEmail || "the configured recipient"}.`,
     failurePrefix: "Daily summary send failed"
   });
+}
+
+async function sendDeveloperNotificationTest() {
+  if (!isDeveloperUser()) {
+    return;
+  }
+  if (!authState.authenticated) {
+    const authenticated = await refreshAuthStatus({ suppressUnavailableError: false });
+    if (!authenticated) {
+      setSyncStatus("Connect Google first to send a test notification email.", "error");
+      return;
+    }
+  }
+
+  const recipientEmail = normalizeNotifications(store.notifications).email.recipientEmail || authState.user?.email || "";
+  if (!recipientEmail) {
+    setSyncStatus("Choose a recipient email before sending a test notification email.", "error");
+    return;
+  }
+
+  setNotificationSendInFlight(true, "test");
+  try {
+    const response = await fetch(`${API_BASE}/api/notifications/dev-send-test`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      credentials: FETCH_CREDENTIALS,
+      body: JSON.stringify({ recipientEmail })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload.error || "Test notification send failed");
+    }
+    setSyncStatus(`Sent a test notification email to ${recipientEmail}.`, "success");
+  } catch (error) {
+    const message = String(error?.message || "Test notification send failed");
+    if (message.includes("insufficientPermissions")) {
+      setSyncStatus("Reconnect Google and grant Gmail send access, then try sending the test notification again.", "error");
+    } else if (message === "Not authenticated") {
+      setSyncStatus("Connect Google first to send a test notification email.", "error");
+    } else {
+      setSyncStatus(`Test notification send failed: ${message}`, "error");
+    }
+  } finally {
+    setNotificationSendInFlight(false, "");
+  }
 }
 
 async function sendDeveloperDailyAgenda() {
@@ -7515,15 +7681,29 @@ function rememberRetiredWidget(widget) {
 }
 
 function rememberDeletedTask(taskOrId, taskRecord = null) {
-  return undefined;
+  const task = typeof taskOrId === "object" && taskOrId
+    ? taskOrId
+    : (taskRecord && typeof taskRecord === "object" ? taskRecord : null);
+  const taskId = typeof taskOrId === "string" ? taskOrId : (task?.id || "");
+  if (!taskId) {
+    return;
+  }
+  addDeletionMarker("task-id", taskId);
 }
 
 function rememberDeletedTaskKey(task) {
-  return undefined;
+  const taskKey = buildLogicalWidgetTaskKey(task);
+  if (!taskKey) {
+    return;
+  }
+  addDeletionMarker("task-key", taskKey);
 }
 
 function rememberDeletedSeries(templateId) {
-  return undefined;
+  if (!templateId) {
+    return;
+  }
+  addDeletionMarker("series-id", templateId);
 }
 
 function cleanupDetachedWidgetTasks() {
