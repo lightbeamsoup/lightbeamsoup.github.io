@@ -219,6 +219,15 @@ body[data-theme="dark"] .canopy-group-star.claimed {
   border-color: rgba(120, 214, 148, 0.32);
 }
 
+body[data-theme="dark"] .canopy-group-preview {
+  border-top-color: rgba(142, 166, 201, 0.14);
+}
+
+body[data-theme="dark"] .canopy-group-preview-item span,
+body[data-theme="dark"] .canopy-group-preview-more {
+  color: #93a9c7;
+}
+
 body[data-theme="dark"] .canopy-group-bonus-state.ready {
   color: color-mix(in srgb, var(--canopy-bonus-color, #f4c95d) 82%, #fff0b6);
 }
@@ -948,6 +957,36 @@ body.developer-open {
 
 .canopy-group-card strong {
   font-size: 0.9rem;
+}
+
+.canopy-group-preview {
+  display: grid;
+  gap: 6px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(37, 50, 67, 0.08);
+}
+
+.canopy-group-preview-item {
+  display: grid;
+  gap: 2px;
+}
+
+.canopy-group-preview-item strong {
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.canopy-group-preview-item span,
+.canopy-group-preview-more {
+  font-size: 0.74rem;
+  line-height: 1.3;
+  color: #5b6b7d;
+}
+
+.canopy-group-preview-more {
+  font-weight: 700;
 }
 
 .canopy-group-card.ready {

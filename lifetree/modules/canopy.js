@@ -240,6 +240,7 @@ function renderRecurringGroupRow(column, escapeHtml, formatPointsLabel) {
             ` : group.bonus?.collectible ? `
               <span class="canopy-group-bonus-state ready">Bonus ready: collect ${escapeHtml(formatPointsLabel(group.bonus.points))}</span>
             ` : ""}
+            ${renderRecurringGroupPreview(group, escapeHtml)}
           </button>
           ${group.bonus?.pendingAction ? `
             <button
@@ -279,6 +280,37 @@ function renderRecurringGroupRow(column, escapeHtml, formatPointsLabel) {
       `).join("")}
     </div>
   `;
+}
+
+function renderRecurringGroupPreview(group, escapeHtml) {
+  const previewItems = (group.seriesCards || [])
+    .filter((series) => Boolean(series.nextOpenTaskId))
+    .slice(0, 3);
+  if (previewItems.length === 0) {
+    return "";
+  }
+
+  return `
+    <div class="canopy-group-preview">
+      ${previewItems.map((series) => `
+        <div class="canopy-group-preview-item">
+          <strong>${escapeHtml(series.displayName)}</strong>
+          <span>${escapeHtml(buildRecurringPreviewMeta(series))}</span>
+        </div>
+      `).join("")}
+      ${(group.seriesCards || []).filter((series) => Boolean(series.nextOpenTaskId)).length > previewItems.length ? `
+        <span class="canopy-group-preview-more">+${(group.seriesCards || []).filter((series) => Boolean(series.nextOpenTaskId)).length - previewItems.length} more</span>
+      ` : ""}
+    </div>
+  `;
+}
+
+function buildRecurringPreviewMeta(series) {
+  const dueCopy = series.nextActionDueLabel || series.nextDueLabel || series.blockedNote || "Still due this period";
+  if (series.totalCount > 1) {
+    return `${series.completedCount}/${series.totalCount} complete · ${dueCopy}`;
+  }
+  return dueCopy;
 }
 
 function renderRecurringBonusPanel(group, columnKey, escapeHtml, formatPointsLabel) {
@@ -553,6 +585,8 @@ function finalizeRecurringSeriesCard(entries) {
     footerLabel: nextOpen
       ? (nextActionable ? `Next due ${describeTaskDate(nextOpen.task, (value) => value)}` : (nextOpen.blockedNote || "Waiting for this period to unlock."))
       : "This period is fully resolved.",
+    nextDueLabel: nextOpen ? describeTaskDate(nextOpen.task, (value) => value) : "",
+    nextActionDueLabel: nextActionable ? describeTaskDate(nextActionable.task, (value) => value) : "",
     blocked: Boolean(nextOpen && !nextActionable),
     blockedNote: nextOpen && !nextActionable ? (nextOpen.blockedNote || "Blocked") : "",
     deadlineState: nextActionable?.deadlineState || nextOpen?.deadlineState || "",

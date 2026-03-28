@@ -7,8 +7,6 @@
 - Integrations: Add Google Calendar integration.
 - Integrations: Add Apple Fitness integration.
 - Workout Coach: Clean up the workout modal by adding tabs.
-- Tasks: Create a preview for daily and weekly tasks.
-- Tasks: Understand and document how tasks get placed into weeklies versus monthlies.
 - Tree styles: Create a spring canopy skin.
 - Drive sync: Make merge/conflict popups clearer about what happened and what each choice will do.
 
@@ -43,6 +41,8 @@
 
 ### Widget Shells And Canopy
 
+- 2026-03-28: Bucket slower-than-weekly recurring tasks as monthlies and document the rule.
+- 2026-03-28: Add shell previews for daily, weekly, and monthly recurring groups that show still-due items and progress.
 - 2026-03-26: Make `Remove widget` less prominent and move it to an `x` in the upper-right corner of the widget shell.
 - 2026-03-26: Visually reflect when a recurring bonus has already been claimed for the current period.
 - 2026-03-26: Add matching widget-owned task metadata to Energy tasks.
