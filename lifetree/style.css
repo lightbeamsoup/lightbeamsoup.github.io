@@ -2292,10 +2292,12 @@ body.developer-open {
   z-index: 1;
   width: min(1180px, calc(100vw - 24px));
   height: calc(100vh - 24px);
+  max-height: calc(100dvh - 24px);
   margin: 12px auto;
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  min-height: 0;
   padding: 22px;
   border-radius: 30px;
   background: linear-gradient(180deg, rgba(255, 249, 239, 0.98), rgba(244, 232, 214, 0.98));
@@ -2358,12 +2360,21 @@ body.developer-open {
 }
 
 .widget-detail-body {
+  display: grid;
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
+  touch-action: pan-y;
   scrollbar-gutter: stable;
+  padding-right: 6px;
+}
+
+.energy-detail,
+.energy-detail-grid {
+  min-height: 0;
 }
 
 .task-desk-header {

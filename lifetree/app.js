@@ -1887,6 +1887,7 @@ function handleWidgetSlotClick(event) {
     widget,
     helpers: {
       getStore: () => store,
+      createId,
       applyAutoSkipRules,
       completeNextTaskFromWidget,
       completeWidgetTaskById,
@@ -4669,7 +4670,15 @@ function commitPendingAction(key) {
 
   pendingActions.delete(key);
   window.clearTimeout(pending.timerId);
-  const result = pending.commit?.();
+  let result = null;
+  try {
+    result = pending.commit?.();
+  } catch (error) {
+    console.error("Pending action failed", error);
+    renderAll();
+    setSyncStatus("That pending action failed before it could finish.", "error");
+    return;
+  }
   if (!result) {
     renderAll();
     return;
