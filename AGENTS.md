@@ -42,12 +42,27 @@
 - Keep `app.js` focused on orchestration: DOM wiring, store updates, modal coordination, and cross-module integration.
 - When changing persistent data, update normalization paths in `app.js` so older stores still load safely.
 - Settings/profile changes should update both the settings modal in [`lifetree/index.html`](/home/jbk/lightbeamsoup.github.io/lifetree/index.html) and the profile normalization defaults in [`lifetree/modules/profile.js`](/home/jbk/lightbeamsoup.github.io/lifetree/modules/profile.js).
+- Prefer reusing existing feature wiring before adding new action paths. Shared forms, pending-action flows, modal sections, scheduler helpers, and widget-owned task metadata should be extended rather than duplicated when possible.
+- When a feature already has a submit path or renderer helper, prefer extracting or expanding that shared helper instead of forking similar markup or commit logic in a second location.
 - After each edit turn is complete and ready for a new prompt, create a local commit by default, but do not push unless the user explicitly asks.
 - Never run `git add` and `git commit` in parallel. Git staging/commit commands should always be executed serially to avoid `.git/index.lock` races.
+- Keep git commits scoped to the files actually changed for the task, and check `git diff`/`git status` before committing when the working tree has unrelated files.
 - Drive sync behavior now has three layers:
   - manual auth/load/save flow in [`lifetree/modules/driveSync.js`](/home/jbk/lightbeamsoup.github.io/lifetree/modules/driveSync.js)
   - autosave cadence in [`lifetree/modules/autosave.js`](/home/jbk/lightbeamsoup.github.io/lifetree/modules/autosave.js)
   - settings/UI wiring in [`lifetree/app.js`](/home/jbk/lightbeamsoup.github.io/lifetree/app.js)
+
+## TODO workflow
+- [`TODO.md`](/home/jbk/lightbeamsoup.github.io/TODO.md) is the active product/technical queue. Add new follow-up work there instead of leaving it only in chat context.
+- When completing a TODO item, remove it from `Open items` and move it into `Recently completed` in the appropriate workstream section.
+- Completed TODO entries should include the completion date in `YYYY-MM-DD` form.
+- Keep `Recently completed` grouped by workstream so the list stays readable as it grows.
+
+## Git workflow
+- Default turn ending: local commit only.
+- Only push when the user explicitly asks to push.
+- Stage and commit serially; do not overlap git operations with each other.
+- Avoid broad staging when unrelated work is present in the tree.
 
 ## Quick verification
 - `node --check lifetree/app.js`
