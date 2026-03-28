@@ -155,6 +155,7 @@ export const workoutWidgetDefinition = {
     const weightIntent = describeWeightLogIntent(tasks, widget.id, weightTracking, formatDateTime);
     const weightScheduleDraft = weightTracking.schedule?.recurrence || createWeightScheduleDraft();
     const weeklyCalories = sumWorkoutCaloriesForCurrentWeek(widget.data.workoutEntries);
+    const repairableWorkoutLogs = findRepairableWorkoutTasks(tasks, widget);
 
     return `
       <section class="energy-detail">
@@ -415,8 +416,15 @@ export const workoutWidgetDefinition = {
               <div>
                 <p class="eyebrow">History</p>
                 <h3>Recent activity</h3>
-                <p class="sync-status">Recent workout logs keep the actual duration, calories, and intensity recorded at completion time.</p>
+                <p class="sync-status">Recent workout logs keep the actual duration, calories, and intensity recorded at completion time. Missing shell quick-complete logs can be rebuilt from the scheduled defaults.</p>
               </div>
+              ${repairableWorkoutLogs.length ? `
+                <div class="widget-actions workout-inline-actions">
+                  <button type="button" class="ghost-button" data-workout-repair-logs>
+                    Repair ${repairableWorkoutLogs.length} missing log${repairableWorkoutLogs.length === 1 ? "" : "s"}
+                  </button>
+                </div>
+              ` : ""}
             </div>
             <div class="workout-entry-list">
               ${recentWorkoutEntries.length
@@ -628,6 +636,20 @@ export const workoutWidgetDefinition = {
         helpers.persistStore();
         helpers.renderAll();
         helpers.setSyncStatus("Saved the weight tracking settings.", "success");
+        return;
+      }
+
+      const repairLogsButton = event.target.closest("[data-workout-repair-logs]");
+      if (repairLogsButton) {
+        const repairedCount = repairMissingWorkoutLogs(widget, helpers.getStore(), helpers);
+        if (repairedCount > 0) {
+          helpers.persistStore();
+          helpers.renderAll();
+          helpers.setSyncStatus(`Rebuilt ${repairedCount} missing workout log${repairedCount === 1 ? "" : "s"} from completed workout tasks.`, "success");
+        } else {
+          helpers.setSyncStatus("No missing workout logs were found to repair.", "info");
+        }
+        return;
       }
     };
 
@@ -2071,6 +2093,64 @@ function upsertWeightEntry(widget, entry) {
   }
 
   widget.data.weightEntries.sort((left, right) => left.at - right.at);
+}
+
+function findRepairableWorkoutTasks(tasks, widget) {
+  const allTasks = Array.isArray(tasks) ? tasks : [];
+  const workoutEntries = normalizeWorkoutEntries(widget?.data?.workoutEntries);
+  const existingTaskIds = new Set(workoutEntries.map((entry) => entry.taskId).filter(Boolean));
+  return allTasks
+    .filter((task) =>
+      task
+      && task.ownerWidgetId === widget?.id
+      && task.widgetTaskKind === "workout-session"
+      && task.status === "done"
+      && !task.archived
+      && !existingTaskIds.has(task.id)
+    )
+    .sort(compareWorkoutTaskSchedule);
+}
+
+function repairMissingWorkoutLogs(widget, store, helpers) {
+  const tasks = Array.isArray(store?.tasks) ? store.tasks : [];
+  const repairableTasks = findRepairableWorkoutTasks(tasks, widget);
+  let repairedCount = 0;
+
+  for (const task of repairableTasks) {
+    const completedAt = getLatestCompletedTimestamp(task) || task.updatedAt || task.createdAt || Date.now();
+    upsertWorkoutEntry(widget, {
+      id: helpers.createId(),
+      at: completedAt,
+      workoutType: task.widgetTaskMeta?.workoutType || task.name || "Workout",
+      durationMinutes: normalizeDurationMinutes(task.widgetTaskMeta?.durationMinutes || 30),
+      intensity: normalizeWorkoutIntensity(task.widgetTaskMeta?.intensity),
+      caloriesBurned: normalizeCaloriesBurned(task.widgetTaskMeta?.caloriesBurned ?? DEFAULT_WORKOUT_CALORIES),
+      taskId: task.id,
+      taskName: task.name || "",
+      planId: task.widgetTaskMeta?.planId || "",
+      scheduledDate: task.dueDate || task.startDate || "",
+      scheduledTime: task.timeOfDay || "",
+      source: "task"
+    });
+    repairedCount += 1;
+  }
+
+  if (repairedCount > 0) {
+    widget.updatedAt = Date.now();
+  }
+
+  return repairedCount;
+}
+
+function getLatestCompletedTimestamp(task) {
+  const history = Array.isArray(task?.history) ? task.history : [];
+  let latest = 0;
+  for (const item of history) {
+    if (item?.type === "completed" && typeof item.at === "number" && item.at > latest) {
+      latest = item.at;
+    }
+  }
+  return latest;
 }
 
 function replaceAdditionalTimes(container, times) {

@@ -5,6 +5,7 @@
 - Widgets: Create a Travel Buddy widget.
 - Widgets: Create a Hydration widget that tracks ounces consumed and grows a plant as you water it.
 - Drive sync: Make merge/conflict popups clearer about what happened and what each choice will do.
+- Notifications: Run the email scheduler from an always-on backend worker so summaries and reminders still send when Lifetree is closed.
 
 ## Recently completed
 
