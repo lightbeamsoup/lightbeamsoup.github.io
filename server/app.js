@@ -311,6 +311,13 @@ if (RUNS_WEB_SERVER) {
   });
 } else {
   console.log("Lifetree notification worker starting without the web server.");
+  const healthApp = express();
+  healthApp.get("/healthz", (_req, res) => {
+    res.json({ ok: true, mode: "worker" });
+  });
+  healthApp.listen(PORT, () => {
+    console.log(`Lifetree notification worker healthcheck listening on http://localhost:${PORT}/healthz`);
+  });
 }
 
 if (!RUNS_WEB_SERVER && !ENABLE_NOTIFICATION_SCHEDULER) {
