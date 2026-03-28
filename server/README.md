@@ -47,6 +47,7 @@ npm run start:worker
    - `REQUEST_BODY_LIMIT=10mb`
    - `ENABLE_NOTIFICATION_SCHEDULER=false`
    - `SUMMARY_SCHEDULER_INTERVAL_MS=300000`
+   - Do not set `PORT` manually on Railway. Railway injects its own port and the service must use that value for health checks to pass.
 4. In Railway, attach the custom domain `www.joshcodes.ai` to this service and point DNS at Railway.
 5. Add these Google OAuth settings:
    - Authorized JavaScript origin: `https://www.joshcodes.ai`
@@ -68,7 +69,8 @@ To keep email summaries and reminders sending even when no one has Lifetree open
    - `LIFETREE_SERVER_MODE=worker`
    - `ENABLE_NOTIFICATION_SCHEDULER=true`
    - `SUMMARY_SCHEDULER_INTERVAL_MS=300000`
-4. The repo `railway.json` start command is mode-aware, so this service can keep using the repo default start command as long as `LIFETREE_SERVER_MODE=worker` is set.
+   - Do not set `PORT` manually on Railway.
+4. The repo `railway.json` start command can stay at the default `npm start`; worker mode is selected automatically from `LIFETREE_SERVER_MODE=worker`.
 5. If you override the Railway start command manually, use:
 
    ```bash
