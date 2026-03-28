@@ -38,6 +38,7 @@ const SUMMARY_SCHEDULER_INTERVAL_MS = Math.max(
   60_000,
   Number(process.env.SUMMARY_SCHEDULER_INTERVAL_MS || 300_000) || 300_000
 );
+const REMINDER_LOOKBACK_WINDOW_MS = SUMMARY_SCHEDULER_INTERVAL_MS + 15_000;
 const ENABLE_NOTIFICATION_SCHEDULER = process.env.ENABLE_NOTIFICATION_SCHEDULER !== "false";
 const SERVER_MODE = resolveServerMode(process.env.LIFETREE_SERVER_MODE, process.argv.slice(2));
 const RUNS_WEB_SERVER = SERVER_MODE !== "worker";
@@ -412,13 +413,15 @@ app.get("/api/notifications/dev-diagnostics", async (req, res) => {
       emailConfig,
       now,
       timeZone: emailConfig.summaries.timezone,
-      requireDailyAgendaTime: true
+      requireDailyAgendaTime: true,
+      lookbackWindowMs: REMINDER_LOOKBACK_WINDOW_MS
     });
     const scheduledReminderTemplates = buildScheduledEmailReminderTemplates({
       store: payload,
       emailConfig,
       now,
-      fallbackRecipientEmail: normalizeRecipientEmail(user.email)
+      fallbackRecipientEmail: normalizeRecipientEmail(user.email),
+      lookbackWindowMs: REMINDER_LOOKBACK_WINDOW_MS
     });
     const manualReminderTemplates = buildEmailReminderTemplates({
       store: payload,
@@ -920,7 +923,8 @@ async function processScheduledNotificationsForUser(user) {
     store: payload,
     emailConfig,
     now: new Date(),
-    fallbackRecipientEmail: normalizeRecipientEmail(user.email)
+    fallbackRecipientEmail: normalizeRecipientEmail(user.email),
+    lookbackWindowMs: REMINDER_LOOKBACK_WINDOW_MS
   });
   for (const reminderPreview of reminderTemplates) {
     if (!reminderPreview.recipientEmail || reminderPreview.items.length === 0 || reminderPreview.suppressedByQuietHours) {

@@ -55,7 +55,8 @@ export function buildScheduledEmailReminderTemplates({
   store,
   emailConfig,
   now = new Date(),
-  fallbackRecipientEmail = ""
+  fallbackRecipientEmail = "",
+  lookbackWindowMs = 0
 }) {
   const reminders = emailConfig?.reminders || {};
   const summaries = emailConfig?.summaries || {};
@@ -82,7 +83,8 @@ export function buildScheduledEmailReminderTemplates({
     emailConfig,
     now,
     timeZone,
-    requireDailyAgendaTime: true
+    requireDailyAgendaTime: true,
+    lookbackWindowMs
   });
   const filteredCandidates = {
     dueSoon: candidates.dueSoon.filter((candidate) => !sentKeys.has(candidate.key)),
@@ -115,7 +117,8 @@ export function collectEmailReminderCandidates({
   now = new Date(),
   timeZone = DEFAULT_NOTIFICATION_TIMEZONE,
   includeKinds = null,
-  requireDailyAgendaTime = false
+  requireDailyAgendaTime = false,
+  lookbackWindowMs = 0
 }) {
   const reminders = emailConfig?.reminders || {};
   const tasks = Array.isArray(store?.tasks) ? store.tasks : [];
@@ -147,7 +150,10 @@ export function collectEmailReminderCandidates({
 
     if (dueSoonAllowed) {
       const dueSoonStart = dueTimestamp - dueSoonMinutes * 60_000;
-      if (nowTimestamp >= dueSoonStart && nowTimestamp < dueTimestamp) {
+      const dueSoonRecentlyCrossed = lookbackWindowMs > 0
+        && dueSoonStart <= nowTimestamp
+        && dueSoonStart > nowTimestamp - lookbackWindowMs;
+      if ((nowTimestamp >= dueSoonStart && nowTimestamp < dueTimestamp) || dueSoonRecentlyCrossed) {
         dueSoon.push({ key: `due-soon:${baseKey}`, task, dueTimestamp });
       }
     }
@@ -168,17 +174,19 @@ export function collectEmailReminderCandidates({
   const sortCandidates = (left, right) => left.dueTimestamp - right.dueTimestamp
     || String(left.task?.name || "").localeCompare(String(right.task?.name || ""));
   dueSoon.sort(sortCandidates);
-  overdue.sort(sortCandidates);
+  const dueSoonTaskIds = new Set(dueSoon.map((candidate) => candidate.task?.id).filter(Boolean));
+  const filteredOverdue = overdue.filter((candidate) => !dueSoonTaskIds.has(candidate.task?.id));
+  filteredOverdue.sort(sortCandidates);
   dailyAgenda.sort(sortCandidates);
 
   return {
     dueSoon,
-    overdue,
+    overdue: filteredOverdue,
     dailyAgenda,
     dailyAgendaKey,
     all: [
       ...dueSoon,
-      ...overdue,
+      ...filteredOverdue,
       ...dailyAgenda
     ]
   };
