@@ -13,6 +13,7 @@ This backend enables Google OAuth authorization code flow with refresh tokens fo
 - `REQUEST_BODY_LIMIT` optional, defaults to `10mb`
 - `ENABLE_NOTIFICATION_SCHEDULER` optional, defaults to `true`
 - `SUMMARY_SCHEDULER_INTERVAL_MS` optional, defaults to `300000` (5 minutes)
+- `NOTIFICATION_LOG_LEVEL` optional, one of `off`, `basic`, or `verbose`; defaults to `off`
 
 See `.env.example` for local development defaults.
 
@@ -45,8 +46,9 @@ npm run start:worker
    - `LIFETREE_SERVER_MODE=web`
    - `COOKIE_SECURE=true`
    - `REQUEST_BODY_LIMIT=10mb`
-   - `ENABLE_NOTIFICATION_SCHEDULER=false`
+   - `ENABLE_NOTIFICATION_SCHEDULER=true`
    - `SUMMARY_SCHEDULER_INTERVAL_MS=300000`
+   - `NOTIFICATION_LOG_LEVEL=verbose` while debugging notifications
    - Do not set `PORT` manually on Railway. Railway injects its own port and the service must use that value for health checks to pass.
 4. In Railway, attach the custom domain `www.joshcodes.ai` to this service and point DNS at Railway.
 5. Add these Google OAuth settings:
@@ -54,9 +56,11 @@ npm run start:worker
    - Authorized redirect URI: `https://www.joshcodes.ai/api/auth/google/callback`
 6. Deploy and open `https://www.joshcodes.ai/lifetree/`
 
-## Always-on notification worker
+## Dedicated notification worker
 
-To keep email summaries and reminders sending even when no one has Lifetree open in a browser, run a second backend process from the same repo:
+The dedicated worker mode exists, but on Railway it should stay disabled for now unless auth/session storage is moved into a shared backend. The worker and web services need access to the same auth store, and the current file-backed storage is not a reliable way to share that state across separate Railway services.
+
+If you do want to experiment with the worker later, the shape is:
 
 1. Create a second Railway service or worker from this repo.
 2. Mount the same persistent volume path used by the web service, for example `/data`.
@@ -77,13 +81,22 @@ To keep email summaries and reminders sending even when no one has Lifetree open
    npm run start:worker
    ```
 
-The web service should keep `ENABLE_NOTIFICATION_SCHEDULER=false` when this worker is running, so only one process is sending notification emails.
+For the current Railway deployment, prefer leaving the worker disabled and running the scheduler on the web service instead.
 
 Without a persistent volume, Railway restarts or redeploys will lose stored refresh tokens and sessions.
 
 ## Email summary scheduler
 
 If email summaries or reminders are enabled in Lifetree, the backend polls saved user accounts on an interval, loads each user's Drive-backed Lifetree store, and sends due notifications through the connected Gmail account. The scheduler uses notification history stored in Lifetree data to dedupe sends per time window or reminder event.
+
+For Railway debugging, set:
+
+```env
+ENABLE_NOTIFICATION_SCHEDULER=true
+NOTIFICATION_LOG_LEVEL=verbose
+```
+
+on the web service. That will log scheduler startup, each polling tick, per-user reminder candidate counts, built templates, and each sent email.
 
 ## Recommended production shape
 

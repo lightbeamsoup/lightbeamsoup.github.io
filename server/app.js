@@ -537,6 +537,15 @@ app.use(express.static(rootDir, { extensions: ["html"] }));
 if (RUNS_WEB_SERVER) {
   app.listen(PORT, () => {
     console.log(`Lifetree server listening on http://localhost:${PORT}`);
+    if (ENABLE_NOTIFICATION_SCHEDULER) {
+      logNotification("basic", "Scheduler enabled on web service", {
+        intervalMs: SUMMARY_SCHEDULER_INTERVAL_MS,
+        reminderLookbackWindowMs: REMINDER_LOOKBACK_WINDOW_MS,
+        logLevel: NOTIFICATION_LOG_LEVEL,
+        dataDir,
+        storePath
+      });
+    }
   });
 } else {
   console.log("Lifetree notification worker starting without the web server.");
@@ -546,6 +555,13 @@ if (RUNS_WEB_SERVER) {
   });
   healthApp.listen(PORT, () => {
     console.log(`Lifetree notification worker healthcheck listening on http://localhost:${PORT}/healthz`);
+    logNotification("basic", "Scheduler enabled on worker service", {
+      intervalMs: SUMMARY_SCHEDULER_INTERVAL_MS,
+      reminderLookbackWindowMs: REMINDER_LOOKBACK_WINDOW_MS,
+      logLevel: NOTIFICATION_LOG_LEVEL,
+      dataDir,
+      storePath
+    });
   });
 }
 
