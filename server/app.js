@@ -11,6 +11,9 @@ import {
   shouldEmailSummarySendNow
 } from "../lifetree/modules/notificationSummary.js";
 import {
+  buildEmailReminderTemplates,
+  buildSentReminderKeySet,
+  collectEmailReminderCandidates,
   buildScheduledEmailReminderTemplates,
   renderEmailReminderBodyHtml,
   renderEmailReminderBodyText
@@ -284,6 +287,157 @@ app.post("/api/notifications/send-reminder", async (req, res) => {
     });
   } catch (error) {
     const message = String(error?.message || "Email reminder send failed");
+    const statusCode = message === "Not authenticated" || message === "Missing stored user"
+      ? 401
+      : message.includes("(403)")
+        ? 403
+        : 500;
+    res.status(statusCode).json({ error: message });
+  }
+});
+
+app.get("/api/notifications/dev-diagnostics", async (req, res) => {
+  try {
+    const user = requireUser(req);
+    if (normalizeRecipientEmail(user.email) !== DEV_EMAIL) {
+      res.status(403).json({ error: "Notification diagnostics are restricted to the owner account." });
+      return;
+    }
+
+    const accessToken = await refreshAccessToken(user);
+    const file = await findDriveFile(accessToken);
+    if (!file) {
+      res.json({
+        ok: true,
+        found: false,
+        reason: "no-drive-file"
+      });
+      return;
+    }
+
+    const response = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`
+      }
+    });
+    if (!response.ok) {
+      throw new Error(await formatGoogleError(response, "Drive download failed"));
+    }
+
+    const payload = await response.json();
+    const notifications = normalizeNotifications(payload.notifications);
+    const emailConfig = notifications.email;
+    const now = new Date();
+    const recipientEmail = normalizeRecipientEmail(emailConfig.recipientEmail || user.email);
+    const summaryDueCheck = shouldEmailSummarySendNow(emailConfig, now);
+    const summaryPreview = buildEmailSummaryPreview({
+      store: payload,
+      emailConfig,
+      now,
+      fallbackRecipientEmail: normalizeRecipientEmail(user.email)
+    });
+    const reminderCandidates = collectEmailReminderCandidates({
+      store: payload,
+      emailConfig,
+      now,
+      timeZone: emailConfig.summaries.timezone,
+      requireDailyAgendaTime: true
+    });
+    const scheduledReminderTemplates = buildScheduledEmailReminderTemplates({
+      store: payload,
+      emailConfig,
+      now,
+      fallbackRecipientEmail: normalizeRecipientEmail(user.email)
+    });
+    const manualReminderTemplates = buildEmailReminderTemplates({
+      store: payload,
+      emailConfig,
+      now,
+      fallbackRecipientEmail: normalizeRecipientEmail(user.email),
+      requireDailyAgendaTime: false
+    });
+    const sentReminderKeys = buildSentReminderKeySet(emailConfig.history);
+
+    res.json({
+      ok: true,
+      found: true,
+      nowIso: now.toISOString(),
+      userEmail: normalizeRecipientEmail(user.email),
+      recipientEmail,
+      fileId: file.id,
+      fileModifiedTime: file.modifiedTime || "",
+      summary: {
+        enabled: emailConfig.summaries.enabled === true,
+        frequency: emailConfig.summaries.frequency,
+        sendTime: emailConfig.summaries.sendTime,
+        weekday: emailConfig.summaries.weekday,
+        timezone: emailConfig.summaries.timezone,
+        dueCheck: summaryDueCheck,
+        preview: {
+          recipientEmail: summaryPreview.recipientEmail,
+          subject: summaryPreview.subject,
+          summaryKey: summaryPreview.summaryKey,
+          sectionCount: Array.isArray(summaryPreview.sections) ? summaryPreview.sections.length : 0
+        }
+      },
+      reminders: {
+        enabled: emailConfig.reminders.enabled === true,
+        dueSoonEnabled: emailConfig.reminders.dueSoonEnabled !== false,
+        overdueEnabled: emailConfig.reminders.overdueEnabled !== false,
+        dailyAgendaEnabled: emailConfig.reminders.dailyAgendaEnabled === true,
+        dailyAgendaTime: emailConfig.reminders.dailyAgendaTime,
+        quietHoursEnabled: emailConfig.reminders.quietHoursEnabled === true,
+        quietHoursStart: emailConfig.reminders.quietHoursStart,
+        quietHoursEnd: emailConfig.reminders.quietHoursEnd,
+        sentReminderKeyCount: sentReminderKeys.size,
+        rawCandidates: {
+          dueSoonCount: reminderCandidates.dueSoon.length,
+          overdueCount: reminderCandidates.overdue.length,
+          dailyAgendaCount: reminderCandidates.dailyAgenda.length,
+          dailyAgendaKey: reminderCandidates.dailyAgendaKey || "",
+          dueSoon: reminderCandidates.dueSoon.slice(0, 8).map((candidate) => ({
+            key: candidate.key,
+            taskId: candidate.task?.id || "",
+            taskName: candidate.task?.name || "",
+            dueDate: candidate.task?.dueDate || candidate.task?.startDate || "",
+            timeOfDay: candidate.task?.timeOfDay || ""
+          })),
+          overdue: reminderCandidates.overdue.slice(0, 8).map((candidate) => ({
+            key: candidate.key,
+            taskId: candidate.task?.id || "",
+            taskName: candidate.task?.name || "",
+            dueDate: candidate.task?.dueDate || candidate.task?.startDate || "",
+            timeOfDay: candidate.task?.timeOfDay || ""
+          }))
+        },
+        scheduledTemplates: scheduledReminderTemplates.map((template) => ({
+          templateKind: template.templateKind,
+          subject: template.subject,
+          eventCount: template.eventCount,
+          eventKeys: Array.isArray(template.eventKeys) ? template.eventKeys : [],
+          suppressedByQuietHours: template.suppressedByQuietHours === true
+        })),
+        manualTemplates: manualReminderTemplates.map((template) => ({
+          templateKind: template.templateKind,
+          subject: template.subject,
+          eventCount: template.eventCount,
+          eventKeys: Array.isArray(template.eventKeys) ? template.eventKeys : [],
+          suppressedByQuietHours: template.suppressedByQuietHours === true
+        }))
+      },
+      history: normalizeNotifications(payload.notifications).email.history.slice(0, 10).map((entry) => ({
+        at: entry.at,
+        status: entry.status,
+        kind: entry.kind,
+        reminderTemplateKind: entry.reminderTemplateKind,
+        subject: entry.subject,
+        summaryKey: entry.summaryKey,
+        reminderKey: entry.reminderKey,
+        reminderEventKeys: entry.reminderEventKeys
+      }))
+    });
+  } catch (error) {
+    const message = String(error?.message || "Notification diagnostics failed");
     const statusCode = message === "Not authenticated" || message === "Missing stored user"
       ? 401
       : message.includes("(403)")

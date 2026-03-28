@@ -360,6 +360,7 @@ const developerTreeSkin = document.getElementById("developerTreeSkin");
 const grantTreeSkinButton = document.getElementById("grantTreeSkin");
 const removeTreeSkinButton = document.getElementById("removeTreeSkin");
 const copyWidgetDiagnosticsButton = document.getElementById("copyWidgetDiagnostics");
+const copyNotificationDiagnosticsButton = document.getElementById("copyNotificationDiagnostics");
 const downloadDriveDataButton = document.getElementById("downloadDriveData");
 const importDriveDataButton = document.getElementById("importDriveData");
 const sendDeveloperDailySummaryButton = document.getElementById("sendDeveloperDailySummary");
@@ -646,6 +647,7 @@ grantTreeSkinButton.addEventListener("click", buySelectedTreeSkin);
 removeTreeSkinButton.addEventListener("click", removeSelectedTreeSkin);
 resetFruitGrowthButton.addEventListener("click", resetDeveloperFruitGrowth);
 copyWidgetDiagnosticsButton.addEventListener("click", copyWidgetDiagnostics);
+copyNotificationDiagnosticsButton.addEventListener("click", copyNotificationDiagnostics);
 downloadDriveDataButton.addEventListener("click", downloadDriveData);
 sendDeveloperDailySummaryButton.addEventListener("click", sendDeveloperDailySummary);
 sendDeveloperDailyAgendaButton.addEventListener("click", sendDeveloperDailyAgenda);
@@ -6840,6 +6842,7 @@ function renderDeveloperPanel() {
   removeTreeSkinButton.disabled = !hasSkins;
   importDriveDataButton.disabled = !visible;
   const notificationsBusy = !authState.authenticated || notificationSendState.inFlight;
+  copyNotificationDiagnosticsButton.disabled = !authState.authenticated;
   sendDeveloperDailySummaryButton.disabled = notificationsBusy;
   sendDeveloperDailyAgendaButton.disabled = notificationsBusy;
   sendDeveloperDailySummaryButton.textContent = notificationSendState.inFlight && notificationSendState.kind === "summary"
@@ -7817,6 +7820,32 @@ async function copyWidgetDiagnostics() {
   } catch {
     setSyncStatus("Clipboard access failed. Open DevTools and copy the diagnostics from the console instead.", "error");
     console.log(diagnostics);
+  }
+}
+
+async function copyNotificationDiagnostics() {
+  if (!isDeveloperUser()) {
+    return;
+  }
+
+  try {
+    const response = await fetch(`${API_BASE}/api/notifications/dev-diagnostics`, {
+      credentials: FETCH_CREDENTIALS
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload.error || "Notification diagnostics failed");
+    }
+    const diagnostics = `${JSON.stringify(payload, null, 2)}\n`;
+    try {
+      await navigator.clipboard.writeText(diagnostics);
+      setSyncStatus("Copied notification diagnostics from the Drive-backed store. Paste that output here and I can tell you exactly what the worker is seeing.", "info");
+    } catch {
+      setSyncStatus("Clipboard access failed. Open DevTools and copy the notification diagnostics from the console instead.", "error");
+      console.log(diagnostics);
+    }
+  } catch (error) {
+    setSyncStatus(`Notification diagnostics failed: ${error.message}`, "error");
   }
 }
 
