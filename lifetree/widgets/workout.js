@@ -183,38 +183,21 @@ export const workoutWidgetDefinition = {
               <p class="empty-state hidden" data-workout-chart-empty>No workout calories or weight logs yet.</p>
             </section>
 
-            <section class="energy-detail-card energy-settings-card">
+            <section class="energy-detail-card workout-overview-weight-card">
               <div class="energy-detail-header">
                 <div>
-                  <p class="eyebrow">Progress</p>
-                  <h3>Current period progress</h3>
-                  <p class="sync-status">Repeated same-period instances are rolled up into one tracked card per plan.</p>
+                  <p class="eyebrow">Quick weight</p>
+                  <h3>Log weight</h3>
+                  <p class="sync-status">${pendingWeightLog ? escapeHtml(`Pending weight log: ${formatPendingWeightSummary(pendingWeightLog)}`) : escapeHtml(weightIntent)}</p>
                 </div>
               </div>
-              <div class="workout-progress-grid">
-                <section class="workout-progress-section">
-                  <div class="workout-progress-section-header">
-                    <h4>Today</h4>
-                    <span>${progressView.dailyCards.length}</span>
-                  </div>
-                  <div class="workout-progress-list">
-                    ${progressView.dailyCards.length
-                      ? progressView.dailyCards.map((card) => renderWorkoutProgressCard(card, escapeHtml)).join("")
-                      : `<p class="empty-state">No daily workout or weight tasks are scheduled today.</p>`}
-                  </div>
-                </section>
-                <section class="workout-progress-section">
-                  <div class="workout-progress-section-header">
-                    <h4>This week</h4>
-                    <span>${progressView.weeklyCards.length}</span>
-                  </div>
-                  <div class="workout-progress-list">
-                    ${progressView.weeklyCards.length
-                      ? progressView.weeklyCards.map((card) => renderWorkoutProgressCard(card, escapeHtml)).join("")
-                      : `<p class="empty-state">No weekly workout or weight tasks are scheduled in this calendar week.</p>`}
-                  </div>
-                </section>
-              </div>
+              ${renderWeightLogForm({
+                escapeHtml,
+                weightTracking,
+                pendingWeightLog,
+                submitLabel: "Log weight"
+              })}
+              <p>${latestWeight ? `Latest logged weight: ${escapeHtml(formatWeightEntry(latestWeight))} at ${formatDateTime(latestWeight.at)}` : "No weight entries yet."}</p>
             </section>
 
             <section class="energy-detail-card">
@@ -249,6 +232,40 @@ export const workoutWidgetDefinition = {
                 submitLabel: "Log ad hoc workout",
                 includeHeading: false
               })}
+            </section>
+
+            <section class="energy-detail-card energy-settings-card">
+              <div class="energy-detail-header">
+                <div>
+                  <p class="eyebrow">Progress</p>
+                  <h3>Current period progress</h3>
+                  <p class="sync-status">Repeated same-period instances are rolled up into one tracked card per plan.</p>
+                </div>
+              </div>
+              <div class="workout-progress-grid">
+                <section class="workout-progress-section">
+                  <div class="workout-progress-section-header">
+                    <h4>Today</h4>
+                    <span>${progressView.dailyCards.length}</span>
+                  </div>
+                  <div class="workout-progress-list">
+                    ${progressView.dailyCards.length
+                      ? progressView.dailyCards.map((card) => renderWorkoutProgressCard(card, escapeHtml)).join("")
+                      : `<p class="empty-state">No daily workout or weight tasks are scheduled today.</p>`}
+                  </div>
+                </section>
+                <section class="workout-progress-section">
+                  <div class="workout-progress-section-header">
+                    <h4>This week</h4>
+                    <span>${progressView.weeklyCards.length}</span>
+                  </div>
+                  <div class="workout-progress-list">
+                    ${progressView.weeklyCards.length
+                      ? progressView.weeklyCards.map((card) => renderWorkoutProgressCard(card, escapeHtml)).join("")
+                      : `<p class="empty-state">No weekly workout or weight tasks are scheduled in this calendar week.</p>`}
+                  </div>
+                </section>
+              </div>
             </section>
 
             <section class="energy-detail-card">
@@ -378,22 +395,15 @@ export const workoutWidgetDefinition = {
                 <div>
                   <p class="eyebrow">Weight</p>
                   <h3>Weight logging</h3>
-                  <p class="sync-status">${pendingWeightLog ? `Pending weight log: ${formatPendingWeightSummary(pendingWeightLog)}` : escapeHtml(weightIntent)}</p>
+                  <p class="sync-status">${pendingWeightLog ? escapeHtml(`Pending weight log: ${formatPendingWeightSummary(pendingWeightLog)}`) : escapeHtml(weightIntent)}</p>
                 </div>
               </div>
-              <form class="workout-log-form" data-weight-log-form>
-                <div class="quick-add-grid">
-                  <label>
-                    <span>Weight (${escapeHtml(weightTracking.unit)})</span>
-                    <input type="number" min="1" max="2000" step="0.1" placeholder="Enter weight" data-weight-log-value ${!weightTracking.enabled || pendingWeightLog ? "disabled" : ""} />
-                  </label>
-                </div>
-                <div class="widget-actions workout-inline-actions">
-                  ${pendingWeightLog
-                    ? `<button type="button" class="ghost-button" data-weight-log-undo data-pending-key="${pendingWeightLog.key}">Undo</button>`
-                    : `<button type="submit" class="primary-button" ${!weightTracking.enabled ? "disabled" : ""}>Log weight</button>`}
-                </div>
-              </form>
+              ${renderWeightLogForm({
+                escapeHtml,
+                weightTracking,
+                pendingWeightLog,
+                submitLabel: "Log weight"
+              })}
               <div class="workout-recurrence-panel">
                 <div class="quick-add-grid">
                   <label>
@@ -2263,6 +2273,33 @@ function renderShellAdHocWorkoutForm(escapeHtml) {
     includeHeading: false,
     compact: true
   });
+}
+
+function renderWeightLogForm({ escapeHtml, weightTracking, pendingWeightLog, submitLabel, compact = false }) {
+  const disabled = !weightTracking.enabled || pendingWeightLog ? "disabled" : "";
+  return `
+    <form class="workout-log-form ${compact ? "workout-shell-form" : ""}" data-weight-log-form>
+      <div class="quick-add-grid">
+        <label class="${compact ? "quick-add-title" : ""}">
+          <span>Weight (${escapeHtml(weightTracking.unit)})</span>
+          <input
+            type="number"
+            min="1"
+            max="2000"
+            step="0.1"
+            placeholder="Enter weight"
+            data-weight-log-value
+            ${disabled}
+          />
+        </label>
+      </div>
+      <div class="widget-actions workout-inline-actions">
+        ${pendingWeightLog
+          ? `<button type="button" class="ghost-button" data-weight-log-undo data-pending-key="${pendingWeightLog.key}">Undo</button>`
+          : `<button type="submit" class="primary-button" ${!weightTracking.enabled ? "disabled" : ""}>${escapeHtml(submitLabel)}</button>`}
+      </div>
+    </form>
+  `;
 }
 
 function renderAdHocWorkoutForm({ escapeHtml, pendingAction, formAttribute, submitLabel, includeHeading, compact = false }) {

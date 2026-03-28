@@ -2290,6 +2290,16 @@ body.developer-open {
   gap: 14px;
 }
 
+.workout-overview-weight-card {
+  display: grid;
+  gap: 14px;
+}
+
+.workout-overview-weight-card > p {
+  margin: 0;
+  color: var(--muted);
+}
+
 .workout-chart-legend {
   display: flex;
   gap: 14px;
