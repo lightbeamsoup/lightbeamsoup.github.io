@@ -1254,8 +1254,15 @@ function normalizeTravelWeatherRequest(value) {
   if (!destinationQuery) {
     return null;
   }
+  const candidateQueries = Array.isArray(value?.candidateQueries)
+    ? value.candidateQueries
+        .map((entry) => sanitizeTravelText(entry, 160))
+        .filter(Boolean)
+        .filter((entry, index, list) => list.indexOf(entry) === index)
+    : [];
   return {
     destinationQuery,
+    candidateQueries,
     startDate: normalizeDateString(value?.startDate),
     endDate: normalizeDateString(value?.endDate)
   };
@@ -1393,7 +1400,12 @@ function resolveTravelComponentExpiresAt(component, fallback) {
 
 async function fetchTravelWeatherSnapshot(request) {
   const now = Date.now();
-  const candidateQueries = buildTravelWeatherQueries(request.destinationQuery);
+  const candidateQueries = Array.from(new Set(
+    [
+      request.destinationQuery,
+      ...(Array.isArray(request.candidateQueries) ? request.candidateQueries : [])
+    ].flatMap((query) => buildTravelWeatherQueries(query))
+  ));
   let result = null;
   let selectedQuery = candidateQueries[0] || request.destinationQuery;
   for (const query of candidateQueries) {

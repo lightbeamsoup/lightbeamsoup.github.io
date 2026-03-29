@@ -983,7 +983,6 @@ export const travelWidgetDefinition = {
           ...trip,
           name: normalizeText(tripForm.querySelector("[data-travel-name]")?.value, 80) || "Trip",
           destination: normalizeText(tripForm.querySelector("[data-travel-destination]")?.value, 120),
-          forecastLocation: normalizeText(tripForm.querySelector("[data-travel-forecast-location]")?.value, 160),
           status: selectedStatus,
           statusPreset: selectedStatus === "planning" || selectedStatus === "booked"
             ? selectedStatus
@@ -1856,10 +1855,6 @@ function renderTravelTripPanel(trip, packingTemplates, itineraryTemplates, setti
             <span>Destination</span>
             <input type="text" maxlength="120" value="${escapeHtml(trip.destination)}" data-travel-destination />
           </label>
-          <label class="travel-wide-field">
-            <span>Forecast location</span>
-            <input type="text" maxlength="160" value="${escapeHtml(trip.forecastLocation || "")}" placeholder="${escapeHtml(trip.destination || "Albuquerque, New Mexico")}" data-travel-forecast-location />
-          </label>
           <label>
             <span>Status</span>
             <select data-travel-status>
@@ -2412,7 +2407,7 @@ function normalizeTravelDetailTab(value, trips = []) {
 }
 
 function buildTravelShellLiveRequest(trip, settings) {
-  const weather = buildTravelWeatherRequest(trip);
+  const weather = buildTravelWeatherRequest(trip, settings);
   const flight = buildTravelFlightRequest(trip, settings);
   if (!weather && !flight) {
     return null;
@@ -2424,21 +2419,56 @@ function buildTravelShellLiveRequest(trip, settings) {
   };
 }
 
-function buildTravelWeatherRequest(trip) {
-  const destinationQuery = normalizeText(
-    trip?.forecastLocation
-    || trip?.destination
-    || trip?.itinerary?.outboundDestination
-    || trip?.itinerary?.lodgingAddress,
-    160
-  );
+function buildTravelWeatherRequest(trip, settings) {
+  const weatherTarget = getNextTravelWeatherTarget(trip, settings);
+  const destinationQuery = normalizeText(weatherTarget.primaryQuery, 160);
   if (!destinationQuery) {
     return null;
   }
   return {
     destinationQuery,
+    candidateQueries: weatherTarget.candidateQueries,
     startDate: normalizeDateValue(trip?.startDate || trip?.itinerary?.checkInDate || trip?.itinerary?.outboundDate),
     endDate: normalizeDateValue(trip?.endDate || trip?.itinerary?.checkOutDate || trip?.itinerary?.returnDate)
+  };
+}
+
+function getNextTravelWeatherTarget(trip, settings) {
+  const itinerary = normalizeTripItinerary(trip?.itinerary);
+  const now = Date.now();
+  const normalizedSettings = normalizeTravelSettings(settings);
+  const departureTimestamp = resolveTravelDepartureTimestamp(trip, normalizedSettings);
+  const returnTimestamp = resolveTravelReturnTimestamp(trip, normalizedSettings);
+  const beforeDeparture = Number.isFinite(departureTimestamp) && departureTimestamp > now;
+  const duringTrip = trip?.status === "active"
+    || (Number.isFinite(departureTimestamp) && departureTimestamp <= now && (!Number.isFinite(returnTimestamp) || returnTimestamp > now));
+
+  const candidateQueries = [];
+  const pushCandidate = (value) => {
+    const normalized = normalizeText(value, 160);
+    if (normalized && !candidateQueries.includes(normalized)) {
+      candidateQueries.push(normalized);
+    }
+  };
+
+  if (beforeDeparture) {
+    pushCandidate(itinerary.lodgingAddress);
+    pushCandidate(itinerary.outboundDestination);
+    pushCandidate(trip?.destination);
+  } else if (duringTrip) {
+    pushCandidate(itinerary.lodgingAddress);
+    pushCandidate(trip?.destination);
+    pushCandidate(itinerary.outboundDestination);
+    pushCandidate(itinerary.returnOrigin);
+  } else {
+    pushCandidate(itinerary.lodgingAddress);
+    pushCandidate(itinerary.outboundDestination);
+    pushCandidate(trip?.destination);
+  }
+
+  return {
+    primaryQuery: candidateQueries[0] || "",
+    candidateQueries
   };
 }
 
