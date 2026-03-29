@@ -1087,22 +1087,20 @@ body.developer-open {
   color: #8b462b;
 }
 
-.canopy-detail-panel {
-  width: min(460px, calc(100vw - 24px));
-  height: auto;
-  max-height: calc(100vh - 24px);
-}
-
 .canopy-detail-list {
   display: grid;
-  gap: 12px;
+  gap: 10px;
+}
+
+.canopy-detail-list.recurring {
+  gap: 10px;
 }
 
 .canopy-bonus-panel {
   display: grid;
-  gap: 12px;
-  margin-bottom: 14px;
-  padding: 14px;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding: 12px;
   border-radius: 18px;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(248, 237, 219, 0.96)),
@@ -1160,14 +1158,12 @@ body.developer-open {
 }
 
 .canopy-detail-footer {
-  margin-top: 16px;
+  margin-top: 12px;
 }
 
 .canopy-group-task {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 12px;
-  align-items: start;
+  gap: 10px;
   padding: 12px;
   border-radius: 16px;
   background:
@@ -1224,6 +1220,8 @@ body.developer-open {
 .canopy-group-main {
   display: grid;
   gap: 4px;
+  color: var(--ink);
+  text-align: left;
 }
 
 .canopy-group-main strong {
@@ -2429,6 +2427,17 @@ body.developer-open {
   background: linear-gradient(180deg, rgba(255, 249, 239, 0.98), rgba(244, 232, 214, 0.98));
   border: 1px solid rgba(37, 50, 67, 0.16);
   box-shadow: 0 32px 80px rgba(24, 31, 40, 0.26);
+}
+
+.widget-detail-panel.canopy-detail-panel {
+  width: min(520px, calc(100vw - 24px));
+  height: auto;
+  max-height: calc(100dvh - 24px);
+}
+
+.widget-detail-panel.canopy-detail-panel .widget-detail-body {
+  flex: 0 1 auto;
+  max-height: min(560px, calc(100dvh - 210px));
 }
 
 .quick-add-panel {
@@ -3826,6 +3835,16 @@ textarea {
     border-radius: 22px;
   }
 
+  .widget-detail-panel.canopy-detail-panel {
+    width: min(100vw - 8px, 460px);
+    height: auto;
+    max-height: calc(100dvh - 8px);
+  }
+
+  .widget-detail-panel.canopy-detail-panel .widget-detail-body {
+    max-height: calc(100dvh - 170px);
+  }
+
   .task-desk-tabs {
     display: flex;
   }
@@ -3945,6 +3964,16 @@ textarea {
     height: calc(100dvh - 12px);
     padding: 16px;
     padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .widget-detail-panel.canopy-detail-panel {
+    width: min(100vw - 12px, 460px);
+    height: auto;
+    max-height: calc(100dvh - 12px);
+  }
+
+  .widget-detail-panel.canopy-detail-panel .widget-detail-body {
+    max-height: calc(100dvh - 176px);
   }
 
   .energy-detail-grid {

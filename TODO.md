@@ -9,7 +9,6 @@
 - Tree styles: Create a spring canopy skin.
 - Drive sync: Make merge/conflict popups clearer about what happened and what each choice will do.
 - Notifications: Move auth/session storage into a shared backend before re-enabling the dedicated Railway worker.
-- Canopy: Tighten vertical spacing in the daily expansion view.
 
 ## Recently completed
 
@@ -43,6 +42,7 @@
 
 ### Widget Shells And Canopy
 
+- 2026-03-28: Tighten vertical spacing and modal sizing in the canopy daily/weekly/monthly expansions and show-all views.
 - 2026-03-28: Bucket slower-than-weekly recurring tasks as monthlies and document the rule.
 - 2026-03-28: Add shell previews for daily, weekly, and monthly recurring groups that show still-due items and progress.
 - 2026-03-26: Make `Remove widget` less prominent and move it to an `x` in the upper-right corner of the widget shell.
