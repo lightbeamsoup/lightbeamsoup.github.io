@@ -2,7 +2,18 @@
 
 ## Open items
 
-- Widgets: Create a Travel Buddy widget.
+### Travel Buddy
+
+- 1. Create a `Travel Buddy` widget scaffold and register a new `Travel` category for widget-owned tasks.
+- 2. Build the shell around upcoming trip info, with canopy tasks surfacing from active trips.
+- 3. Add an `Overview` tab that shows a status board for all trips without being the main editing surface.
+- 4. Make each trip its own modal tab with trip-specific editing for itinerary, stay, and transit details.
+- 5. Add packing-list tabs so each trip can manage its own packing list and completion state.
+- 6. Add reusable packing-list templates that can be saved and applied to future trips.
+- 7. Add itinerary templates so full trip structures can be reused later.
+- 8. Model each trip around an itinerary that supports transit, lodging, and custom trip notes/tasks.
+- 9. Route most Travel Buddy tasks into the `Travel` category by default.
+
 - Widgets: Create a Hydration widget that tracks ounces consumed and grows a plant as you water it.
 - Integrations: Add Google Calendar integration.
 - Integrations: Add Apple Fitness integration.
