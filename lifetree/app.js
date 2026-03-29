@@ -8416,6 +8416,14 @@ function getSeriesOccurrenceLimit(recurrence) {
   return Number.POSITIVE_INFINITY;
 }
 
+function resolveGeneratedLinkedSeries(existingLinkedSeries, templateLinkedSeries) {
+  const normalizedExisting = normalizeLinkedSeries(existingLinkedSeries);
+  if (normalizedExisting.groupId) {
+    return normalizedExisting;
+  }
+  return normalizeLinkedSeries(templateLinkedSeries);
+}
+
 function buildGeneratedInstance(template, occurrenceIndex, startDate, dueDate, existingTask = null) {
   return {
     id: existingTask?.id || createId(),
@@ -8445,7 +8453,7 @@ function buildGeneratedInstance(template, occurrenceIndex, startDate, dueDate, e
     ownerTaskKey: existingTask?.ownerTaskKey || template.ownerTaskKey || "",
     widgetTaskKind: existingTask?.widgetTaskKind || template.widgetTaskKind || "",
     widgetTaskMeta: normalizeWidgetTaskMeta(existingTask?.widgetTaskMeta || template.widgetTaskMeta),
-    linkedSeries: normalizeLinkedSeries(existingTask?.linkedSeries || template.linkedSeries),
+    linkedSeries: resolveGeneratedLinkedSeries(existingTask?.linkedSeries, template.linkedSeries),
     sequenceDependencyId: existingTask?.sequenceDependencyId || "",
     widgetCompletion: normalizeWidgetCompletion(existingTask?.widgetCompletion || template.widgetCompletion),
     skipRule: normalizeSkipRule(existingTask?.skipRule || template.skipRule),
