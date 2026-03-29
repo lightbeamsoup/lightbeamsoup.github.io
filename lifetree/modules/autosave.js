@@ -5,7 +5,8 @@ export function createAutosaveController({
   getStore,
   isAuthenticated,
   computeStoreFingerprint,
-  saveToDrive
+  saveToDrive,
+  canAutosave
 }) {
   let timerId = 0;
   let inFlight = false;
@@ -30,8 +31,18 @@ export function createAutosaveController({
 
   async function attemptAutosave() {
     const profile = normalizeProfile(getProfile());
+    const autosaveGate = typeof canAutosave === "function"
+      ? (canAutosave() || { allowed: true, reason: "" })
+      : { allowed: true, reason: "" };
     if (!profile.autosaveEnabled || !isAuthenticated() || inFlight) {
       return false;
+    }
+    if (autosaveGate.allowed === false) {
+      return {
+        success: false,
+        skipped: true,
+        blockedReason: autosaveGate.reason || "blocked"
+      };
     }
 
     inFlight = true;
@@ -78,13 +89,17 @@ export function createAutosaveController({
 
   function getStatus() {
     const profile = normalizeProfile(getProfile());
+    const autosaveGate = typeof canAutosave === "function"
+      ? (canAutosave() || { allowed: true, reason: "" })
+      : { allowed: true, reason: "" };
     return {
       enabled: profile.autosaveEnabled,
       intervalMinutes: profile.autosaveIntervalMinutes,
       nextRunAt,
       inFlight,
       authenticated: isAuthenticated(),
-      hasSavedBaseline: Boolean(lastSavedFingerprint)
+      hasSavedBaseline: Boolean(lastSavedFingerprint),
+      blockedReason: autosaveGate.allowed === false ? (autosaveGate.reason || "blocked") : ""
     };
   }
 

@@ -463,6 +463,13 @@ const notificationSendState = {
   inFlight: false,
   kind: ""
 };
+const remoteDriftState = {
+  baseRemoteUserUpdatedAt: 0,
+  baseRemoteUserFingerprint: "",
+  remoteChangedSinceBase: false,
+  checkInFlight: false,
+  lastCheckedAt: 0
+};
 const driveConflictState = {
   resolver: null
 };
@@ -520,6 +527,7 @@ const {
   connectGoogle,
   disconnectGoogle,
   loadFromDrive,
+  peekRemoteStore,
   saveToDrive,
   initializeFromDrive,
   saveToDriveOnExit
@@ -530,15 +538,20 @@ let autosaveController = createAutosaveController({
   getStore: () => store,
   isAuthenticated: () => authState.authenticated,
   computeStoreFingerprint,
+  canAutosave: () => getAutosavePermission(),
   saveToDrive: async (options) => {
     setDriveSaveInFlight(true, "autosave");
     try {
       const result = await saveToDrive(options);
       if (result?.success) {
-        rememberRemoteStoreState({
+        observeRemoteStoreState({
           updatedAt: result.remoteUpdatedAt,
           fingerprint: result.remoteFingerprint,
           savedAt: result.remoteSavedAt,
+          userUpdatedAt: result.remoteUserUpdatedAt,
+          userFingerprint: result.remoteUserFingerprint
+        });
+        setRemoteComparisonBase({
           userUpdatedAt: result.remoteUserUpdatedAt,
           userFingerprint: result.remoteUserFingerprint
         });
@@ -682,6 +695,17 @@ clearAllHistoryButton.addEventListener("click", clearAllHistory);
 window.addEventListener("pagehide", () => {
   saveToDriveOnExit();
 });
+window.addEventListener("focus", () => {
+  void checkForRemoteDrift({ reason: "focus" });
+});
+window.addEventListener("online", () => {
+  void checkForRemoteDrift({ reason: "online", force: true });
+});
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") {
+    void checkForRemoteDrift({ reason: "visible" });
+  }
+});
 closeSettingsButton.addEventListener("click", closeSettings);
 closeSettingsBackdrop.addEventListener("click", closeSettings);
 cancelSettingsButton.addEventListener("click", closeSettings);
@@ -728,10 +752,14 @@ async function continueStartup() {
     || startupResult.remoteUserUpdatedAt
     || startupResult.remoteUserFingerprint
   ) {
-    rememberRemoteStoreState({
+    observeRemoteStoreState({
       updatedAt: startupResult.remoteUpdatedAt,
       fingerprint: startupResult.remoteFingerprint,
       savedAt: startupResult.remoteSavedAt,
+      userUpdatedAt: startupResult.remoteUserUpdatedAt,
+      userFingerprint: startupResult.remoteUserFingerprint
+    });
+    setRemoteComparisonBase({
       userUpdatedAt: startupResult.remoteUserUpdatedAt,
       userFingerprint: startupResult.remoteUserFingerprint
     });
@@ -774,16 +802,21 @@ async function handleGoogleDisconnect() {
   await disconnectGoogle();
   autosaveController.clearSavedBaseline();
   autosaveController.refreshSchedule();
+  clearRemoteStoreState();
   renderSyncMeta();
 }
 
 async function handleManualLoadFromDrive() {
   const result = await loadFromDrive();
   if (result?.found) {
-    rememberRemoteStoreState({
+    observeRemoteStoreState({
       updatedAt: result.remoteUpdatedAt,
       fingerprint: result.remoteFingerprint,
       savedAt: result.remoteSavedAt,
+      userUpdatedAt: result.remoteUserUpdatedAt,
+      userFingerprint: result.remoteUserFingerprint
+    });
+    setRemoteComparisonBase({
       userUpdatedAt: result.remoteUserUpdatedAt,
       userFingerprint: result.remoteUserFingerprint
     });
@@ -809,10 +842,14 @@ async function saveCurrentStoreToDrive({ quiet = false, force = false, mode = "m
   try {
     const result = await saveToDrive({ quiet, force });
     if (result?.success) {
-      rememberRemoteStoreState({
+      observeRemoteStoreState({
         updatedAt: result.remoteUpdatedAt,
         fingerprint: result.remoteFingerprint,
         savedAt: result.remoteSavedAt,
+        userUpdatedAt: result.remoteUserUpdatedAt,
+        userFingerprint: result.remoteUserFingerprint
+      });
+      setRemoteComparisonBase({
         userUpdatedAt: result.remoteUserUpdatedAt,
         userFingerprint: result.remoteUserFingerprint
       });
@@ -3640,7 +3677,10 @@ function renderSyncMeta(now = new Date()) {
   let localState = "neutral";
   let driveState = "neutral";
 
-  if (remoteUpdatedAt > 0 || remoteFingerprint) {
+  if (hasUnresolvedRemoteConflict()) {
+    localState = "error";
+    driveState = "error";
+  } else if (remoteUpdatedAt > 0 || remoteFingerprint) {
     if (remoteFingerprint && localFingerprint && remoteFingerprint === localFingerprint) {
       localState = "success";
       driveState = "success";
@@ -3674,6 +3714,12 @@ function renderSyncMeta(now = new Date()) {
     autosaveText = profile.autosaveEnabled ? "Connect Google" : "Autosave off";
   } else if (!profile.autosaveEnabled) {
     autosaveText = "Autosave off";
+  } else if (autosaveStatus.blockedReason === "stale-conflict") {
+    autosaveState = "error";
+    autosaveText = "Resolve conflict";
+  } else if (autosaveStatus.blockedReason === "remote-stale") {
+    autosaveState = "error";
+    autosaveText = "Refresh needed";
   } else if (autosaveStatus.inFlight) {
     autosaveState = "info";
     autosaveText = "Saving now…";
@@ -4043,7 +4089,7 @@ function getCurrentUserFingerprint() {
     : computeUserContentFingerprint(store);
 }
 
-function rememberRemoteStoreState({
+function observeRemoteStoreState({
   updatedAt = 0,
   fingerprint = "",
   savedAt = 0,
@@ -4057,12 +4103,117 @@ function rememberRemoteStoreState({
   syncState.remoteUserFingerprint = userFingerprint || "";
 }
 
+function setRemoteComparisonBase({
+  userUpdatedAt = 0,
+  userFingerprint = ""
+} = {}) {
+  remoteDriftState.baseRemoteUserUpdatedAt = userUpdatedAt || 0;
+  remoteDriftState.baseRemoteUserFingerprint = userFingerprint || "";
+  remoteDriftState.remoteChangedSinceBase = false;
+}
+
 function clearRemoteStoreState() {
   syncState.remoteUpdatedAt = 0;
   syncState.remoteFingerprint = "";
   syncState.remoteSavedAt = 0;
   syncState.remoteUserUpdatedAt = 0;
   syncState.remoteUserFingerprint = "";
+  remoteDriftState.baseRemoteUserUpdatedAt = 0;
+  remoteDriftState.baseRemoteUserFingerprint = "";
+  remoteDriftState.remoteChangedSinceBase = false;
+  remoteDriftState.lastCheckedAt = 0;
+}
+
+function isLocalDirtyComparedToRemoteBase() {
+  const baseFingerprint = remoteDriftState.baseRemoteUserFingerprint || "";
+  return Boolean(baseFingerprint) && getCurrentUserFingerprint() !== baseFingerprint;
+}
+
+function hasObservedRemoteDrift() {
+  return remoteDriftState.remoteChangedSinceBase === true;
+}
+
+function hasUnresolvedRemoteConflict() {
+  return hasObservedRemoteDrift() && isLocalDirtyComparedToRemoteBase();
+}
+
+function getAutosavePermission() {
+  if (hasUnresolvedRemoteConflict()) {
+    return {
+      allowed: false,
+      reason: "stale-conflict"
+    };
+  }
+  if (hasObservedRemoteDrift()) {
+    return {
+      allowed: false,
+      reason: "remote-stale"
+    };
+  }
+  return {
+    allowed: true,
+    reason: ""
+  };
+}
+
+async function checkForRemoteDrift({ reason = "manual", force = false } = {}) {
+  if (!authState.authenticated || driveSaveState.inFlight || remoteDriftState.checkInFlight) {
+    return null;
+  }
+  if (document.visibilityState === "hidden" && reason !== "online") {
+    return null;
+  }
+  const now = Date.now();
+  if (!force && (now - remoteDriftState.lastCheckedAt) < 30_000) {
+    return null;
+  }
+
+  remoteDriftState.checkInFlight = true;
+  remoteDriftState.lastCheckedAt = now;
+  try {
+    const result = await peekRemoteStore();
+    if (!result?.ok) {
+      return result;
+    }
+    if (!result.found) {
+      clearRemoteStoreState();
+      renderSyncMeta();
+      return result;
+    }
+
+    const baseFingerprint = remoteDriftState.baseRemoteUserFingerprint || "";
+    const observedFingerprint = result.remoteUserFingerprint || "";
+    observeRemoteStoreState({
+      updatedAt: result.remoteUpdatedAt,
+      fingerprint: result.remoteFingerprint,
+      savedAt: result.remoteSavedAt,
+      userUpdatedAt: result.remoteUserUpdatedAt,
+      userFingerprint: observedFingerprint
+    });
+
+    if (!baseFingerprint) {
+      setRemoteComparisonBase({
+        userUpdatedAt: result.remoteUserUpdatedAt,
+        userFingerprint: observedFingerprint
+      });
+      renderSyncMeta();
+      return result;
+    }
+
+    remoteDriftState.remoteChangedSinceBase = Boolean(observedFingerprint && observedFingerprint !== baseFingerprint);
+    if (remoteDriftState.remoteChangedSinceBase) {
+      setSyncStatus(
+        hasUnresolvedRemoteConflict()
+          ? "Google Drive changed in another session while this tab also has local edits. Use Load from Drive or Save to Drive to resolve it before autosave runs again."
+          : "Google Drive changed in another session. Load from Drive to refresh, or keep editing and choose a conflict action when saving.",
+        hasUnresolvedRemoteConflict() ? "error" : "info"
+      );
+    }
+    renderSyncMeta();
+    return result;
+  } finally {
+    remoteDriftState.checkInFlight = false;
+  }
 }
 
 function setDriveSaveInFlight(inFlight, mode = "") {
@@ -6600,6 +6751,12 @@ function persistStore({ touchUpdatedAt = true, touchUserUpdatedAt = touchUpdated
   if (touchUserUpdatedAt) {
     store.userUpdatedAt = now;
     store.userFingerprint = computeUserContentFingerprint(store);
+  }
+  if (hasUnresolvedRemoteConflict()) {
+    setSyncStatus(
+      "Google Drive changed in another session while this tab also has local edits. Use Load from Drive or Save to Drive to resolve it before autosave runs again.",
+      "error"
+    );
   }
   persistLocalStore(store);
 }

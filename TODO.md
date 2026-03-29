@@ -8,6 +8,8 @@
 - Integrations: Add Apple Fitness integration.
 - Tree styles: Create a spring canopy skin.
 - Drive sync: Make merge/conflict popups clearer about what happened and what each choice will do.
+- Drive sync: Move conflict precedence from whole-store timestamps to entity-level `updatedAt` values.
+- Drive sync: Coordinate multiple open browser sessions/tabs before silent saves, likely with `BroadcastChannel`.
 - Notifications: Move auth/session storage into a shared backend before re-enabling the dedicated Railway worker.
 - Canopy: Decide how dailies should be marked complete directly from the shell view.
 - Workout Coach: Improve organization of the calories/weight graph in the workout modal.
@@ -16,6 +18,10 @@
 - Points: Add category point exchanges.
 
 ## Recently completed
+
+### Drive Sync
+
+- 2026-03-29: Add passive remote-drift detection on focus/online, pause autosave when Drive changed elsewhere, and disable the blind pagehide overwrite path.
 
 ### Notifications
 

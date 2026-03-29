@@ -312,6 +312,82 @@ export function createDriveSyncController({
     }
   }
 
+  async function peekRemoteStore({ suppressAuthError = true, signal } = {}) {
+    const authenticated = await ensureAuthenticated({
+      suppressUnavailableError: suppressAuthError,
+      signal
+    });
+    if (!authenticated) {
+      return {
+        ok: false,
+        found: false,
+        authenticated: false,
+        remoteUpdatedAt: 0,
+        remoteFingerprint: "",
+        remoteSavedAt: 0,
+        remoteUserUpdatedAt: 0,
+        remoteUserFingerprint: ""
+      };
+    }
+    try {
+      const response = await fetch(`${apiBase}/api/lifetree/load`, { credentials: fetchCredentials, signal });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || "Drive load failed");
+      }
+      if (!payload.found) {
+        return {
+          ok: true,
+          found: false,
+          authenticated: true,
+          remoteUpdatedAt: 0,
+          remoteFingerprint: "",
+          remoteSavedAt: 0,
+          remoteUserUpdatedAt: 0,
+          remoteUserFingerprint: ""
+        };
+      }
+
+      const remoteStore = normalizeStore(payload.payload);
+      remoteStore.driveFileId = payload.fileId || "";
+      return {
+        ok: true,
+        found: true,
+        authenticated: true,
+        remoteUpdatedAt: remoteStore.updatedAt || 0,
+        remoteFingerprint: computeStoreFingerprint(remoteStore),
+        remoteSavedAt: parseDriveModifiedTime(payload.modifiedTime),
+        remoteUserUpdatedAt: remoteStore.userUpdatedAt || remoteStore.updatedAt || 0,
+        remoteUserFingerprint: remoteStore.userFingerprint || computeUserContentFingerprint(remoteStore)
+      };
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        return {
+          ok: false,
+          found: false,
+          authenticated: true,
+          aborted: true,
+          remoteUpdatedAt: 0,
+          remoteFingerprint: "",
+          remoteSavedAt: 0,
+          remoteUserUpdatedAt: 0,
+          remoteUserFingerprint: ""
+        };
+      }
+      return {
+        ok: false,
+        found: false,
+        authenticated: true,
+        error: error.message,
+        remoteUpdatedAt: 0,
+        remoteFingerprint: "",
+        remoteSavedAt: 0,
+        remoteUserUpdatedAt: 0,
+        remoteUserFingerprint: ""
+      };
+    }
+  }
+
   async function saveToDrive({ suppressAuthError = false, quiet = false, signal, force = false, conflictStrategy = quiet ? "auto-merge" : "prompt" } = {}) {
     const authenticated = await ensureAuthenticated({
       suppressUnavailableError: suppressAuthError || quiet,
@@ -525,29 +601,9 @@ export function createDriveSyncController({
   }
 
   function saveToDriveOnExit() {
-    if (!authState.authenticated) {
-      return;
-    }
-
-    const currentStore = getStore();
-    const currentFingerprint = computeStoreFingerprint(currentStore);
-    const knownRemoteFingerprint = typeof getKnownRemoteState === "function"
-      ? (getKnownRemoteState()?.remoteFingerprint || "")
-      : "";
-    if (knownRemoteFingerprint && knownRemoteFingerprint === currentFingerprint) {
-      return;
-    }
-
-    fetch(`${apiBase}/api/lifetree/save`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: fetchCredentials,
-      keepalive: true,
-      body: JSON.stringify({
-        fileId: currentStore.driveFileId || "",
-        payload: currentStore
-      })
-    }).catch(() => {});
+    // Intentionally disabled. A blind keepalive write during pagehide can overwrite
+    // newer Drive data from another session because it cannot safely re-fetch and
+    // reconcile remote state before the page closes.
   }
 
   function applyStore(nextStore, { finalize = true } = {}) {
@@ -571,6 +627,7 @@ export function createDriveSyncController({
     connectGoogle,
     disconnectGoogle,
     loadFromDrive,
+    peekRemoteStore,
     saveToDrive,
     initializeFromDrive,
     saveToDriveOnExit
