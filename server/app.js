@@ -47,8 +47,8 @@ const SESSION_COOKIE = "lifetree_session";
 const DRIVE_FILE_NAME = "task-deck-store.json";
 const DEV_EMAIL = "jbkallman@gmail.com";
 const LIFETREE_APP_URL = "https://www.joshcodes.ai/lifetree";
-const AVIATIONSTACK_ACCESS_KEY = String(process.env.AVIATIONSTACK_ACCESS_KEY || "").trim();
-const TRAVEL_LIVE_CACHE_TTL_MS = 1000 * 60 * 15;
+const FLIGHTAWARE_AEROAPI_KEY = String(process.env.FLIGHTAWARE_AEROAPI_KEY || "").trim();
+const TRAVEL_WEATHER_CACHE_TTL_MS = 1000 * 60 * 60;
 const OAUTH_SCOPES = [
   "openid",
   "email",
@@ -1190,6 +1190,7 @@ function normalizeTravelFlightRequest(value) {
     leg: sanitizeTravelText(value?.leg, 16).toLowerCase(),
     flightNumber,
     flightDate,
+    scheduledTimestamp: normalizeTimestamp(value?.scheduledTimestamp),
     departureCode: extractAirportCode(value?.departureCode),
     arrivalCode: extractAirportCode(value?.arrivalCode),
     displayTimeZone: sanitizeTravelText(value?.displayTimeZone, 80),
@@ -1201,10 +1202,11 @@ function normalizeTravelFlightRequest(value) {
 async function buildTravelLiveSnapshot(trip) {
   const cacheKey = JSON.stringify(trip);
   const cached = travelLiveCache.get(cacheKey);
-  if (cached && Date.now() - cached.at < TRAVEL_LIVE_CACHE_TTL_MS) {
+  if (cached && Date.now() < cached.expiresAt) {
     return cached.snapshot;
   }
 
+  const now = Date.now();
   const [weather, flight] = await Promise.all([
     trip.weather
       ? fetchTravelWeatherSnapshot(trip.weather).catch(() => ({
@@ -1225,10 +1227,14 @@ async function buildTravelLiveSnapshot(trip) {
     status: "ok",
     weather,
     flight,
-    fetchedAt: Date.now()
+    fetchedAt: now
   };
+  const expiresAt = Math.min(
+    trip.weather ? now + TRAVEL_WEATHER_CACHE_TTL_MS : Number.POSITIVE_INFINITY,
+    trip.flight ? computeFlightSnapshotExpiresAt(trip.flight, now) : Number.POSITIVE_INFINITY
+  );
   travelLiveCache.set(cacheKey, {
-    at: Date.now(),
+    expiresAt: Number.isFinite(expiresAt) ? expiresAt : now + TRAVEL_WEATHER_CACHE_TTL_MS,
     snapshot
   });
   return snapshot;
@@ -1326,32 +1332,23 @@ function buildWeatherLocationLabel(result) {
 }
 
 async function fetchTravelFlightSnapshot(request) {
-  if (!AVIATIONSTACK_ACCESS_KEY) {
+  if (!FLIGHTAWARE_AEROAPI_KEY) {
     return {
       status: "unconfigured",
-      message: "Set AVIATIONSTACK_ACCESS_KEY to show live flight status."
+      message: "Set FLIGHTAWARE_AEROAPI_KEY to show live flight status."
     };
   }
 
   const lookup = normalizeFlightLookup(request);
-  const flightsUrl = new URL("https://api.aviationstack.com/v1/flights");
-  flightsUrl.searchParams.set("access_key", AVIATIONSTACK_ACCESS_KEY);
-  flightsUrl.searchParams.set("limit", "10");
-  flightsUrl.searchParams.set("flight_date", lookup.flightDate);
-  if (lookup.flightIata) {
-    flightsUrl.searchParams.set("flight_iata", lookup.flightIata);
-  } else {
-    flightsUrl.searchParams.set("flight_number", lookup.flightNumber);
-  }
-  if (lookup.departureCode) {
-    flightsUrl.searchParams.set("dep_iata", lookup.departureCode);
-  }
-  if (lookup.arrivalCode) {
-    flightsUrl.searchParams.set("arr_iata", lookup.arrivalCode);
-  }
+  const flightsUrl = new URL(`https://aeroapi.flightaware.com/aeroapi/flights/${encodeURIComponent(lookup.flightLabel)}`);
+  flightsUrl.searchParams.set("max_pages", "1");
 
-  const payload = await fetchJsonFromUrl(flightsUrl);
-  const flight = pickBestFlight(payload?.data, lookup);
+  const payload = await fetchJsonFromUrl(flightsUrl, {
+    headers: {
+      "x-apikey": FLIGHTAWARE_AEROAPI_KEY
+    }
+  });
+  const flight = pickBestFlight(payload?.flights, lookup);
   if (!flight) {
     return {
       status: "not-found",
@@ -1362,15 +1359,21 @@ async function fetchTravelFlightSnapshot(request) {
   return {
     status: "ok",
     flightLabel: lookup.flightLabel,
-    statusLabel: titleCaseWords(flight?.flight_status || "scheduled"),
-    departureCode: sanitizeTravelText(flight?.departure?.iata, 8) || lookup.departureCode,
-    arrivalCode: sanitizeTravelText(flight?.arrival?.iata, 8) || lookup.arrivalCode,
+    statusLabel: titleCaseWords(flight?.status || "scheduled"),
+    departureCode: sanitizeTravelText(
+      flight?.origin?.code_iata || flight?.origin?.code || flight?.origin?.code_icao,
+      8
+    ) || lookup.departureCode,
+    arrivalCode: sanitizeTravelText(
+      flight?.destination?.code_iata || flight?.destination?.code || flight?.destination?.code_icao,
+      8
+    ) || lookup.arrivalCode,
     departureTimeLabel: formatIsoInTimeZone(
-      flight?.departure?.estimated || flight?.departure?.scheduled,
+      flight?.estimated_out || flight?.scheduled_out,
       request.displayTimeZone
     ) || formatDateTimeLabel(request.scheduledDate, request.scheduledTime),
-    gate: sanitizeTravelText(flight?.departure?.gate, 12),
-    terminal: sanitizeTravelText(flight?.departure?.terminal, 12)
+    gate: sanitizeTravelText(flight?.gate_origin, 12),
+    terminal: sanitizeTravelText(flight?.terminal_origin, 12)
   };
 }
 
@@ -1378,12 +1381,12 @@ function normalizeFlightLookup(request) {
   const compact = sanitizeTravelText(request.flightNumber, 24).toUpperCase().replace(/[^A-Z0-9]/g, "");
   const match = compact.match(/^([A-Z]{2,3})(\d{1,4}[A-Z]?)$/);
   return {
-    flightIata: match ? compact : "",
     flightNumber: match ? match[2] : compact,
     airlineCode: match ? match[1] : "",
     departureCode: extractAirportCode(request.departureCode),
     arrivalCode: extractAirportCode(request.arrivalCode),
     flightDate: normalizeDateString(request.flightDate),
+    scheduledTimestamp: normalizeTimestamp(request.scheduledTimestamp),
     flightLabel: compact || sanitizeTravelText(request.flightNumber, 24).toUpperCase()
   };
 }
@@ -1397,13 +1400,35 @@ function pickBestFlight(entries, lookup) {
   return scored[0]?.score > 0 ? scored[0].entry : null;
 }
 
+function computeFlightSnapshotExpiresAt(request, now = Date.now()) {
+  const departureAt = normalizeTimestamp(request?.scheduledTimestamp);
+  if (!Number.isFinite(departureAt) || departureAt <= now) {
+    return now + TRAVEL_WEATHER_CACHE_TTL_MS;
+  }
+
+  const msUntilDeparture = departureAt - now;
+  if (msUntilDeparture > 1000 * 60 * 60 * 12) {
+    return Math.min(departureAt - (1000 * 60 * 60 * 12), departureAt);
+  }
+  if (msUntilDeparture > 1000 * 60 * 60 * 8) {
+    return Math.min(departureAt - (1000 * 60 * 60 * 8), departureAt);
+  }
+  if (msUntilDeparture > 1000 * 60 * 60 * 4) {
+    return Math.min(departureAt - (1000 * 60 * 60 * 4), departureAt);
+  }
+  if (msUntilDeparture > 1000 * 60 * 60 * 2) {
+    return now + 1000 * 60 * 15;
+  }
+  return now + 1000 * 60 * 10;
+}
+
 function scoreFlightEntry(entry, lookup) {
   let score = 0;
-  const entryFlightIata = sanitizeTravelText(entry?.flight?.iata, 24).toUpperCase();
-  const entryFlightNumber = sanitizeTravelText(entry?.flight?.number, 12).toUpperCase();
-  const entryDeparture = sanitizeTravelText(entry?.departure?.iata, 8).toUpperCase();
-  const entryArrival = sanitizeTravelText(entry?.arrival?.iata, 8).toUpperCase();
-  if (lookup.flightIata && entryFlightIata === lookup.flightIata) {
+  const entryIdent = sanitizeTravelText(entry?.ident_iata || entry?.ident, 24).toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const entryFlightNumber = sanitizeTravelText(entry?.flight_number, 12).toUpperCase();
+  const entryDeparture = sanitizeTravelText(entry?.origin?.code_iata || entry?.origin?.code, 8).toUpperCase();
+  const entryArrival = sanitizeTravelText(entry?.destination?.code_iata || entry?.destination?.code, 8).toUpperCase();
+  if (entryIdent && entryIdent === lookup.flightLabel) {
     score += 8;
   }
   if (lookup.flightNumber && entryFlightNumber === lookup.flightNumber) {
@@ -1415,11 +1440,23 @@ function scoreFlightEntry(entry, lookup) {
   if (lookup.arrivalCode && entryArrival === lookup.arrivalCode) {
     score += 2;
   }
+  if (lookup.flightDate && sanitizeTravelText(entry?.scheduled_out_local?.split?.("T")?.[0] || entry?.scheduled_out?.split?.("T")?.[0], 10) === lookup.flightDate) {
+    score += 2;
+  }
+  if (lookup.scheduledTimestamp && Number.isFinite(lookup.scheduledTimestamp)) {
+    const scheduledOut = Date.parse(entry?.scheduled_out || "");
+    if (Number.isFinite(scheduledOut)) {
+      const diff = Math.abs(scheduledOut - lookup.scheduledTimestamp);
+      if (diff <= 1000 * 60 * 90) {
+        score += 3;
+      }
+    }
+  }
   return score;
 }
 
-async function fetchJsonFromUrl(url) {
-  const response = await fetch(url);
+async function fetchJsonFromUrl(url, options = {}) {
+  const response = await fetch(url, options);
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     throw new Error(payload?.error?.message || `Request failed with ${response.status}`);
@@ -1440,6 +1477,11 @@ function normalizeDateString(value) {
 
 function normalizeTimeString(value) {
   return typeof value === "string" && /^\d{2}:\d{2}$/.test(value) ? value : "";
+}
+
+function normalizeTimestamp(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : Number.NaN;
 }
 
 function extractAirportCode(value) {

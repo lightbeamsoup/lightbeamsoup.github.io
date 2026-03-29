@@ -68,9 +68,8 @@ const TRIP_STATUS_OPTIONS = [
   { value: "complete", label: "Complete" }
 ];
 const TRIP_PRESET_STATUS_OPTIONS = ["planning", "booked"];
-const TRAVEL_SHELL_LIVE_TTL_MS = 1000 * 60 * 15;
 const TRAVEL_FLIGHT_LOOKAHEAD_MS = 1000 * 60 * 60 * 24;
-const TRAVEL_FLIGHT_LOOKBACK_MS = 1000 * 60 * 60 * 6;
+const TRAVEL_SHELL_LIVE_TTL_MS = 1000 * 60;
 const travelWidgetUiState = new Map();
 
 export const travelWidgetDefinition = {
@@ -2183,7 +2182,7 @@ function buildTravelFlightRequest(trip, settings) {
     })
   ]
     .filter(Boolean)
-    .filter((entry) => entry.timestamp >= now - TRAVEL_FLIGHT_LOOKBACK_MS && entry.timestamp <= now + TRAVEL_FLIGHT_LOOKAHEAD_MS)
+    .filter((entry) => entry.timestamp > now && entry.timestamp <= now + TRAVEL_FLIGHT_LOOKAHEAD_MS)
     .sort((left, right) => left.timestamp - right.timestamp);
 
   if (!candidates.length) {
@@ -2194,6 +2193,7 @@ function buildTravelFlightRequest(trip, settings) {
     leg: nextFlight.leg,
     flightNumber: nextFlight.flightNumber,
     flightDate: nextFlight.date,
+    scheduledTimestamp: nextFlight.timestamp,
     departureCode: extractAirportCode(nextFlight.origin),
     arrivalCode: extractAirportCode(nextFlight.destination),
     displayTimeZone: nextFlight.timeZone,
