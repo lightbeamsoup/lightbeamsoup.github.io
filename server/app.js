@@ -48,7 +48,7 @@ const DRIVE_FILE_NAME = "task-deck-store.json";
 const DEV_EMAIL = "jbkallman@gmail.com";
 const LIFETREE_APP_URL = "https://www.joshcodes.ai/lifetree";
 const FLIGHTAWARE_AEROAPI_KEY = String(process.env.FLIGHTAWARE_AEROAPI_KEY || "").trim();
-const TRAVEL_WEATHER_CACHE_TTL_MS = 1000 * 60 * 60;
+const TRAVEL_WEATHER_CACHE_TTL_MS = 1000 * 60 * 15;
 const US_STATE_NAME_BY_CODE = {
   AL: "Alabama",
   AK: "Alaska",
@@ -1367,7 +1367,11 @@ async function buildTravelLiveSnapshot(trip) {
     });
     return cached.snapshot;
   }
-  if (durableSnapshot && !trip.forceFlightRefresh && !shouldRefreshTravelSnapshot(trip, durableSnapshot, now)) {
+  if (
+    durableSnapshot
+    && !trip.forceFlightRefresh
+    && !shouldRefreshTravelSnapshot(trip, durableSnapshot, now, { forceWeatherRefresh: !cached })
+  ) {
     logTravelLive("verbose", "Reusing persisted travel live snapshot", {
       tripId: trip.tripId,
       flightNextRefreshAt: durableSnapshot.flight?.nextRefreshAt || 0,
@@ -1479,8 +1483,11 @@ function pickTravelLiveSnapshot(left, right) {
   return rightUpdatedAt > leftUpdatedAt ? normalizedRight : normalizedLeft;
 }
 
-function shouldRefreshTravelSnapshot(trip, snapshot, now = Date.now()) {
-  const weatherDue = Boolean(trip.weather) && shouldRefreshTravelLiveComponent(snapshot.weather, now);
+function shouldRefreshTravelSnapshot(trip, snapshot, now = Date.now(), { forceWeatherRefresh = false } = {}) {
+  const weatherDue = Boolean(trip.weather) && (
+    forceWeatherRefresh
+      || shouldRefreshTravelLiveComponent(snapshot.weather, now)
+  );
   const flightDue = Boolean(trip.flight) && shouldRefreshTravelLiveComponent(snapshot.flight, now);
   return weatherDue || flightDue;
 }
