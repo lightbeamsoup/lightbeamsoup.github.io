@@ -4,7 +4,11 @@
 
 ### Travel Buddy
 
+- Add a Travel Buddy settings tab with home location and home time zone preferences.
+- Add flight numbers and richer transit leg details to trip itineraries.
+- Add packing-list item quantities and preserve them in saved packing templates and itinerary templates.
 - Surface active trip tasks into the canopy from itinerary milestones.
+- Generate flight check-in tasks 24 hours before departure and make them timezone-aware by trip stage.
 - Generate travel tasks from itinerary and packing details, and default those widget-owned tasks into the `Travel` category.
 
 - Widgets: Create a Hydration widget that tracks ounces consumed and grows a plant as you water it.

@@ -2575,6 +2575,18 @@ body.developer-open {
   gap: 14px;
 }
 
+.travel-template-item-list {
+  display: grid;
+  gap: 10px;
+}
+
+.travel-template-item-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 92px auto;
+  gap: 12px;
+  align-items: end;
+}
+
 .travel-wide-field,
 .travel-template-items-input {
   grid-column: 1 / -1;
@@ -4264,7 +4276,8 @@ textarea {
 
   .travel-inline-form,
   .travel-template-save-grid,
-  .travel-template-apply-row {
+  .travel-template-apply-row,
+  .travel-template-item-row {
     grid-template-columns: 1fr;
   }
 

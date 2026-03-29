@@ -36,6 +36,10 @@ export const travelWidgetDefinition = {
       id: createId(),
       type: TRAVEL_WIDGET_TYPE,
       slotIndex,
+      settings: {
+        homeLocation: "",
+        homeTimeZone: ""
+      },
       data: {
         trips: [],
         packingTemplates: [],
@@ -55,6 +59,7 @@ export const travelWidgetDefinition = {
       id: typeof widget.id === "string" ? widget.id : createId(),
       type: TRAVEL_WIDGET_TYPE,
       slotIndex: normalizeSlotIndex(widget.slotIndex, maxWidgets || 5),
+      settings: normalizeTravelSettings(widget.settings),
       data: {
         trips: normalizeTrips(widget.data?.trips, createId),
         packingTemplates: normalizePackingTemplates(widget.data?.packingTemplates, createId),
@@ -69,7 +74,7 @@ export const travelWidgetDefinition = {
     const latestTrip = normalizeTrips(widget?.data?.trips).reduce((max, trip) => Math.max(max, trip.updatedAt || 0), 0);
     const latestPackingTemplate = normalizePackingTemplates(widget?.data?.packingTemplates).reduce((max, template) => Math.max(max, template.updatedAt || 0), 0);
     const latestItineraryTemplate = normalizeItineraryTemplates(widget?.data?.itineraryTemplates).reduce((max, template) => Math.max(max, template.updatedAt || 0), 0);
-    return Math.max(widget?.updatedAt || 0, widget?.createdAt || 0, latestTrip, latestPackingTemplate, latestItineraryTemplate);
+    return Math.max(widget?.updatedAt || 0, widget?.createdAt || 0, latestTrip, latestPackingTemplate, latestItineraryTemplate, widget?.settings?.updatedAt || 0);
   },
 
   getCategories() {
@@ -78,6 +83,7 @@ export const travelWidgetDefinition = {
 
   render({ widget, tasks, escapeHtml }) {
     const trips = normalizeTrips(widget.data?.trips);
+    const settings = normalizeTravelSettings(widget.settings);
     const upcomingTrips = getUpcomingTrips(trips);
     const nextTrip = upcomingTrips[0] || trips[0] || null;
     const activeTripCount = trips.filter((trip) => trip.status === "active").length;
@@ -98,6 +104,9 @@ export const travelWidgetDefinition = {
       <p>${nextTrip
         ? escapeHtml(describeTripMilestone(nextTrip))
         : "Create a trip to start tracking transit, lodging, and packing details."}</p>
+      <p>${settings.homeLocation
+        ? `Home base: ${escapeHtml(settings.homeLocation)}${settings.homeTimeZone ? ` · ${escapeHtml(settings.homeTimeZone)}` : ""}`
+        : "Set your home location in Travel settings to support timezone-aware trip planning."}</p>
       <div class="travel-shell-list">
         ${upcomingTrips.length
           ? upcomingTrips.slice(0, 3).map((trip) => renderTravelShellCard(trip, escapeHtml)).join("")
@@ -113,6 +122,7 @@ export const travelWidgetDefinition = {
 
   renderDetail({ widget, escapeHtml, formatDate }) {
     const trips = normalizeTrips(widget.data?.trips);
+    const settings = normalizeTravelSettings(widget.settings);
     const packingTemplates = normalizePackingTemplates(widget.data?.packingTemplates);
     const itineraryTemplates = normalizeItineraryTemplates(widget.data?.itineraryTemplates);
     const activeTab = getTravelDetailTab(widget.id, trips);
@@ -123,6 +133,7 @@ export const travelWidgetDefinition = {
       <section class="energy-detail">
         <div class="workout-detail-tabs" role="tablist" aria-label="Travel detail sections">
           ${renderTravelDetailTabButton("overview", "Overview", activeTab, escapeHtml)}
+          ${renderTravelDetailTabButton("settings", "Settings", activeTab, escapeHtml)}
           ${trips.map((trip) => renderTravelDetailTabButton(`trip:${trip.id}`, trip.name || "Trip", activeTab, escapeHtml)).join("")}
           ${renderTravelDetailTabButton("packing-templates", "Saved packing lists", activeTab, escapeHtml)}
           ${renderTravelDetailTabButton("itinerary-templates", "Saved itineraries", activeTab, escapeHtml)}
@@ -166,8 +177,35 @@ export const travelWidgetDefinition = {
           </section>
         </div>
 
+        <div class="travel-detail-panel${activeTab === "settings" ? "" : " hidden"}" data-travel-tab-panel="settings">
+          <section class="energy-detail-card">
+            <div class="energy-detail-header">
+              <div>
+                <p class="eyebrow">Settings</p>
+                <h3>Home location and time zone</h3>
+                <p class="sync-status">Travel Buddy uses your home base to reason about trip stages and timezone-sensitive planning. Use an IANA timezone when you want an exact override.</p>
+              </div>
+            </div>
+            <form class="travel-template-form" data-travel-settings-form>
+              <div class="quick-add-grid">
+                <label class="quick-add-title">
+                  <span>Home location</span>
+                  <input type="text" maxlength="120" value="${escapeHtml(settings.homeLocation)}" placeholder="Seattle, WA or SEA" data-travel-home-location />
+                </label>
+                <label>
+                  <span>Home time zone</span>
+                  <input type="text" maxlength="80" value="${escapeHtml(settings.homeTimeZone)}" placeholder="America/Los_Angeles" data-travel-home-timezone />
+                </label>
+              </div>
+              <div class="widget-actions workout-inline-actions">
+                <button type="submit" class="primary-button">Save settings</button>
+              </div>
+            </form>
+          </section>
+        </div>
+
         <div class="travel-detail-panel${activeTrip ? "" : " hidden"}" data-travel-tab-panel="trip">
-          ${activeTrip ? renderTravelTripPanel(activeTrip, packingTemplates, itineraryTemplates, escapeHtml, formatDate) : ""}
+          ${activeTrip ? renderTravelTripPanel(activeTrip, packingTemplates, itineraryTemplates, settings, escapeHtml, formatDate) : ""}
         </div>
 
         <div class="travel-detail-panel${activeTab === "packing-templates" ? "" : " hidden"}" data-travel-tab-panel="packing-templates">
@@ -180,14 +218,16 @@ export const travelWidgetDefinition = {
               </div>
             </div>
             <form class="travel-template-form" data-travel-packing-template-form>
+              <div class="travel-template-item-list" data-travel-template-item-list>
+                ${renderTravelTemplateItemRows([], escapeHtml)}
+              </div>
+              <div class="widget-actions workout-inline-actions">
+                <button type="button" class="ghost-button" data-travel-add-template-item>Add item</button>
+              </div>
               <div class="quick-add-grid">
                 <label class="quick-add-title">
                   <span>Template name</span>
                   <input type="text" maxlength="80" placeholder="Weekend carry-on, beach trip..." data-travel-template-name required />
-                </label>
-                <label class="travel-template-items-input">
-                  <span>Items (one per line)</span>
-                  <textarea rows="6" placeholder="Passport&#10;Chargers&#10;Walking shoes" data-travel-template-items required></textarea>
                 </label>
               </div>
               <div class="widget-actions workout-inline-actions">
@@ -228,6 +268,21 @@ export const travelWidgetDefinition = {
       if (tabButton) {
         setTravelDetailTab(widget.id, tabButton.getAttribute("data-travel-detail-tab") || "overview", widget.data?.trips);
         helpers.renderAll();
+        return;
+      }
+
+      const addTemplateItemButton = event.target.closest("[data-travel-add-template-item]");
+      if (addTemplateItemButton) {
+        const list = container.querySelector("[data-travel-template-item-list]");
+        if (list) {
+          list.insertAdjacentHTML("beforeend", renderTravelTemplateItemRow({ label: "", quantity: 1 }, helpers.createId));
+        }
+        return;
+      }
+
+      const removeTemplateItemButton = event.target.closest("[data-travel-remove-template-item]");
+      if (removeTemplateItemButton) {
+        removeTemplateItemButton.closest(".travel-template-item-row")?.remove();
         return;
       }
 
@@ -294,6 +349,37 @@ export const travelWidgetDefinition = {
         return;
       }
 
+      const adjustQuantityButton = event.target.closest("[data-travel-adjust-quantity]");
+      if (adjustQuantityButton) {
+        const tripId = adjustQuantityButton.getAttribute("data-trip-id") || "";
+        const itemId = adjustQuantityButton.getAttribute("data-item-id") || "";
+        const delta = Number(adjustQuantityButton.getAttribute("data-quantity-delta") || "0");
+        const updatedTrip = updateTripById(widget, tripId, (trip) => {
+          const now = Date.now();
+          return {
+            ...trip,
+            packingList: {
+              ...trip.packingList,
+              items: trip.packingList.items.map((item) => item.id === itemId ? {
+                ...item,
+                quantity: normalizePackingQuantity((item.quantity || 1) + delta),
+                updatedAt: now
+              } : item),
+              updatedAt: now
+            },
+            updatedAt: now
+          };
+        });
+        if (!updatedTrip) {
+          helpers.setSyncStatus("That packing item could not be found.", "error");
+          return;
+        }
+        widget.updatedAt = Date.now();
+        helpers.persistStore();
+        helpers.renderAll();
+        return;
+      }
+
       const deleteItemButton = event.target.closest("[data-travel-delete-item]");
       if (deleteItemButton) {
         const tripId = deleteItemButton.getAttribute("data-trip-id") || "";
@@ -342,6 +428,7 @@ export const travelWidgetDefinition = {
                 id: helpers.createId(),
                 label: item.label,
                 packed: false,
+                quantity: item.quantity || 1,
                 notes: "",
                 updatedAt: now
               }))
@@ -380,6 +467,7 @@ export const travelWidgetDefinition = {
             items: trip.packingList.items.map((item) => ({
               id: helpers.createId(),
               label: item.label,
+              quantity: item.quantity || 1,
               packed: false,
               notes: ""
             })),
@@ -415,6 +503,7 @@ export const travelWidgetDefinition = {
             items: template.packingItems.map((item) => ({
               id: helpers.createId(),
               label: item.label,
+              quantity: item.quantity || 1,
               packed: false,
               notes: "",
               updatedAt: now
@@ -457,6 +546,7 @@ export const travelWidgetDefinition = {
             packingItems: trip.packingList.items.map((item) => ({
               id: helpers.createId(),
               label: item.label,
+              quantity: item.quantity || 1,
               packed: false,
               notes: ""
             })),
@@ -492,6 +582,7 @@ export const travelWidgetDefinition = {
             items: template.packingItems.map((item) => ({
               id: helpers.createId(),
               label: item.label,
+              quantity: item.quantity || 1,
               packed: false,
               notes: "",
               updatedAt: now
@@ -543,6 +634,28 @@ export const travelWidgetDefinition = {
     };
 
     const submitHandler = (event) => {
+      const settingsForm = event.target.closest("[data-travel-settings-form]");
+      if (settingsForm) {
+        event.preventDefault();
+        const homeLocation = normalizeText(settingsForm.querySelector("[data-travel-home-location]")?.value, 120);
+        const homeTimeZone = normalizeTimeZone(settingsForm.querySelector("[data-travel-home-timezone]")?.value);
+        if (settingsForm.querySelector("[data-travel-home-timezone]")?.value && !homeTimeZone) {
+          helpers.setSyncStatus("Home time zone must be a valid IANA zone like America/Los_Angeles.", "error");
+          return;
+        }
+        widget.settings = {
+          ...normalizeTravelSettings(widget.settings),
+          homeLocation,
+          homeTimeZone,
+          updatedAt: Date.now()
+        };
+        widget.updatedAt = Date.now();
+        helpers.persistStore();
+        helpers.renderAll();
+        helpers.setSyncStatus("Saved Travel Buddy settings.", "success");
+        return;
+      }
+
       const tripForm = event.target.closest("[data-travel-trip-form]");
       if (tripForm) {
         event.preventDefault();
@@ -557,9 +670,15 @@ export const travelWidgetDefinition = {
           endDate: normalizeDateValue(tripForm.querySelector("[data-travel-end-date]")?.value),
           itinerary: normalizeTripItinerary({
             outboundLabel: tripForm.querySelector("[data-travel-outbound-label]")?.value,
+            outboundOrigin: tripForm.querySelector("[data-travel-outbound-origin]")?.value,
+            outboundDestination: tripForm.querySelector("[data-travel-outbound-destination]")?.value,
+            outboundFlightNumber: tripForm.querySelector("[data-travel-outbound-flight-number]")?.value,
             outboundDate: tripForm.querySelector("[data-travel-outbound-date]")?.value,
             outboundTime: tripForm.querySelector("[data-travel-outbound-time]")?.value,
             returnLabel: tripForm.querySelector("[data-travel-return-label]")?.value,
+            returnOrigin: tripForm.querySelector("[data-travel-return-origin]")?.value,
+            returnDestination: tripForm.querySelector("[data-travel-return-destination]")?.value,
+            returnFlightNumber: tripForm.querySelector("[data-travel-return-flight-number]")?.value,
             returnDate: tripForm.querySelector("[data-travel-return-date]")?.value,
             returnTime: tripForm.querySelector("[data-travel-return-time]")?.value,
             lodgingName: tripForm.querySelector("[data-travel-lodging-name]")?.value,
@@ -586,7 +705,9 @@ export const travelWidgetDefinition = {
         event.preventDefault();
         const tripId = addPackingItemForm.getAttribute("data-trip-id") || "";
         const input = addPackingItemForm.querySelector("[data-travel-packing-item-input]");
+        const quantityInput = addPackingItemForm.querySelector("[data-travel-packing-quantity]");
         const label = normalizeText(input?.value, 120);
+        const quantity = normalizePackingQuantity(quantityInput?.value);
         if (!label) {
           helpers.setSyncStatus("Enter a packing item first.", "error");
           return;
@@ -602,6 +723,7 @@ export const travelWidgetDefinition = {
                 id: helpers.createId(),
                 label,
                 packed: false,
+                quantity,
                 notes: "",
                 updatedAt: now
               }
@@ -625,7 +747,7 @@ export const travelWidgetDefinition = {
       if (packingTemplateForm) {
         event.preventDefault();
         const name = normalizeText(packingTemplateForm.querySelector("[data-travel-template-name]")?.value, 80);
-        const items = splitTemplateLines(packingTemplateForm.querySelector("[data-travel-template-items]")?.value);
+        const items = collectTemplateItems(packingTemplateForm);
         if (!name || items.length === 0) {
           helpers.setSyncStatus("Enter a name and at least one packing item.", "error");
           return;
@@ -636,9 +758,10 @@ export const travelWidgetDefinition = {
           {
             id: helpers.createId(),
             name,
-            items: items.map((label) => ({
+            items: items.map((item) => ({
               id: helpers.createId(),
-              label,
+              label: item.label,
+              quantity: item.quantity,
               packed: false,
               notes: ""
             })),
@@ -717,12 +840,26 @@ function normalizeTrip(value, createId) {
   };
 }
 
+function normalizeTravelSettings(value) {
+  return {
+    homeLocation: normalizeText(value?.homeLocation, 120),
+    homeTimeZone: normalizeTimeZone(value?.homeTimeZone),
+    updatedAt: typeof value?.updatedAt === "number" ? value.updatedAt : 0
+  };
+}
+
 function normalizeTripItinerary(value) {
   return {
     outboundLabel: normalizeText(value?.outboundLabel, 80),
+    outboundOrigin: normalizeText(value?.outboundOrigin, 120),
+    outboundDestination: normalizeText(value?.outboundDestination, 120),
+    outboundFlightNumber: normalizeText(value?.outboundFlightNumber, 24).toUpperCase(),
     outboundDate: normalizeDateValue(value?.outboundDate),
     outboundTime: normalizeTimeValue(value?.outboundTime),
     returnLabel: normalizeText(value?.returnLabel, 80),
+    returnOrigin: normalizeText(value?.returnOrigin, 120),
+    returnDestination: normalizeText(value?.returnDestination, 120),
+    returnFlightNumber: normalizeText(value?.returnFlightNumber, 24).toUpperCase(),
     returnDate: normalizeDateValue(value?.returnDate),
     returnTime: normalizeTimeValue(value?.returnTime),
     lodgingName: normalizeText(value?.lodgingName, 120),
@@ -751,6 +888,7 @@ function normalizePackingItem(value, createId) {
     id: typeof value?.id === "string" && value.id ? value.id : createId(),
     label,
     packed: value?.packed === true,
+    quantity: normalizePackingQuantity(value?.quantity),
     notes: normalizeText(value?.notes, 240),
     updatedAt: typeof value?.updatedAt === "number" ? value.updatedAt : Date.now()
   };
@@ -925,7 +1063,7 @@ function renderTravelOverviewCard(trip, escapeHtml, formatDate) {
   `;
 }
 
-function renderTravelTripPanel(trip, packingTemplates, itineraryTemplates, escapeHtml, formatDate) {
+function renderTravelTripPanel(trip, packingTemplates, itineraryTemplates, settings, escapeHtml, formatDate) {
   return `
     <section class="energy-detail-card">
       <div class="energy-detail-header">
@@ -975,6 +1113,18 @@ function renderTravelTripPanel(trip, packingTemplates, itineraryTemplates, escap
                 <input type="text" maxlength="80" value="${escapeHtml(trip.itinerary.outboundLabel)}" placeholder="Flight, train, drive..." data-travel-outbound-label />
               </label>
               <label>
+                <span>Outbound origin</span>
+                <input type="text" maxlength="120" value="${escapeHtml(trip.itinerary.outboundOrigin)}" placeholder="${escapeHtml(settings.homeLocation || "Origin")}" data-travel-outbound-origin />
+              </label>
+              <label>
+                <span>Outbound destination</span>
+                <input type="text" maxlength="120" value="${escapeHtml(trip.itinerary.outboundDestination)}" placeholder="${escapeHtml(trip.destination || "Destination")}" data-travel-outbound-destination />
+              </label>
+              <label>
+                <span>Flight number</span>
+                <input type="text" maxlength="24" value="${escapeHtml(trip.itinerary.outboundFlightNumber)}" placeholder="AS 331, DL204" data-travel-outbound-flight-number />
+              </label>
+              <label>
                 <span>Outbound date</span>
                 <input type="date" value="${escapeHtml(trip.itinerary.outboundDate)}" data-travel-outbound-date />
               </label>
@@ -985,6 +1135,18 @@ function renderTravelTripPanel(trip, packingTemplates, itineraryTemplates, escap
               <label class="quick-add-title">
                 <span>Return</span>
                 <input type="text" maxlength="80" value="${escapeHtml(trip.itinerary.returnLabel)}" placeholder="Flight, train, drive..." data-travel-return-label />
+              </label>
+              <label>
+                <span>Return origin</span>
+                <input type="text" maxlength="120" value="${escapeHtml(trip.itinerary.returnOrigin)}" placeholder="${escapeHtml(trip.destination || "Origin")}" data-travel-return-origin />
+              </label>
+              <label>
+                <span>Return destination</span>
+                <input type="text" maxlength="120" value="${escapeHtml(trip.itinerary.returnDestination)}" placeholder="${escapeHtml(settings.homeLocation || "Destination")}" data-travel-return-destination />
+              </label>
+              <label>
+                <span>Flight number</span>
+                <input type="text" maxlength="24" value="${escapeHtml(trip.itinerary.returnFlightNumber)}" placeholder="AS 332, DL205" data-travel-return-flight-number />
               </label>
               <label>
                 <span>Return date</span>
@@ -1064,6 +1226,10 @@ function renderTravelTripPanel(trip, packingTemplates, itineraryTemplates, escap
           <span>Add packing item</span>
           <input type="text" maxlength="120" placeholder="Passport, chargers, hiking shoes..." data-travel-packing-item-input required />
         </label>
+        <label>
+          <span>Qty</span>
+          <input type="number" min="1" max="99" step="1" value="1" data-travel-packing-quantity />
+        </label>
         <button type="submit" class="ghost-button">Add item</button>
       </form>
       <div class="travel-template-save-grid">
@@ -1110,9 +1276,11 @@ function renderTripPackingItem(trip, item, escapeHtml) {
     <article class="travel-packing-item${item.packed ? " is-packed" : ""}">
       <div>
         <h4>${escapeHtml(item.label)}</h4>
-        <p>${item.packed ? "Packed" : "Still needed"}</p>
+        <p>${item.packed ? "Packed" : "Still needed"} · Qty ${item.quantity || 1}</p>
       </div>
       <div class="widget-actions workout-inline-actions">
+        <button type="button" class="ghost-button" data-travel-adjust-quantity data-trip-id="${trip.id}" data-item-id="${item.id}" data-quantity-delta="-1">−</button>
+        <button type="button" class="ghost-button" data-travel-adjust-quantity data-trip-id="${trip.id}" data-item-id="${item.id}" data-quantity-delta="1">+</button>
         <button type="button" class="ghost-button" data-travel-toggle-packed data-trip-id="${trip.id}" data-item-id="${item.id}">${item.packed ? "Unpack" : "Pack"}</button>
         <button type="button" class="ghost-button" data-travel-delete-item data-trip-id="${trip.id}" data-item-id="${item.id}">Delete</button>
       </div>
@@ -1129,7 +1297,7 @@ function renderPackingTemplateCard(template, escapeHtml) {
           <p>${template.items.length} item${template.items.length === 1 ? "" : "s"}</p>
         </div>
       </div>
-      <p>${escapeHtml(template.items.slice(0, 4).map((item) => item.label).join(" · ") || "No items yet")}</p>
+      <p>${escapeHtml(template.items.slice(0, 4).map((item) => `${item.quantity || 1}× ${item.label}`).join(" · ") || "No items yet")}</p>
       <div class="widget-actions workout-inline-actions">
         <button type="button" class="ghost-button" data-travel-delete-packing-template data-template-id="${template.id}">Delete</button>
       </div>
@@ -1153,6 +1321,27 @@ function renderItineraryTemplateCard(template, escapeHtml, formatDate) {
         <button type="button" class="ghost-button" data-travel-delete-itinerary-template data-template-id="${template.id}">Delete</button>
       </div>
     </article>
+  `;
+}
+
+function renderTravelTemplateItemRows(items, escapeHtml) {
+  const normalizedItems = Array.isArray(items) && items.length ? items : [{ label: "", quantity: 1 }];
+  return normalizedItems.map((item, index) => renderTravelTemplateItemRow(item, `travel-template-row-${index}`, escapeHtml)).join("");
+}
+
+function renderTravelTemplateItemRow(item, rowId, escapeHtml) {
+  return `
+    <div class="travel-template-item-row" data-travel-template-row="${rowId}">
+      <label class="quick-add-title">
+        <span>Item</span>
+        <input type="text" maxlength="120" value="${escapeHtml(item?.label || "")}" placeholder="Passport" data-travel-template-item-label />
+      </label>
+      <label>
+        <span>Qty</span>
+        <input type="number" min="1" max="99" step="1" value="${normalizePackingQuantity(item?.quantity)}" data-travel-template-item-quantity />
+      </label>
+      <button type="button" class="ghost-button" data-travel-remove-template-item>Remove</button>
+    </div>
   `;
 }
 
@@ -1198,6 +1387,27 @@ function formatMaybeDate(dateString, formatDate) {
     return formatDate(dateString);
   }
   return formatDateTimeLabel(dateString, "");
+}
+
+function normalizePackingQuantity(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return 1;
+  }
+  return Math.min(99, Math.round(parsed));
+}
+
+function normalizeTimeZone(value) {
+  const trimmed = normalizeText(value, 80);
+  if (!trimmed) {
+    return "";
+  }
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: trimmed }).format(new Date());
+    return trimmed;
+  } catch {
+    return "";
+  }
 }
 
 function formatDateTimeLabel(dateString, timeString) {
@@ -1248,7 +1458,7 @@ function setTravelDetailTab(widgetId, detailTab, trips) {
 }
 
 function normalizeTravelDetailTab(value, trips = []) {
-  if (value === "overview" || value === "packing-templates" || value === "itinerary-templates") {
+  if (value === "overview" || value === "settings" || value === "packing-templates" || value === "itinerary-templates") {
     return value;
   }
   if (typeof value === "string" && value.startsWith("trip:")) {
@@ -1314,6 +1524,15 @@ function splitTemplateLines(value) {
     .split(/\r?\n/)
     .map((entry) => entry.trim())
     .filter(Boolean)));
+}
+
+function collectTemplateItems(form) {
+  return Array.from(form.querySelectorAll(".travel-template-item-row"))
+    .map((row) => ({
+      label: normalizeText(row.querySelector("[data-travel-template-item-label]")?.value, 120),
+      quantity: normalizePackingQuantity(row.querySelector("[data-travel-template-item-quantity]")?.value)
+    }))
+    .filter((item) => item.label);
 }
 
 function dedupePackingItems(items) {
