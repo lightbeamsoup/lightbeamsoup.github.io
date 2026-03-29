@@ -12,6 +12,8 @@
 - Canopy: Decide how dailies should be marked complete directly from the shell view.
 - Workout Coach: Improve organization of the calories/weight graph in the workout modal.
 - Notifications: Consolidate repeated activities in email summaries and reminders.
+- Tasks: Add task snoozing.
+- Points: Add category point exchanges.
 
 ## Recently completed
 
