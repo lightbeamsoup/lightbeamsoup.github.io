@@ -706,7 +706,7 @@ export const workoutWidgetDefinition = {
       helpers.stageWidgetAction(widget, "weight-log", {
         value: weightValue,
         unit: widget.settings.weightTracking.unit,
-        description: `Pending weight log of ${trimTrailingZero(weightValue)} ${widget.settings.weightTracking.unit}. Click undo within 5 seconds to cancel.`,
+        description: `Pending weight log of ${trimTrailingZero(weightValue)} ${widget.settings.weightTracking.unit}. Click undo within 3 seconds to cancel.`,
         commit: () => {
           helpers.applyAutoSkipRules(new Date(entryTime));
           const completedTask = helpers.completeNextTaskFromWidget(widget, WEIGHT_COMPLETION_MECHANISM, entryTime);
@@ -933,7 +933,7 @@ function stageWorkoutTaskLog(widget, task, { durationMinutes, intensity, calorie
     durationMinutes: normalizedDuration,
     intensity: normalizedIntensity,
     caloriesBurned: normalizedCalories,
-    description: `Pending workout log for ${task.name}. Click undo within 5 seconds to cancel.`,
+    description: `Pending workout log for ${task.name}. Click undo within 3 seconds to cancel.`,
     commit: () => {
       const currentTask = helpers.getStore().tasks.find((entry) => entry.id === taskId);
       if (!currentTask || currentTask.status !== "open" || currentTask.widgetTaskKind !== "workout-session") {
@@ -988,7 +988,7 @@ function stageAdHocWorkoutLog(widget, values, helpers) {
     durationMinutes: normalizedDuration,
     intensity: normalizedIntensity,
     caloriesBurned: normalizedCalories,
-    description: `Pending ad hoc workout log for ${normalizedType}. Click undo within 5 seconds to cancel.`,
+    description: `Pending ad hoc workout log for ${normalizedType}. Click undo within 3 seconds to cancel.`,
     commit: () => {
       upsertWorkoutEntry(widget, {
         id: helpers.createId(),

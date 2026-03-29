@@ -108,7 +108,7 @@ const MAX_ROLLING_SERIES_INSTANCES = 7;
 const MAX_WIDGETS = 5;
 const MAX_VISIBLE_HISTORY_ENTRIES = 25;
 const COMPLETED_ONE_OFF_DISMISS_MS = 5000;
-const ACTION_UNDO_MS = 5000;
+const ACTION_UNDO_MS = 3000;
 const DEV_EMAIL = "jbkallman@gmail.com";
 const DEFAULT_CATEGORY_COLOR = "#7dbf74";
 const DEFAULT_CATEGORY_KEY = "productivity";
@@ -2128,7 +2128,7 @@ function handleCanopyAction(event) {
     stagePendingAction({
       key: `complete:${task.id}`,
       taskId: task.id,
-      description: `Pending completion for ${task.name}. Click undo within 5 seconds to cancel.`,
+      description: `Pending completion for ${task.name}. Click undo within 3 seconds to cancel.`,
       commit: () => {
         const nextTask = store.tasks.find((item) => item.id === task.id);
         if (!nextTask || nextTask.archived || nextTask.status !== "open" || isBlocked(nextTask)) {
@@ -2148,7 +2148,7 @@ function handleCanopyAction(event) {
     stagePendingAction({
       key: `skip:${task.id}`,
       taskId: task.id,
-      description: `Pending skip for ${task.name}. Click undo within 5 seconds to cancel.`,
+      description: `Pending skip for ${task.name}. Click undo within 3 seconds to cancel.`,
       commit: () => {
         const nextTask = store.tasks.find((item) => item.id === task.id);
         if (!nextTask || nextTask.archived || nextTask.status !== "open") {
@@ -2175,7 +2175,7 @@ function handleCanopyAction(event) {
     stagePendingAction({
       key: `complete:${task.id}`,
       taskId: task.id,
-      description: `Pending completion for ${task.name}. Click undo within 5 seconds to cancel.`,
+      description: `Pending completion for ${task.name}. Click undo within 3 seconds to cancel.`,
       commit: () => {
         const nextTask = store.tasks.find((item) => item.id === task.id);
         if (!nextTask || nextTask.archived || nextTask.status !== "open" || isBlocked(nextTask)) {
@@ -2200,7 +2200,7 @@ function handleCanopyAction(event) {
     stagePendingAction({
       key: `skip:${task.id}`,
       taskId: task.id,
-      description: `Pending skip for ${task.name}. Click undo within 5 seconds to cancel.`,
+      description: `Pending skip for ${task.name}. Click undo within 3 seconds to cancel.`,
       commit: () => {
         const nextTask = store.tasks.find((item) => item.id === task.id);
         if (!nextTask || nextTask.archived || nextTask.status !== "open") {
@@ -2281,7 +2281,7 @@ function collectRecurringGroupBonus(group) {
 
   stagePendingAction({
     key: `collect-bonus:${bonus.key}`,
-    description: `Pending ${group.label.toLowerCase()} bonus collection in ${category.label}. Click undo within 5 seconds to cancel.`,
+    description: `Pending ${group.label.toLowerCase()} bonus collection in ${category.label}. Click undo within 3 seconds to cancel.`,
     commit: () => {
       const currentGroup = findCanopyRecurringGroupByBonusKey(bonus.key);
       const currentBonus = currentGroup?.bonus || null;
@@ -5294,7 +5294,7 @@ function handleTaskAction(event) {
       stagePendingAction({
         key: `complete:${task.id}`,
         taskId: task.id,
-        description: `Pending completion for ${task.name}. Click undo within 5 seconds to cancel.`,
+        description: `Pending completion for ${task.name}. Click undo within 3 seconds to cancel.`,
         commit: () => {
           const nextTask = store.tasks.find((item) => item.id === task.id);
           if (!nextTask || nextTask.archived || nextTask.status !== "open" || isBlocked(nextTask)) {
@@ -5312,7 +5312,7 @@ function handleTaskAction(event) {
     stagePendingAction({
       key: `skip:${task.id}`,
       taskId: task.id,
-      description: `Pending skip for ${task.name}. Click undo within 5 seconds to cancel.`,
+      description: `Pending skip for ${task.name}. Click undo within 3 seconds to cancel.`,
       commit: () => {
         const nextTask = store.tasks.find((item) => item.id === task.id);
         if (!nextTask || nextTask.archived || nextTask.status !== "open") {
@@ -5339,7 +5339,7 @@ function handleTaskAction(event) {
     stagePendingAction({
       key: `delete:${scope}:${task.id}`,
       taskId: task.id,
-      description: `Pending delete for ${task.name}. Click undo within 5 seconds to cancel.`,
+      description: `Pending delete for ${task.name}. Click undo within 3 seconds to cancel.`,
       commit: () => {
         const nextTask = store.tasks.find((item) => item.id === task.id);
         if (!nextTask) {

@@ -512,9 +512,9 @@ function stageEnergyVote(widget, level, mode, helpers) {
   helpers.stageWidgetAction(widget, actionType, {
     level,
     description: mode === "extra"
-      ? `Pending extra energy vote of ${level}/5. Click undo within 5 seconds to cancel.`
+      ? `Pending extra energy vote of ${level}/5. Click undo within 3 seconds to cancel.`
       : preflightHasReminder
-        ? `Pending energy vote of ${level}/5. Click undo within 5 seconds to cancel.`
+        ? `Pending energy vote of ${level}/5. Click undo within 3 seconds to cancel.`
         : `Pending energy vote of ${level}/5. This will be logged unless a reminder is due by the time it commits.`,
     commit: () => {
       let completedTask = null;

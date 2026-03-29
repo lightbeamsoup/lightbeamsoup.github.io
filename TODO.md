@@ -9,6 +9,7 @@
 - Tree styles: Create a spring canopy skin.
 - Drive sync: Make merge/conflict popups clearer about what happened and what each choice will do.
 - Notifications: Move auth/session storage into a shared backend before re-enabling the dedicated Railway worker.
+- Canopy: Decide how dailies should be marked complete directly from the shell view.
 
 ## Recently completed
 
