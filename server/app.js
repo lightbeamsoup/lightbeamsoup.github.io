@@ -1395,32 +1395,42 @@ async function buildTravelLiveSnapshot(trip) {
     tripId: trip.tripId,
     forceFlightRefresh: trip.forceFlightRefresh === true
   });
+  const runtimeSnapshot = cached?.snapshot || null;
   const cachedSnapshot = durableSnapshot;
   const [weather, flight] = await Promise.all([
     trip.weather
       ? (
-          cachedSnapshot?.weather && !shouldRefreshTravelLiveComponent(cachedSnapshot.weather, now)
+          runtimeSnapshot?.weather
+          && !shouldRefreshTravelLiveComponent(runtimeSnapshot.weather, now)
           && !trip.forceWeatherRefresh
             ? (
                 logTravelLive("verbose", "Reusing cached travel weather snapshot", {
                   tripId: trip.tripId,
-                  nextRefreshAt: cachedSnapshot.weather?.nextRefreshAt || 0
+                  nextRefreshAt: runtimeSnapshot.weather?.nextRefreshAt || 0
                 }),
-                Promise.resolve(cachedSnapshot.weather)
+                Promise.resolve(runtimeSnapshot.weather)
               )
-            : fetchTravelWeatherSnapshot(trip.weather).catch((error) => {
-                logTravelLive("basic", "Weather lookup failed", {
-                  tripId: trip.tripId,
-                  destinationQuery: trip.weather?.destinationQuery || "",
-                  message: String(error?.message || "Forecast unavailable right now.")
-                });
-                return {
-                  status: "error",
-                  message: "Forecast unavailable right now.",
-                  fetchedAt: now,
-                  nextRefreshAt: now + TRAVEL_WEATHER_RETRY_TTL_MS
-                };
-              })
+            : (
+                !cached && durableSnapshot?.weather && !trip.forceWeatherRefresh
+                  ? logTravelLive("verbose", "Ignoring persisted weather snapshot on cold start", {
+                      tripId: trip.tripId,
+                      nextRefreshAt: durableSnapshot.weather?.nextRefreshAt || 0
+                    })
+                  : null,
+                fetchTravelWeatherSnapshot(trip.weather).catch((error) => {
+                  logTravelLive("basic", "Weather lookup failed", {
+                    tripId: trip.tripId,
+                    destinationQuery: trip.weather?.destinationQuery || "",
+                    message: String(error?.message || "Forecast unavailable right now.")
+                  });
+                  return {
+                    status: "error",
+                    message: "Forecast unavailable right now.",
+                    fetchedAt: now,
+                    nextRefreshAt: now + TRAVEL_WEATHER_RETRY_TTL_MS
+                  };
+                })
+              )
         )
       : Promise.resolve(null),
     trip.flight
