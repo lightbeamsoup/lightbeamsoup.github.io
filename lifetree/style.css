@@ -1186,7 +1186,7 @@ body.developer-open {
 }
 
 .drive-conflict-panel {
-  width: min(540px, calc(100vw - 24px));
+  width: min(480px, calc(100vw - 24px));
   height: auto;
   max-height: calc(100dvh - 24px);
 }
@@ -1194,8 +1194,11 @@ body.developer-open {
 .drive-conflict-body {
   display: grid;
   gap: 10px;
+  align-content: start;
+  flex: 0 1 auto;
   overflow-y: auto;
   padding-right: 4px;
+  max-height: min(520px, calc(100dvh - 168px));
 }
 
 .drive-conflict-copy {
@@ -1206,13 +1209,14 @@ body.developer-open {
 }
 
 .drive-conflict-options {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: stretch;
 }
 
 .drive-conflict-option {
-  display: grid;
+  display: inline-grid;
   gap: 4px;
   padding: 12px;
   text-align: left;
@@ -1221,6 +1225,10 @@ body.developer-open {
   background: rgba(255, 255, 255, 0.72);
   color: var(--ink);
   cursor: pointer;
+  width: fit-content;
+  min-width: 136px;
+  max-width: 150px;
+  align-content: start;
 }
 
 .drive-conflict-option strong {
@@ -1247,8 +1255,19 @@ body.developer-open {
 }
 
 @media (max-width: 640px) {
+  .drive-conflict-panel {
+    width: min(100vw - 12px, 420px);
+  }
+
   .drive-conflict-options {
+    display: grid;
     grid-template-columns: 1fr;
+  }
+
+  .drive-conflict-option {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
   }
 }
 
