@@ -1743,13 +1743,13 @@ function mergeTravelLiveSnapshot(base, update) {
     updatedAt: Math.max(normalizedBase.updatedAt || 0, normalizedUpdate.updatedAt || 0, normalizedUpdate.fetchedAt || 0),
     flight: mergedFlight || null,
     weather: mergedWeather,
-    flightNotice: updateFlightFailed && normalizedBase.flight
+    flightNotice: updateFlightFailed && normalizedBase.flight && mergedFlight?.status === "ok"
       ? (normalizedUpdate.flight?.message || normalizedUpdate.flightNotice || normalizedBase.flightNotice || "")
       : (normalizedUpdate.flight?.status === "ok" ? "" : (normalizedUpdate.flightNotice || normalizedBase.flightNotice || "")),
     flightNoticeAt: updateFlightFailed
       ? Math.max(normalizedUpdate.flight?.fetchedAt || 0, normalizedUpdate.flightNoticeAt || 0, normalizedUpdate.fetchedAt || 0)
       : 0,
-    weatherNotice: updateWeatherFailed && normalizedBase.weather
+    weatherNotice: updateWeatherFailed && normalizedBase.weather && mergedWeather?.status === "ok"
       ? (normalizedUpdate.weather?.message || normalizedUpdate.weatherNotice || normalizedBase.weatherNotice || "")
       : (normalizedUpdate.weather?.status === "ok" ? "" : (normalizedUpdate.weatherNotice || normalizedBase.weatherNotice || "")),
     weatherNoticeAt: updateWeatherFailed

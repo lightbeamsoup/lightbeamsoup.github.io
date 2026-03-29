@@ -1513,6 +1513,10 @@ async function fetchTravelWeatherSnapshot(request) {
       ...(Array.isArray(request.candidateQueries) ? request.candidateQueries : [])
     ].flatMap((query) => buildTravelWeatherQueries(query))
   ));
+  logTravelLive("verbose", "Weather lookup candidate queries", {
+    destinationQuery: request.destinationQuery,
+    candidateQueries
+  });
   let result = null;
   let selectedQuery = candidateQueries[0] || request.destinationQuery;
   for (const query of candidateQueries) {
@@ -1523,6 +1527,19 @@ async function fetchTravelWeatherSnapshot(request) {
     geoUrl.searchParams.set("format", "json");
     const geoPayload = await fetchJsonFromUrl(geoUrl);
     const nextResult = Array.isArray(geoPayload?.results) ? geoPayload.results[0] : null;
+    logTravelLive("verbose", "Weather lookup geocoder response", {
+      query,
+      resultCount: Array.isArray(geoPayload?.results) ? geoPayload.results.length : 0,
+      topResult: nextResult
+        ? {
+            name: sanitizeTravelText(nextResult.name, 80),
+            admin1: sanitizeTravelText(nextResult.admin1, 80),
+            country: sanitizeTravelText(nextResult.country, 80),
+            latitude: Number(nextResult.latitude),
+            longitude: Number(nextResult.longitude)
+          }
+        : null
+    });
     if (hasValidTravelCoordinates(nextResult)) {
       result = nextResult;
       selectedQuery = query;
@@ -1536,6 +1553,10 @@ async function fetchTravelWeatherSnapshot(request) {
     }
   }
   if (!hasValidTravelCoordinates(result)) {
+    logTravelLive("basic", "Weather lookup found no matching geocode", {
+      destinationQuery: request.destinationQuery,
+      candidateQueries
+    });
     return {
       status: "not-found",
       query: request.destinationQuery,
@@ -1555,6 +1576,14 @@ async function fetchTravelWeatherSnapshot(request) {
   const forecastPayload = await fetchJsonFromUrl(forecastUrl);
   const days = buildWeatherDaySnapshots(forecastPayload?.daily);
   const relevantDays = selectRelevantWeatherDays(days, request.startDate, request.endDate);
+  logTravelLive("verbose", "Weather forecast response", {
+    selectedQuery,
+    locationLabel: buildWeatherLocationLabel(result) || selectedQuery,
+    totalForecastDays: days.length,
+    relevantDayCount: relevantDays.length,
+    startDate: request.startDate,
+    endDate: request.endDate
+  });
   if (relevantDays.length === 0) {
     return {
       status: "out-of-range",
