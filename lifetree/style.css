@@ -2437,7 +2437,7 @@ body.developer-open {
 
 .widget-detail-panel.canopy-detail-panel .widget-detail-body {
   flex: 0 1 auto;
-  max-height: min(560px, calc(100dvh - 210px));
+  max-height: min(720px, calc(100dvh - 176px));
 }
 
 .quick-add-panel {
@@ -3842,7 +3842,7 @@ textarea {
   }
 
   .widget-detail-panel.canopy-detail-panel .widget-detail-body {
-    max-height: calc(100dvh - 170px);
+    max-height: calc(100dvh - 156px);
   }
 
   .task-desk-tabs {
@@ -3973,7 +3973,7 @@ textarea {
   }
 
   .widget-detail-panel.canopy-detail-panel .widget-detail-body {
-    max-height: calc(100dvh - 176px);
+    max-height: calc(100dvh - 164px);
   }
 
   .energy-detail-grid {
