@@ -2630,6 +2630,32 @@ body.developer-open {
   gap: 10px;
 }
 
+.travel-packing-category,
+.travel-packing-category-list {
+  display: grid;
+  gap: 10px;
+}
+
+.travel-packing-category {
+  gap: 12px;
+}
+
+.travel-packing-category-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.travel-packing-category-header h4 {
+  margin: 0;
+}
+
+.travel-packing-category-header span {
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
 .travel-custom-task-list {
   display: grid;
   gap: 12px;
@@ -2637,7 +2663,7 @@ body.developer-open {
 
 .travel-template-item-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 92px auto;
+  grid-template-columns: minmax(0, 1fr) 92px 148px auto;
   gap: 12px;
   align-items: end;
 }
@@ -2682,6 +2708,26 @@ body.developer-open {
 .travel-template-apply-row label {
   display: grid;
   gap: 6px;
+}
+
+.travel-packing-add-form {
+  grid-template-columns: minmax(0, 1fr) 88px 148px auto;
+}
+
+.travel-packing-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(37, 50, 67, 0.1);
+  background: rgba(255, 255, 255, 0.42);
+  color: var(--ink);
+  font-size: 0.9rem;
+}
+
+.travel-packing-check input {
+  margin: 0;
 }
 
 .travel-packing-item.is-packed {

@@ -1,3 +1,5 @@
+import { shouldAutoSkipTask } from "../logic.js";
+
 export const TRAVEL_WIDGET_TYPE = "travel";
 
 const TRAVEL_CATEGORY = {
@@ -70,6 +72,9 @@ const TRIP_STATUS_OPTIONS = [
 const TRIP_PRESET_STATUS_OPTIONS = ["planning", "booked"];
 const TRAVEL_FLIGHT_LOOKAHEAD_MS = 1000 * 60 * 60 * 24;
 const TRAVEL_SHELL_LIVE_TTL_MS = 1000 * 60;
+const DEFAULT_TRAVEL_PACKING_CATEGORY = "General";
+const DEFAULT_TRAVEL_PACKING_DUE_TIME = "20:00";
+const DEFAULT_TRAVEL_PACKING_OVERDUE_GRACE_MINUTES = 15;
 const travelWidgetUiState = new Map();
 
 export const travelWidgetDefinition = {
@@ -155,8 +160,10 @@ export const travelWidgetDefinition = {
     const shellLiveByTripId = getTravelUiState(widget.id).shellLiveByTripId || {};
     const upcomingTrips = getUpcomingTrips(trips);
     const nextTrip = upcomingTrips[0] || trips[0] || null;
+    const activeTrip = trips.find((trip) => trip.status === "active") || null;
     const activeTripCount = trips.filter((trip) => trip.status === "active").length;
     const openTravelTaskCount = tasks.filter((task) => task.status === "open" && !task.archived && task.ownerWidgetId === widget.id).length;
+    const unpackedActiveTripQuantity = activeTrip ? getUnpackedPackingQuantity(activeTrip) : 0;
 
     return `
       <div class="widget-slot-header">
@@ -170,6 +177,9 @@ export const travelWidgetDefinition = {
         ? `Next trip: ${escapeHtml(nextTrip.name)}${nextTrip.destination ? ` to ${escapeHtml(nextTrip.destination)}` : ""}`
         : "No trips yet. Add one from the Overview tab."}</p>
       <p>${activeTripCount ? `${activeTripCount} active trip${activeTripCount === 1 ? "" : "s"}. ` : ""}${upcomingTrips.length ? `${upcomingTrips.length} upcoming trip${upcomingTrips.length === 1 ? "" : "s"}.` : "Nothing upcoming yet."}</p>
+      <p>${activeTrip
+        ? `${unpackedActiveTripQuantity} unpacked item${unpackedActiveTripQuantity === 1 ? "" : "s"} for ${escapeHtml(activeTrip.name)}.`
+        : "When a trip becomes active, Travel Buddy will show how much packing is still left."}</p>
       <p>${nextTrip
         ? escapeHtml(describeTripMilestone(nextTrip))
         : "Create a trip to start tracking transit, lodging, and packing details."}</p>
@@ -185,7 +195,7 @@ export const travelWidgetDefinition = {
         <button type="button" class="ghost-button" data-widget-action="travel-new-trip">New trip</button>
         <button type="button" class="ghost-button" data-widget-action="open-widget-detail">Open panel</button>
       </div>
-      <p class="sync-status">Flight check-in tasks surface here automatically. Open travel tasks: ${openTravelTaskCount}. Broader itinerary task generation is still coming.</p>
+      <p class="sync-status">Flight check-ins, itinerary tasks, and packing tasks surface here automatically. Open travel tasks: ${openTravelTaskCount}.</p>
     `;
   },
 
@@ -494,7 +504,7 @@ export const travelWidgetDefinition = {
       if (addTemplateItemButton) {
         const list = container.querySelector("[data-travel-template-item-list]");
         if (list) {
-          list.insertAdjacentHTML("beforeend", renderTravelTemplateItemRow({ label: "", quantity: 1 }, helpers.createId(), helpers.escapeHtml || fallbackEscapeHtml));
+          list.insertAdjacentHTML("beforeend", renderTravelTemplateItemRow({ label: "", quantity: 1, category: DEFAULT_TRAVEL_PACKING_CATEGORY }, helpers.createId(), helpers.escapeHtml || fallbackEscapeHtml));
         }
         return;
       }
@@ -613,32 +623,6 @@ export const travelWidgetDefinition = {
         return;
       }
 
-      const togglePackedButton = event.target.closest("[data-travel-toggle-packed]");
-      if (togglePackedButton) {
-        const tripId = togglePackedButton.getAttribute("data-trip-id") || "";
-        const itemId = togglePackedButton.getAttribute("data-item-id") || "";
-        const updatedTrip = updateTripById(widget, tripId, (trip) => {
-          const now = Date.now();
-          return {
-            ...trip,
-            packingList: {
-              ...trip.packingList,
-              items: trip.packingList.items.map((item) => item.id === itemId ? { ...item, packed: !item.packed, updatedAt: now } : item),
-              updatedAt: now
-            },
-            updatedAt: now
-          };
-        });
-        if (!updatedTrip) {
-          helpers.setSyncStatus("That trip could not be found.", "error");
-          return;
-        }
-        widget.updatedAt = Date.now();
-        helpers.persistStore();
-        helpers.renderAll();
-        return;
-      }
-
       const adjustQuantityButton = event.target.closest("[data-travel-adjust-quantity]");
       if (adjustQuantityButton) {
         const tripId = adjustQuantityButton.getAttribute("data-trip-id") || "";
@@ -665,6 +649,7 @@ export const travelWidgetDefinition = {
           return;
         }
         widget.updatedAt = Date.now();
+        syncTravelOwnedTasks(widget, helpers.getStore(), helpers);
         helpers.persistStore();
         helpers.renderAll();
         return;
@@ -691,6 +676,7 @@ export const travelWidgetDefinition = {
           return;
         }
         widget.updatedAt = Date.now();
+        syncTravelOwnedTasks(widget, helpers.getStore(), helpers);
         helpers.persistStore();
         helpers.renderAll();
         helpers.setSyncStatus("Removed that packing item.", "info");
@@ -719,6 +705,7 @@ export const travelWidgetDefinition = {
                 label: item.label,
                 packed: false,
                 quantity: item.quantity || 1,
+                category: normalizePackingCategory(item.category),
                 notes: "",
                 updatedAt: now
               }))
@@ -759,6 +746,7 @@ export const travelWidgetDefinition = {
               id: helpers.createId(),
               label: item.label,
               quantity: item.quantity || 1,
+              category: normalizePackingCategory(item.category),
               packed: false,
               notes: ""
             })),
@@ -796,12 +784,14 @@ export const travelWidgetDefinition = {
               id: helpers.createId(),
               label: item.label,
               quantity: item.quantity || 1,
+              category: normalizePackingCategory(item.category),
               packed: false,
               notes: "",
               updatedAt: now
             })),
             updatedAt: now
           },
+          packingTask: normalizePackingTaskSettings(template.packingTask || trip.packingTask),
           updatedAt: now
         }));
         if (!updatedTrip) {
@@ -838,10 +828,12 @@ export const travelWidgetDefinition = {
             startDate: trip.startDate,
             endDate: trip.endDate,
             itinerary: normalizeTripItinerary(trip.itinerary, helpers.createId),
+            packingTask: normalizePackingTaskSettings(trip.packingTask),
             packingItems: trip.packingList.items.map((item) => ({
               id: helpers.createId(),
               label: item.label,
               quantity: item.quantity || 1,
+              category: normalizePackingCategory(item.category),
               packed: false,
               notes: ""
             })),
@@ -876,11 +868,13 @@ export const travelWidgetDefinition = {
           startDate: template.startDate,
           endDate: template.endDate,
           itinerary: normalizeTripItinerary(template.itinerary, helpers.createId),
+          packingTask: normalizePackingTaskSettings(template.packingTask),
           packingList: {
             items: template.packingItems.map((item) => ({
               id: helpers.createId(),
               label: item.label,
               quantity: item.quantity || 1,
+              category: normalizePackingCategory(item.category),
               packed: false,
               notes: "",
               updatedAt: now
@@ -931,6 +925,38 @@ export const travelWidgetDefinition = {
         helpers.renderAll();
         helpers.setSyncStatus("Removed that saved itinerary.", "info");
       }
+    };
+
+    const changeHandler = (event) => {
+      const togglePackedInput = event.target.closest("[data-travel-toggle-packed]");
+      if (!togglePackedInput) {
+        return;
+      }
+      const tripId = togglePackedInput.getAttribute("data-trip-id") || "";
+      const itemId = togglePackedInput.getAttribute("data-item-id") || "";
+      const nextPacked = togglePackedInput instanceof HTMLInputElement
+        ? togglePackedInput.checked
+        : false;
+      const updatedTrip = updateTripById(widget, tripId, (trip) => {
+        const now = Date.now();
+        return {
+          ...trip,
+          packingList: {
+            ...trip.packingList,
+            items: trip.packingList.items.map((item) => item.id === itemId ? { ...item, packed: nextPacked, updatedAt: now } : item),
+            updatedAt: now
+          },
+          updatedAt: now
+        };
+      });
+      if (!updatedTrip) {
+        helpers.setSyncStatus("That trip could not be found.", "error");
+        return;
+      }
+      widget.updatedAt = Date.now();
+      syncTravelOwnedTasks(widget, helpers.getStore(), helpers);
+      helpers.persistStore();
+      helpers.renderAll();
     };
 
     const submitHandler = (event) => {
@@ -1012,6 +1038,11 @@ export const travelWidgetDefinition = {
             notes: tripForm.querySelector("[data-travel-notes]")?.value,
             customTasks: tripTaskEntries.items
           }, helpers.createId),
+          packingTask: normalizePackingTaskSettings({
+            dueTime: tripForm.querySelector("[data-travel-pack-due-time]")?.value,
+            overdueGraceMinutes: tripForm.querySelector("[data-travel-pack-grace-minutes]")?.value,
+            updatedAt: now
+          }),
           updatedAt: now
         }));
         if (!updatedTrip) {
@@ -1033,8 +1064,10 @@ export const travelWidgetDefinition = {
         const tripId = addPackingItemForm.getAttribute("data-trip-id") || "";
         const input = addPackingItemForm.querySelector("[data-travel-packing-item-input]");
         const quantityInput = addPackingItemForm.querySelector("[data-travel-packing-quantity]");
+        const categoryInput = addPackingItemForm.querySelector("[data-travel-packing-category]");
         const label = normalizeText(input?.value, 120);
         const quantity = normalizePackingQuantity(quantityInput?.value);
+        const category = normalizePackingCategory(categoryInput?.value);
         if (!label) {
           helpers.setSyncStatus("Enter a packing item first.", "error");
           return;
@@ -1051,6 +1084,7 @@ export const travelWidgetDefinition = {
                 label,
                 packed: false,
                 quantity,
+                category,
                 notes: "",
                 updatedAt: now
               }
@@ -1063,7 +1097,11 @@ export const travelWidgetDefinition = {
           helpers.setSyncStatus("That trip could not be found.", "error");
           return;
         }
+        if (input) input.value = "";
+        if (quantityInput) quantityInput.value = "1";
+        if (categoryInput) categoryInput.value = DEFAULT_TRAVEL_PACKING_CATEGORY;
         widget.updatedAt = now;
+        syncTravelOwnedTasks(widget, helpers.getStore(), helpers);
         helpers.persistStore();
         helpers.renderAll();
         helpers.setSyncStatus(`Added ${label} to ${updatedTrip.name}.`, "success");
@@ -1089,6 +1127,7 @@ export const travelWidgetDefinition = {
               id: helpers.createId(),
               label: item.label,
               quantity: item.quantity,
+              category: normalizePackingCategory(item.category),
               packed: false,
               notes: ""
             })),
@@ -1105,9 +1144,11 @@ export const travelWidgetDefinition = {
 
     container.addEventListener("click", clickHandler);
     container.addEventListener("submit", submitHandler);
+    container.addEventListener("change", changeHandler);
     return () => {
       container.removeEventListener("click", clickHandler);
       container.removeEventListener("submit", submitHandler);
+      container.removeEventListener("change", changeHandler);
     };
   },
 
@@ -1270,6 +1311,7 @@ function normalizeTrip(value, createId) {
       items: normalizePackingItems(value.packingList?.items, createId),
       updatedAt: typeof value.packingList?.updatedAt === "number" ? value.packingList.updatedAt : now
     },
+    packingTask: normalizePackingTaskSettings(value.packingTask),
     createdAt: typeof value.createdAt === "number" ? value.createdAt : now,
     updatedAt: now
   };
@@ -1325,6 +1367,7 @@ function normalizePackingItem(value, createId) {
     label,
     packed: value?.packed === true,
     quantity: normalizePackingQuantity(value?.quantity),
+    category: normalizePackingCategory(value?.category),
     notes: normalizeText(value?.notes, 240),
     updatedAt: typeof value?.updatedAt === "number" ? value.updatedAt : Date.now()
   };
@@ -1372,6 +1415,7 @@ function normalizeItineraryTemplates(value, createId = () => `itinerary-template
         startDate: normalizeDateValue(template.startDate),
         endDate: normalizeDateValue(template.endDate),
         itinerary: normalizeTripItinerary(template.itinerary, createId),
+        packingTask: normalizePackingTaskSettings(template.packingTask),
         packingItems: normalizePackingItems(template.packingItems, createId),
         createdAt: typeof template.createdAt === "number" ? template.createdAt : now,
         updatedAt: now
@@ -1397,6 +1441,7 @@ function createEmptyTrip(createId, now, todayString) {
       items: [],
       updatedAt: now
     },
+    packingTask: normalizePackingTaskSettings({ updatedAt: now }),
     createdAt: now,
     updatedAt: now
   };
@@ -1585,6 +1630,12 @@ function getNextTripMilestone(trip) {
 
 function renderTravelShellCard(trip, escapeHtml, liveSnapshot = null, settings = {}) {
   const hasFlightRefresh = Boolean(buildTravelFlightRequest(trip, settings));
+  const unpackedQuantity = getUnpackedPackingQuantity(trip);
+  const packingStatus = !trip.packingList.items.length
+    ? "No packing list items yet."
+    : unpackedQuantity
+      ? `${unpackedQuantity} unpacked item${unpackedQuantity === 1 ? "" : "s"} left to pack.`
+      : "Packing list complete.";
   const liveMarkup = renderTravelShellLiveMarkup(
     liveSnapshot,
     escapeHtml,
@@ -1601,6 +1652,9 @@ function renderTravelShellCard(trip, escapeHtml, liveSnapshot = null, settings =
       </div>
       <p class="travel-shell-card-meta">${escapeHtml(describeTripRange(trip))}</p>
       <p class="travel-shell-card-meta">${escapeHtml(describeTripMilestone(trip))}</p>
+      ${trip.status === "active"
+        ? `<p class="travel-shell-card-meta">${packingStatus}</p>`
+        : ""}
       <div class="travel-shell-live" data-travel-live-trip-id="${trip.id}">
         ${liveMarkup}
       </div>
@@ -1814,6 +1868,11 @@ function formatRelativeMinutesAgo(at) {
 }
 
 function renderTravelOverviewCard(trip, escapeHtml, formatDate) {
+  const packedCount = trip.packingList.items.filter((item) => item.packed).length;
+  const unpackedQuantity = getUnpackedPackingQuantity(trip);
+  const packingSummary = trip.status === "active"
+    ? (trip.packingList.items.length ? ` · ${unpackedQuantity} left` : " · no packing items yet")
+    : "";
   return `
     <article class="travel-board-card">
       <div class="travel-board-card-header">
@@ -1825,7 +1884,7 @@ function renderTravelOverviewCard(trip, escapeHtml, formatDate) {
       </div>
       <p>${escapeHtml(describeTripRange(trip, formatDate))}</p>
       <p>${escapeHtml(describeTripMilestone(trip))}</p>
-      <p>${trip.packingList.items.length} packing item${trip.packingList.items.length === 1 ? "" : "s"} · ${trip.packingList.items.filter((item) => item.packed).length} packed</p>
+      <p>${trip.packingList.items.length} packing item${trip.packingList.items.length === 1 ? "" : "s"} · ${packedCount} packed${packingSummary}</p>
       <div class="widget-actions workout-inline-actions">
         <button type="button" class="ghost-button" data-travel-open-trip data-trip-id="${trip.id}">Open trip</button>
       </div>
@@ -1970,6 +2029,21 @@ function renderTravelTripPanel(trip, packingTemplates, itineraryTemplates, setti
               <button type="button" class="ghost-button" data-travel-add-custom-task data-trip-id="${trip.id}">Add itinerary task</button>
             </div>
           </section>
+
+          <section class="workout-recurrence-panel">
+            <h4>Packing task</h4>
+            <p class="sync-status">Travel Buddy creates a packing task for this trip on the evening before departure and keeps it synced to the checklist below.</p>
+            <div class="quick-add-grid">
+              <label>
+                <span>Pack task due time</span>
+                <input type="time" value="${escapeHtml(normalizePackingTaskSettings(trip.packingTask).dueTime)}" data-travel-pack-due-time />
+              </label>
+              <label>
+                <span>Skip after departure + min</span>
+                <input type="number" min="0" max="720" step="1" value="${normalizePackingTaskGraceMinutes(trip.packingTask?.overdueGraceMinutes)}" data-travel-pack-grace-minutes />
+              </label>
+            </div>
+          </section>
         </div>
 
         <div class="widget-actions workout-inline-actions">
@@ -1984,7 +2058,7 @@ function renderTravelTripPanel(trip, packingTemplates, itineraryTemplates, setti
           <p class="eyebrow">Packing</p>
           <h3>${escapeHtml(trip.name)} packing list</h3>
           <p class="sync-status">${trip.packingList.items.length
-            ? `${trip.packingList.items.filter((item) => item.packed).length}/${trip.packingList.items.length} packed for this trip.`
+            ? `${trip.packingList.items.filter((item) => item.packed).length}/${trip.packingList.items.length} packed · ${getUnpackedPackingQuantity(trip)} unpacked item${getUnpackedPackingQuantity(trip) === 1 ? "" : "s"} left.`
             : "Add what you need to bring, then reuse it as a template later."}</p>
         </div>
       </div>
@@ -2000,10 +2074,10 @@ function renderTravelTripPanel(trip, packingTemplates, itineraryTemplates, setti
       </div>
       <div class="travel-packing-list">
         ${trip.packingList.items.length
-          ? trip.packingList.items.map((item) => renderTripPackingItem(trip, item, escapeHtml)).join("")
+          ? renderTripPackingGroups(trip, escapeHtml)
           : `<p class="empty-state">No packing items yet.</p>`}
       </div>
-      <form class="travel-inline-form" data-travel-packing-item-form data-trip-id="${trip.id}">
+      <form class="travel-inline-form travel-packing-add-form" data-travel-packing-item-form data-trip-id="${trip.id}">
         <label class="quick-add-title">
           <span>Add packing item</span>
           <input type="text" maxlength="120" placeholder="Passport, chargers, hiking shoes..." data-travel-packing-item-input required />
@@ -2011,6 +2085,10 @@ function renderTravelTripPanel(trip, packingTemplates, itineraryTemplates, setti
         <label>
           <span>Qty</span>
           <input type="number" min="1" max="99" step="1" value="1" data-travel-packing-quantity />
+        </label>
+        <label>
+          <span>Category</span>
+          <input type="text" maxlength="40" value="${escapeHtml(DEFAULT_TRAVEL_PACKING_CATEGORY)}" placeholder="General" data-travel-packing-category />
         </label>
         <button type="submit" class="ghost-button">Add item</button>
       </form>
@@ -2053,17 +2131,34 @@ function renderTravelTripPanel(trip, packingTemplates, itineraryTemplates, setti
   `;
 }
 
+function renderTripPackingGroups(trip, escapeHtml) {
+  return groupPackingItemsByCategory(trip.packingList.items).map((group) => `
+    <section class="travel-packing-category">
+      <div class="travel-packing-category-header">
+        <h4>${escapeHtml(group.label)}</h4>
+        <span>${group.items.length} item${group.items.length === 1 ? "" : "s"} · ${group.unpackedQuantity} unpacked</span>
+      </div>
+      <div class="travel-packing-category-list">
+        ${group.items.map((item) => renderTripPackingItem(trip, item, escapeHtml)).join("")}
+      </div>
+    </section>
+  `).join("");
+}
+
 function renderTripPackingItem(trip, item, escapeHtml) {
   return `
     <article class="travel-packing-item${item.packed ? " is-packed" : ""}">
       <div>
         <h4>${escapeHtml(item.label)}</h4>
-        <p>${item.packed ? "Packed" : "Still needed"} · Qty ${item.quantity || 1}</p>
+        <p>${escapeHtml(item.category || DEFAULT_TRAVEL_PACKING_CATEGORY)} · ${item.packed ? "Packed" : "Still needed"} · Qty ${item.quantity || 1}</p>
       </div>
       <div class="widget-actions workout-inline-actions">
+        <label class="travel-packing-check">
+          <input type="checkbox" ${item.packed ? "checked" : ""} data-travel-toggle-packed data-trip-id="${trip.id}" data-item-id="${item.id}" />
+          <span>Packed</span>
+        </label>
         <button type="button" class="ghost-button" data-travel-adjust-quantity data-trip-id="${trip.id}" data-item-id="${item.id}" data-quantity-delta="-1">−</button>
         <button type="button" class="ghost-button" data-travel-adjust-quantity data-trip-id="${trip.id}" data-item-id="${item.id}" data-quantity-delta="1">+</button>
-        <button type="button" class="ghost-button" data-travel-toggle-packed data-trip-id="${trip.id}" data-item-id="${item.id}">${item.packed ? "Unpack" : "Pack"}</button>
         <button type="button" class="ghost-button" data-travel-delete-item data-trip-id="${trip.id}" data-item-id="${item.id}">Delete</button>
       </div>
     </article>
@@ -2107,7 +2202,7 @@ function renderItineraryTemplateCard(template, escapeHtml, formatDate) {
 }
 
 function renderTravelTemplateItemRows(items, escapeHtml) {
-  const normalizedItems = Array.isArray(items) && items.length ? items : [{ label: "", quantity: 1 }];
+  const normalizedItems = Array.isArray(items) && items.length ? items : [{ label: "", quantity: 1, category: DEFAULT_TRAVEL_PACKING_CATEGORY }];
   return normalizedItems.map((item, index) => renderTravelTemplateItemRow(item, `travel-template-row-${index}`, escapeHtml)).join("");
 }
 
@@ -2122,6 +2217,10 @@ function renderTravelTemplateItemRow(item, rowId, escapeHtml) {
       <label>
         <span>Qty</span>
         <input type="number" min="1" max="99" step="1" value="${normalizePackingQuantity(item?.quantity)}" data-travel-template-item-quantity />
+      </label>
+      <label>
+        <span>Category</span>
+        <input type="text" maxlength="40" value="${safeEscapeHtml(item?.category || DEFAULT_TRAVEL_PACKING_CATEGORY)}" placeholder="General" data-travel-template-item-category />
       </label>
       <button type="button" class="ghost-button" data-travel-remove-template-item>Remove</button>
     </div>
@@ -2216,6 +2315,26 @@ function normalizePackingQuantity(value) {
     return 1;
   }
   return Math.min(99, Math.round(parsed));
+}
+
+function normalizePackingCategory(value) {
+  return normalizeText(value, 40) || DEFAULT_TRAVEL_PACKING_CATEGORY;
+}
+
+function normalizePackingTaskGraceMinutes(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return DEFAULT_TRAVEL_PACKING_OVERDUE_GRACE_MINUTES;
+  }
+  return Math.min(720, Math.round(parsed));
+}
+
+function normalizePackingTaskSettings(value) {
+  return {
+    dueTime: normalizeTimeValue(value?.dueTime) || DEFAULT_TRAVEL_PACKING_DUE_TIME,
+    overdueGraceMinutes: normalizePackingTaskGraceMinutes(value?.overdueGraceMinutes),
+    updatedAt: typeof value?.updatedAt === "number" ? value.updatedAt : Date.now()
+  };
 }
 
 function normalizeTimeZone(value) {
@@ -2653,6 +2772,15 @@ function formatZonedTimeString(timestamp, timeZone) {
   }).format(new Date(timestamp));
 }
 
+function shiftDateString(dateString, dayOffset) {
+  const [year, month, day] = String(dateString || "").split("-").map(Number);
+  if (!year || !month || !day) {
+    return "";
+  }
+  const shifted = new Date(Date.UTC(year, month - 1, day + Number(dayOffset || 0)));
+  return shifted.toISOString().slice(0, 10);
+}
+
 function resolveOutboundStageTimeZone(trip, settings) {
   const itinerary = normalizeTripItinerary(trip?.itinerary);
   return normalizeTimeZone(
@@ -2803,7 +2931,11 @@ function buildDesiredTravelTasks(widget, helpers) {
       continue;
     }
     const tripTasks = buildFlightCheckinTasksForTrip({ widget, trip, settings, helpers });
+    const packingTask = buildPackingTaskForTrip({ widget, trip, settings, helpers });
     desired.push(...tripTasks, ...buildItineraryTasksForTrip({ widget, trip, settings, helpers }));
+    if (packingTask) {
+      desired.push(packingTask);
+    }
   }
 
   return desired.sort(compareTravelTaskSchedule);
@@ -3005,9 +3137,117 @@ function buildItineraryTasksForTrip({ widget, trip, settings, helpers }) {
   });
 }
 
+function buildPackingTaskForTrip({ widget, trip, settings, helpers }) {
+  if (!trip?.packingList?.items?.length) {
+    return null;
+  }
+
+  const departureTimestamp = resolveTravelDepartureTimestamp(trip, settings);
+  if (!Number.isFinite(departureTimestamp) || departureTimestamp <= 0) {
+    return null;
+  }
+
+  const packingTask = normalizePackingTaskSettings(trip.packingTask);
+  const timeZone = resolveOutboundStageTimeZone(trip, settings);
+  const departureDate = formatZonedDateString(departureTimestamp, timeZone);
+  const dueDate = shiftDateString(departureDate, -1);
+  const dueTimestamp = zonedDateTimeToTimestamp(dueDate, packingTask.dueTime, timeZone);
+  const skipCutoffTimestamp = departureTimestamp + packingTask.overdueGraceMinutes * 60_000;
+  if (!Number.isFinite(dueTimestamp) || skipCutoffTimestamp <= Date.now()) {
+    return null;
+  }
+
+  const graceMinutes = Math.max(0, Math.round((skipCutoffTimestamp - dueTimestamp) / 60_000));
+  const unpackedQuantity = getUnpackedPackingQuantity(trip);
+  const travelCategory = helpers.resolveCategorySnapshot("travel");
+  const now = Date.now();
+
+  return {
+    id: helpers.createId(),
+    templateId: "",
+    occurrenceIndex: 0,
+    name: `${trip.name}: pack for departure`,
+    details: buildTravelPackingTaskDetails({
+      trip,
+      timeZone,
+      dueDate,
+      dueTime: packingTask.dueTime,
+      departureDate,
+      departureTime: normalizeTripItinerary(trip.itinerary).outboundTime || "12:00",
+      overdueGraceMinutes: packingTask.overdueGraceMinutes,
+      unpackedQuantity
+    }),
+    startDate: dueDate,
+    dueDate,
+    timeOfDay: packingTask.dueTime,
+    lateGraceMinutes: graceMinutes,
+    notBeforeAt: dueTimestamp,
+    pointsValue: 3,
+    pointsEntryId: "",
+    length: "medium",
+    categoryKey: travelCategory.key,
+    categoryLabel: travelCategory.label,
+    categoryColor: travelCategory.color,
+    importance: "medium",
+    status: "open",
+    createdAt: now,
+    updatedAt: now,
+    ownerWidgetId: widget.id,
+    ownerWidgetType: widget.type,
+    ownerTaskKey: ["travel-pack", trip.id].join(":"),
+    widgetTaskKind: "travel-pack",
+    widgetTaskMeta: {
+      tripId: trip.id,
+      timeZone,
+      departureDate,
+      departureTime: normalizeTripItinerary(trip.itinerary).outboundTime || "12:00",
+      dueTime: packingTask.dueTime,
+      overdueGraceMinutes: packingTask.overdueGraceMinutes,
+      unpackedQuantity
+    },
+    reminders: {
+      enabled: false,
+      dueSoonMinutes: null,
+      overdueMinutes: null
+    },
+    linkedSeries: {},
+    sequenceDependencyId: "",
+    widgetCompletion: {
+      mechanism: "",
+      lockout: "none"
+    },
+    skipRule: {
+      type: "after-due-minutes",
+      graceMinutes
+    },
+    dependencies: [],
+    recurrence: { type: "none" },
+    history: []
+  };
+}
+
 function buildTravelItineraryTaskDetails({ trip, item, timeZone }) {
   const parts = [`Created by Travel Buddy for ${trip.name}.`, item.details || ""].filter(Boolean);
   parts.push(`${formatTravelOffsetLabel(item.offsetMinutes, timeZone)}.`);
+  return parts.join(" ");
+}
+
+function buildTravelPackingTaskDetails({
+  trip,
+  timeZone,
+  dueDate,
+  dueTime,
+  departureDate,
+  departureTime,
+  overdueGraceMinutes,
+  unpackedQuantity
+}) {
+  const parts = [
+    `Created by Travel Buddy for ${trip.name}.`,
+    `${unpackedQuantity || trip.packingList.items.length} unpacked item${(unpackedQuantity || trip.packingList.items.length) === 1 ? "" : "s"} remain on this packing list.`,
+    `Pack by ${formatDateTimeLabel(dueDate, dueTime)} (${timeZone}).`,
+    `This checklist expires ${overdueGraceMinutes} minute${overdueGraceMinutes === 1 ? "" : "s"} after departure at ${formatDateTimeLabel(departureDate, departureTime)} (${timeZone}).`
+  ];
   return parts.join(" ");
 }
 
@@ -3042,7 +3282,7 @@ function syncTravelOwnedTasks(widget, store, helpers) {
   const existingTasks = store.tasks.filter((task) => (
     task.ownerWidgetId === widget.id
     && task.ownerWidgetType === TRAVEL_WIDGET_TYPE
-    && (task.widgetTaskKind === "flight-checkin" || task.widgetTaskKind === "travel-itinerary-task")
+    && (task.widgetTaskKind === "flight-checkin" || task.widgetTaskKind === "travel-itinerary-task" || task.widgetTaskKind === "travel-pack")
     && !task.templateId
     && !task.archived
   ));
@@ -3073,6 +3313,9 @@ function syncTravelOwnedTasks(widget, store, helpers) {
     if (matchedTaskIds.has(existing.id)) {
       continue;
     }
+    if (existing.widgetTaskKind === "travel-pack" && existing.status === "open" && shouldAutoSkipTask(existing, new Date())) {
+      helpers.skipWidgetTaskById?.(existing.id, Date.now());
+    }
     if (existing.status === "open" && (!Array.isArray(existing.history) || existing.history.length === 0)) {
       removeTaskIds.add(existing.id);
       continue;
@@ -3084,6 +3327,8 @@ function syncTravelOwnedTasks(widget, store, helpers) {
   if (removeTaskIds.size > 0) {
     store.tasks = store.tasks.filter((task) => !removeTaskIds.has(task.id));
   }
+
+  syncTravelPackingTaskState(widget, store, helpers);
 }
 
 function travelOwnedTaskChanged(existing, desired) {
@@ -3109,6 +3354,63 @@ function travelOwnedTaskChanged(existing, desired) {
   );
 }
 
+function syncTravelPackingTaskState(widget, store, helpers) {
+  if (!store || !Array.isArray(store.tasks)) {
+    return;
+  }
+
+  const tripsById = new Map(normalizeTrips(widget.data?.trips).map((trip) => [trip.id, trip]));
+  const now = Date.now();
+  let shouldRunAutoSkip = false;
+
+  for (const task of store.tasks) {
+    if (
+      task.ownerWidgetId !== widget.id
+      || task.ownerWidgetType !== TRAVEL_WIDGET_TYPE
+      || task.widgetTaskKind !== "travel-pack"
+      || task.templateId
+      || task.archived
+    ) {
+      continue;
+    }
+
+    const trip = tripsById.get(task.widgetTaskMeta?.tripId || "");
+    if (!trip || !trip.packingList.items.length) {
+      continue;
+    }
+
+    const checklistComplete = getUnpackedPackingQuantity(trip) === 0;
+    const pastSkipCutoff = shouldAutoSkipTask(task, new Date(now));
+
+    if (pastSkipCutoff) {
+      if (task.status === "done") {
+        continue;
+      }
+      if (task.status !== "open") {
+        helpers.reopenWidgetTaskById?.(task.id, now);
+      }
+      shouldRunAutoSkip = true;
+      continue;
+    }
+
+    if (checklistComplete) {
+      if (task.status !== "open") {
+        helpers.reopenWidgetTaskById?.(task.id, now);
+      }
+      helpers.completeWidgetTaskById?.(task.id, now);
+      continue;
+    }
+
+    if (task.status !== "open") {
+      helpers.reopenWidgetTaskById?.(task.id, now);
+    }
+  }
+
+  if (shouldRunAutoSkip) {
+    helpers.applyAutoSkipRules?.(new Date(now));
+  }
+}
+
 function splitTemplateLines(value) {
   if (typeof value !== "string") {
     return [];
@@ -3123,7 +3425,8 @@ function collectTemplateItems(form) {
   return Array.from(form.querySelectorAll(".travel-template-item-row"))
     .map((row) => ({
       label: normalizeText(row.querySelector("[data-travel-template-item-label]")?.value, 120),
-      quantity: normalizePackingQuantity(row.querySelector("[data-travel-template-item-quantity]")?.value)
+      quantity: normalizePackingQuantity(row.querySelector("[data-travel-template-item-quantity]")?.value),
+      category: normalizePackingCategory(row.querySelector("[data-travel-template-item-category]")?.value)
     }))
     .filter((item) => item.label);
 }
@@ -3133,11 +3436,50 @@ function dedupePackingItems(items) {
   const deduped = [];
   for (const item of items) {
     const labelKey = normalizeText(item.label, 120).toLowerCase();
-    if (!labelKey || seenLabels.has(labelKey)) {
+    const categoryKey = normalizePackingCategory(item.category).toLowerCase();
+    const dedupeKey = `${categoryKey}::${labelKey}`;
+    if (!labelKey || seenLabels.has(dedupeKey)) {
       continue;
     }
-    seenLabels.add(labelKey);
+    seenLabels.add(dedupeKey);
     deduped.push(item);
   }
   return deduped;
+}
+
+function getUnpackedPackingItems(trip) {
+  return normalizePackingItems(trip?.packingList?.items).filter((item) => !item.packed);
+}
+
+function getUnpackedPackingQuantity(trip) {
+  return getUnpackedPackingItems(trip).reduce((sum, item) => sum + normalizePackingQuantity(item.quantity), 0);
+}
+
+function groupPackingItemsByCategory(items) {
+  const grouped = new Map();
+  for (const item of normalizePackingItems(items)) {
+    const category = normalizePackingCategory(item.category);
+    if (!grouped.has(category)) {
+      grouped.set(category, []);
+    }
+    grouped.get(category).push(item);
+  }
+
+  return Array.from(grouped.entries())
+    .map(([label, groupedItems]) => ({
+      label,
+      items: groupedItems.sort((left, right) => left.label.localeCompare(right.label)),
+      unpackedQuantity: groupedItems
+        .filter((item) => !item.packed)
+        .reduce((sum, item) => sum + normalizePackingQuantity(item.quantity), 0)
+    }))
+    .sort((left, right) => {
+      if (left.label === DEFAULT_TRAVEL_PACKING_CATEGORY) {
+        return -1;
+      }
+      if (right.label === DEFAULT_TRAVEL_PACKING_CATEGORY) {
+        return 1;
+      }
+      return left.label.localeCompare(right.label);
+    });
 }

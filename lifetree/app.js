@@ -2042,6 +2042,8 @@ function handleWidgetSlotClick(event) {
       applyAutoSkipRules,
       completeNextTaskFromWidget,
       completeWidgetTaskById,
+      reopenWidgetTaskById,
+      skipWidgetTaskById,
       openWidgetDetail,
       stageWidgetAction,
       getPendingActionForWidget,
@@ -2184,6 +2186,8 @@ function renderWidgetDetailIfOpen() {
       getPendingActionForWidget,
       completeNextTaskFromWidget,
       completeWidgetTaskById,
+      reopenWidgetTaskById,
+      skipWidgetTaskById,
       undoPendingAction,
       retireWidgetOwnedSeries
     }
@@ -4945,6 +4949,24 @@ function completeWidgetTaskById(taskId, at = Date.now()) {
     return null;
   }
   markTaskCompleted(task, at);
+  return task;
+}
+
+function reopenWidgetTaskById(taskId, at = Date.now()) {
+  const task = store.tasks.find((item) => item.id === taskId);
+  if (!task || task.archived || task.status === "open") {
+    return null;
+  }
+  markTaskOpen(task, at);
+  return task;
+}
+
+function skipWidgetTaskById(taskId, at = Date.now()) {
+  const task = store.tasks.find((item) => item.id === taskId);
+  if (!task || task.archived || task.status !== "open") {
+    return null;
+  }
+  markTaskSkipped(task, at);
   return task;
 }
 
@@ -8406,6 +8428,10 @@ function widgetRuntimeHelpers() {
   return {
     createId,
     todayString,
+    applyAutoSkipRules,
+    completeWidgetTaskById,
+    reopenWidgetTaskById,
+    skipWidgetTaskById,
     regenerateSeries,
     resolveCategorySnapshot,
     retireWidgetOwnedSeries
