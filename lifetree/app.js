@@ -3422,11 +3422,14 @@ function renderCanopy() {
 }
 
 function shouldSurfaceCanopyStandardCard(card, today = todayString()) {
-  if (!card || card.task.ownerWidgetType || card.task.archived || card.status !== "open") {
+  if (!card || card.task.archived || card.status !== "open") {
     return false;
   }
   if (card.task.recurrence.type === "none") {
     return true;
+  }
+  if (card.task.ownerWidgetType) {
+    return false;
   }
   if (card.kind !== "series") {
     return false;

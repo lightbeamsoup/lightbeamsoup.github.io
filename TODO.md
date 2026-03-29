@@ -4,7 +4,6 @@
 
 ### Travel Buddy
 
-- Surface active trip tasks into the canopy from itinerary milestones.
 - Generate travel tasks from itinerary and packing details, and default those widget-owned tasks into the `Travel` category.
 
 - Widgets: Create a Hydration widget that tracks ounces consumed and grows a plant as you water it.
@@ -70,6 +69,7 @@
 - 2026-03-29: Generate flight check-in tasks 24 hours before departure and make them timezone-aware by trip stage.
 - 2026-03-29: Let trips auto-transition into and out of active status around departure/return while supporting manual start/end controls.
 - 2026-03-29: Add custom itinerary tasks that stay anchored to departure time and carry into saved itinerary templates.
+- 2026-03-29: Surface active one-off trip tasks into the canopy from itinerary and flight milestones.
 
 ### Widget Shells And Canopy
 
