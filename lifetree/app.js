@@ -8479,6 +8479,7 @@ function isDeveloperUser() {
 }
 
 function syncLinkedSeriesGroups() {
+  repairOrphanedLinkedSeriesGroups();
   const groupIds = new Set();
 
   for (const task of store.tasks) {
@@ -8493,6 +8494,139 @@ function syncLinkedSeriesGroups() {
 
   for (const groupId of groupIds) {
     syncLinkedSeriesGroup(groupId);
+  }
+}
+
+function repairOrphanedLinkedSeriesGroups() {
+  const templateGroups = new Map();
+
+  for (const task of store.tasks) {
+    if (!isOrphanedLinkedSeriesTemplate(task)) {
+      continue;
+    }
+    const repairKey = buildOrphanedLinkedSeriesTemplateKey(task);
+    if (!repairKey) {
+      continue;
+    }
+    const group = templateGroups.get(repairKey) || [];
+    group.push(task);
+    templateGroups.set(repairKey, group);
+  }
+
+  for (const templates of templateGroups.values()) {
+    if (templates.length <= 1 || !shouldRepairLinkedSeriesTemplateGroup(templates)) {
+      continue;
+    }
+    applyLinkedSeriesRepairToTemplateGroup(templates);
+  }
+}
+
+function isOrphanedLinkedSeriesTemplate(task) {
+  if (!task || task.archived || task.templateId) {
+    return false;
+  }
+  if (hasLinkedSeriesGroup(task)) {
+    return false;
+  }
+  const recurrenceType = getLinkedSeriesRepairRecurrenceType(task);
+  return recurrenceType === "daily" || recurrenceType === "weekly";
+}
+
+function getLinkedSeriesRepairRecurrenceType(task) {
+  if (task?.recurrence?.type === "generated") {
+    return task?.recurrence?.sourceType || "";
+  }
+  return task?.recurrence?.type || "";
+}
+
+function buildOrphanedLinkedSeriesTemplateKey(task) {
+  const recurrenceType = getLinkedSeriesRepairRecurrenceType(task);
+  if (recurrenceType !== "daily" && recurrenceType !== "weekly") {
+    return "";
+  }
+  const recurrence = normalizeRecurrence(task.recurrence);
+  const widgetPlanKey = task.widgetTaskMeta?.planId
+    ? `${task.ownerWidgetId || ""}:${task.widgetTaskKind || ""}:${task.widgetTaskMeta.planId}`
+    : "";
+  return JSON.stringify({
+    recurrenceType,
+    interval: recurrence.interval || 1,
+    endDate: recurrence.endDate || "",
+    count: recurrence.count || 0,
+    forever: recurrence.forever === true,
+    ownerWidgetId: task.ownerWidgetId || "",
+    ownerWidgetType: task.ownerWidgetType || "",
+    ownerTaskKey: widgetPlanKey || "",
+    widgetTaskKind: task.widgetTaskKind || "",
+    name: task.name || "",
+    details: task.details || "",
+    categoryKey: task.categoryKey || "",
+    pointsValue: task.pointsValue || 0,
+    length: task.length || "",
+    importance: task.importance || "",
+    timeOfDay: recurrenceType === "weekly" ? (task.timeOfDay || "") : "",
+    skipRule: normalizeSkipRule(task.skipRule),
+    widgetCompletion: normalizeWidgetCompletion(task.widgetCompletion)
+  });
+}
+
+function shouldRepairLinkedSeriesTemplateGroup(tasks) {
+  const createdAtValues = tasks
+    .map((task) => Number(task.createdAt || 0))
+    .filter((value) => value > 0)
+    .sort((left, right) => left - right);
+  if (createdAtValues.length <= 1) {
+    return true;
+  }
+  return (createdAtValues[createdAtValues.length - 1] - createdAtValues[0]) <= (5 * 60 * 1000);
+}
+
+function applyLinkedSeriesRepairToTemplateGroup(tasks) {
+  const recurrenceType = getLinkedSeriesRepairRecurrenceType(tasks[0]);
+  const kind = recurrenceType === "weekly" ? LINKED_SERIES_KIND_WEEKLY : LINKED_SERIES_KIND_DAILY;
+  const orderedTemplates = [...tasks].sort((left, right) => {
+    if (kind === LINKED_SERIES_KIND_WEEKLY) {
+      const leftWeekday = Number(left.recurrence?.weekday ?? 0);
+      const rightWeekday = Number(right.recurrence?.weekday ?? 0);
+      if (leftWeekday !== rightWeekday) {
+        return leftWeekday - rightWeekday;
+      }
+    }
+    const leftTime = left.timeOfDay || "99:99";
+    const rightTime = right.timeOfDay || "99:99";
+    if (leftTime !== rightTime) {
+      return leftTime.localeCompare(rightTime);
+    }
+    return (left.createdAt || 0) - (right.createdAt || 0);
+  });
+  const anchor = orderedTemplates[0];
+  const groupId = `repair:${anchor.seriesOriginId || anchor.id}`;
+  const slotCount = orderedTemplates.length;
+
+  for (const [slotIndex, template] of orderedTemplates.entries()) {
+    template.linkedSeries = {
+      groupId,
+      kind,
+      slotIndex,
+      slotCount
+    };
+    repairGeneratedLinkedSeriesFromTemplate(template);
+  }
+}
+
+function repairGeneratedLinkedSeriesFromTemplate(template) {
+  const linkedSeries = normalizeLinkedSeries(template.linkedSeries);
+  if (!linkedSeries.groupId) {
+    return;
+  }
+  for (const task of store.tasks) {
+    if (task.templateId !== template.id) {
+      continue;
+    }
+    if (hasLinkedSeriesGroup(task)) {
+      continue;
+    }
+    task.linkedSeries = { ...linkedSeries };
   }
 }
 
