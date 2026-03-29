@@ -187,6 +187,15 @@ const canopyDetailTitle = document.getElementById("canopyDetailTitle");
 const canopyDetailSubtitle = document.getElementById("canopyDetailSubtitle");
 const canopyDetailBody = document.getElementById("canopyDetailBody");
 const canopyDetailFooter = document.getElementById("canopyDetailFooter");
+const driveConflictModal = document.getElementById("driveConflictModal");
+const closeDriveConflictButton = document.getElementById("closeDriveConflict");
+const closeDriveConflictBackdrop = document.getElementById("closeDriveConflictBackdrop");
+const driveConflictTitle = document.getElementById("driveConflictTitle");
+const driveConflictSubtitle = document.getElementById("driveConflictSubtitle");
+const driveConflictCopy = document.getElementById("driveConflictCopy");
+const driveConflictAutoMergeButton = document.getElementById("driveConflictAutoMerge");
+const driveConflictKeepLocalButton = document.getElementById("driveConflictKeepLocal");
+const driveConflictKeepDriveButton = document.getElementById("driveConflictKeepDrive");
 const treeHarvestButton = document.getElementById("treeHarvestButton");
 const treeSkyLayer = document.getElementById("treeSkyLayer");
 const treeSun = document.getElementById("treeSun");
@@ -454,6 +463,9 @@ const notificationSendState = {
   inFlight: false,
   kind: ""
 };
+const driveConflictState = {
+  resolver: null
+};
 const localFingerprintCache = {
   storeRef: null,
   updatedAt: Number.NaN,
@@ -497,6 +509,7 @@ const driveSyncController = createDriveSyncController({
   renderAll,
   setSyncStatus,
   updateGoogleButtons,
+  promptDriveConflictChoice,
   getReturnToTarget,
   describeMergeResult,
   computeStoreFingerprint,
@@ -558,6 +571,11 @@ openQuickAddButton.addEventListener("click", openQuickAdd);
 openTaskDeskButton.addEventListener("click", () => handleOpenTaskDesk("composer"));
 closeCanopyDetailButton.addEventListener("click", closeCanopyDetail);
 closeCanopyDetailBackdrop.addEventListener("click", closeCanopyDetail);
+closeDriveConflictButton.addEventListener("click", () => resolveDriveConflictChoice(null));
+closeDriveConflictBackdrop.addEventListener("click", () => resolveDriveConflictChoice(null));
+driveConflictAutoMergeButton.addEventListener("click", () => resolveDriveConflictChoice("auto-merge"));
+driveConflictKeepLocalButton.addEventListener("click", () => resolveDriveConflictChoice("keep-local"));
+driveConflictKeepDriveButton.addEventListener("click", () => resolveDriveConflictChoice("keep-drive"));
 closeTaskDeskButton.addEventListener("click", closeTaskDesk);
 closeTaskDeskBackdrop.addEventListener("click", closeTaskDesk);
 taskDeskTabs.addEventListener("click", handleTaskDeskTabClick);
@@ -875,6 +893,11 @@ function handleGlobalKeydown(event) {
     return;
   }
 
+  if (isDriveConflictOpen()) {
+    resolveDriveConflictChoice(null);
+    return;
+  }
+
   if (isWidgetDetailOpen()) {
     closeWidgetDetail();
     return;
@@ -954,6 +977,70 @@ function closeCanopyDetail() {
 
 function isCanopyDetailOpen() {
   return !canopyDetailModal.classList.contains("hidden");
+}
+
+function buildDriveConflictCopy({ operation, localUserUpdatedAt, remoteUserUpdatedAt }) {
+  const newerSide = localUserUpdatedAt > remoteUserUpdatedAt
+    ? "Local data is newer."
+    : remoteUserUpdatedAt > localUserUpdatedAt
+      ? "Google Drive data is newer."
+      : "Both copies changed around the same time.";
+  if (operation === "save") {
+    return `${newerSide} Auto Merge will combine both versions and prefer newer entries when the same item changed in both places. Keep Local will overwrite Google Drive with this browser's current data. Keep Drive will discard local conflicting changes and restore the Google Drive version on this browser.`;
+  }
+  return `${newerSide} Auto Merge will combine both versions and prefer newer entries when the same item changed in both places. Keep Local leaves this browser's data as-is. Keep Drive replaces local data with the current Google Drive version.`;
+}
+
+function openDriveConflictPrompt({ operation = "load", localUserUpdatedAt = 0, remoteUserUpdatedAt = 0 } = {}) {
+  driveConflictTitle.textContent = operation === "save"
+    ? "Resolve Drive conflict before saving"
+    : "Resolve Drive conflict before loading";
+  driveConflictSubtitle.textContent = operation === "save"
+    ? "Local data and Google Drive both changed."
+    : "This browser and Google Drive do not match.";
+  driveConflictCopy.textContent = buildDriveConflictCopy({ operation, localUserUpdatedAt, remoteUserUpdatedAt });
+  driveConflictAutoMergeButton.querySelector("span").textContent = operation === "save"
+    ? "Merge both versions, prefer newer conflicting entries, then save the merged result back to Google Drive."
+    : "Merge both versions and prefer newer conflicting entries when loading.";
+  driveConflictKeepLocalButton.querySelector("span").textContent = operation === "save"
+    ? "Overwrite Google Drive with this browser’s current data."
+    : "Leave this browser’s data untouched and skip loading from Google Drive.";
+  driveConflictKeepDriveButton.querySelector("span").textContent = operation === "save"
+    ? "Discard local conflicting changes and restore the Google Drive version here."
+    : "Replace local data with the current Google Drive version.";
+  driveConflictModal.classList.remove("hidden");
+  driveConflictModal.setAttribute("aria-hidden", "false");
+  document.body.classList.add("drive-conflict-open");
+  window.setTimeout(() => driveConflictAutoMergeButton.focus(), 0);
+}
+
+function closeDriveConflictPrompt() {
+  driveConflictModal.classList.add("hidden");
+  driveConflictModal.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("drive-conflict-open");
+}
+
+function isDriveConflictOpen() {
+  return !driveConflictModal.classList.contains("hidden");
+}
+
+function resolveDriveConflictChoice(choice) {
+  const resolver = driveConflictState.resolver;
+  driveConflictState.resolver = null;
+  closeDriveConflictPrompt();
+  if (resolver) {
+    resolver(choice);
+  }
+}
+
+function promptDriveConflictChoice(context) {
+  if (driveConflictState.resolver) {
+    resolveDriveConflictChoice(null);
+  }
+  openDriveConflictPrompt(context);
+  return new Promise((resolve) => {
+    driveConflictState.resolver = resolve;
+  });
 }
 
 function openSettings() {

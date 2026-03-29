@@ -642,6 +642,37 @@
     </section>
   </div>
 
+  <div id="driveConflictModal" class="widget-detail-modal hidden" aria-hidden="true">
+    <div class="task-desk-backdrop" id="closeDriveConflictBackdrop"></div>
+    <section class="widget-detail-panel drive-conflict-panel" role="dialog" aria-modal="true" aria-labelledby="driveConflictTitle">
+      <div class="task-desk-header">
+        <div>
+          <p class="eyebrow">Drive sync</p>
+          <h2 id="driveConflictTitle">Resolve Drive conflict</h2>
+          <p class="sync-status" id="driveConflictSubtitle">Local data and Google Drive both changed.</p>
+        </div>
+        <button type="button" class="ghost-button" id="closeDriveConflict">Close</button>
+      </div>
+      <div class="widget-detail-body drive-conflict-body">
+        <p class="drive-conflict-copy" id="driveConflictCopy"></p>
+        <div class="drive-conflict-options">
+          <button type="button" class="drive-conflict-option is-primary" id="driveConflictAutoMerge">
+            <strong>Auto Merge</strong>
+            <span>Merge both versions and prefer newer entries when they conflict.</span>
+          </button>
+          <button type="button" class="drive-conflict-option" id="driveConflictKeepLocal">
+            <strong>Keep Local</strong>
+            <span>Use only this browser’s current data.</span>
+          </button>
+          <button type="button" class="drive-conflict-option" id="driveConflictKeepDrive">
+            <strong>Keep Drive</strong>
+            <span>Use only the version currently stored in Google Drive.</span>
+          </button>
+        </div>
+      </div>
+    </section>
+  </div>
+
   <div id="settingsModal" class="widget-detail-modal hidden" aria-hidden="true">
     <div class="task-desk-backdrop" id="closeSettingsBackdrop"></div>
     <section class="widget-detail-panel settings-panel" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">

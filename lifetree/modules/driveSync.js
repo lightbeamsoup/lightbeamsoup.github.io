@@ -47,6 +47,7 @@ export function createDriveSyncController({
   renderAll,
   setSyncStatus,
   updateGoogleButtons,
+  promptDriveConflictChoice,
   getReturnToTarget,
   describeMergeResult,
   computeStoreFingerprint,
@@ -55,6 +56,38 @@ export function createDriveSyncController({
   function parseDriveModifiedTime(value) {
     const timestamp = Date.parse(String(value || ""));
     return Number.isFinite(timestamp) ? timestamp : 0;
+  }
+
+  async function chooseDriveConflictResolution({
+    operation = "load",
+    localUserUpdatedAt = 0,
+    remoteUserUpdatedAt = 0,
+    strategy = "prompt"
+  } = {}) {
+    if (strategy === "keep-local") {
+      return "keep-local";
+    }
+    if (strategy === "remote") {
+      return "keep-drive";
+    }
+    if (strategy === "auto-merge") {
+      return "auto-merge";
+    }
+    if (strategy === "prompt-if-remote-newer" && remoteUserUpdatedAt <= localUserUpdatedAt) {
+      return "keep-local";
+    }
+
+    if (typeof promptDriveConflictChoice === "function") {
+      return (await promptDriveConflictChoice({
+        operation,
+        localUserUpdatedAt,
+        remoteUserUpdatedAt
+      })) || "cancel";
+    }
+
+    return window.confirm("Local and Google Drive data differ. Press OK to auto-merge them, or Cancel to keep the Google Drive version.")
+      ? "auto-merge"
+      : "keep-drive";
   }
 
   async function refreshAuthStatus({ suppressUnavailableError = false, signal } = {}) {
@@ -165,33 +198,33 @@ export function createDriveSyncController({
       const remoteUserUpdatedAt = remoteStore.userUpdatedAt || remoteStore.updatedAt || 0;
 
       if (localUserFingerprint !== remoteUserFingerprint) {
-        const conflictMessage = localUserUpdatedAt > remoteUserUpdatedAt
-          ? "This browser has newer local changes than Google Drive. Press OK to keep and merge your newer local changes, or Cancel to discard them and load Google Drive exactly as stored."
-          : remoteUserUpdatedAt > localUserUpdatedAt
-            ? "Google Drive has different newer changes than this browser. Press OK to merge and keep the local changes too, or Cancel to replace local data with Google Drive exactly as stored."
-            : "This browser and Google Drive both have different changes. Press OK to merge them, or Cancel to load Google Drive exactly as stored.";
-        let keepLocalChanges;
-        if (conflictStrategy === "keep-local") {
-          keepLocalChanges = true;
-        } else if (conflictStrategy === "remote") {
-          keepLocalChanges = false;
-        } else if (conflictStrategy === "prompt-if-remote-newer") {
-          keepLocalChanges = remoteUserUpdatedAt > localUserUpdatedAt
-            ? window.confirm(conflictMessage)
-            : true;
-        } else {
-          keepLocalChanges = window.confirm(conflictMessage);
+        const resolution = await chooseDriveConflictResolution({
+          operation: "load",
+          localUserUpdatedAt,
+          remoteUserUpdatedAt,
+          strategy: conflictStrategy
+        });
+
+        if (resolution === "cancel") {
+          setSyncStatus("Cancelled Drive load. Local data is unchanged.", "info");
+          return {
+            applied: false,
+            found: true,
+            keptLocalChanges: true,
+            cancelled: true,
+            synced: localFingerprint === remoteFingerprint,
+            remoteUpdatedAt: remoteStore.updatedAt || 0,
+            remoteFingerprint,
+            remoteSavedAt,
+            remoteUserUpdatedAt,
+            remoteUserFingerprint
+          };
         }
 
-        if (keepLocalChanges) {
+        if (resolution === "auto-merge") {
           const mergedStore = mergeStores(previousLocalStore, remoteStore);
           applyStore(mergedStore, { finalize: !deferFinalize });
-          setSyncStatus(
-            conflictStrategy === "prompt"
-              ? "Loaded Google Drive data and kept local changes during merge."
-              : "Loaded Google Drive data and kept local changes from this device.",
-            "success"
-          );
+          setSyncStatus("Loaded Google Drive data and auto-merged it with local changes.", "success");
           return {
             applied: true,
             found: true,
@@ -205,8 +238,23 @@ export function createDriveSyncController({
           };
         }
 
+        if (resolution === "keep-local") {
+          setSyncStatus("Kept the local Lifetree data. Google Drive was not loaded.", "info");
+          return {
+            applied: false,
+            found: true,
+            keptLocalChanges: true,
+            synced: false,
+            remoteUpdatedAt: remoteStore.updatedAt || 0,
+            remoteFingerprint,
+            remoteSavedAt,
+            remoteUserUpdatedAt,
+            remoteUserFingerprint
+          };
+        }
+
         applyStore(remoteStore, { finalize: !deferFinalize });
-        setSyncStatus("Loaded the Google Drive version and discarded conflicting local-only changes.", "success");
+        setSyncStatus("Loaded the Google Drive version and replaced local conflicting changes.", "success");
         return {
           applied: true,
           found: true,
@@ -264,7 +312,7 @@ export function createDriveSyncController({
     }
   }
 
-  async function saveToDrive({ suppressAuthError = false, quiet = false, signal, force = false } = {}) {
+  async function saveToDrive({ suppressAuthError = false, quiet = false, signal, force = false, conflictStrategy = quiet ? "auto-merge" : "prompt" } = {}) {
     const authenticated = await ensureAuthenticated({
       suppressUnavailableError: suppressAuthError || quiet,
       signal
@@ -276,7 +324,7 @@ export function createDriveSyncController({
       return { success: false, remoteUpdatedAt: 0, remoteFingerprint: "", remoteSavedAt: 0 };
     }
     try {
-      const currentStore = getStore();
+      let currentStore = getStore();
       const currentFingerprint = computeStoreFingerprint(currentStore);
       const knownRemoteState = typeof getKnownRemoteState === "function" ? getKnownRemoteState() : {};
       const knownRemoteFingerprint = knownRemoteState?.remoteFingerprint || "";
@@ -302,10 +350,67 @@ export function createDriveSyncController({
 
       const remoteResponse = await fetch(`${apiBase}/api/lifetree/load`, { credentials: fetchCredentials, signal });
       const remotePayload = await remoteResponse.json();
+      let preferredFileId = currentStore.driveFileId || "";
       if (remoteResponse.ok && remotePayload.found) {
         const remoteStore = normalizeStore(remotePayload.payload);
         remoteStore.driveFileId = remotePayload.fileId || "";
-        applyStore(mergeStores(getStore(), remoteStore));
+        preferredFileId = remotePayload.fileId || preferredFileId;
+        const latestLocalStore = getStore();
+        const localUserFingerprint = latestLocalStore.userFingerprint || computeUserContentFingerprint(latestLocalStore);
+        const remoteUserFingerprint = remoteStore.userFingerprint || computeUserContentFingerprint(remoteStore);
+        const localUserUpdatedAt = latestLocalStore.userUpdatedAt || latestLocalStore.updatedAt || 0;
+        const remoteUserUpdatedAt = remoteStore.userUpdatedAt || remoteStore.updatedAt || 0;
+
+        if (localUserFingerprint !== remoteUserFingerprint) {
+          const resolution = await chooseDriveConflictResolution({
+            operation: "save",
+            localUserUpdatedAt,
+            remoteUserUpdatedAt,
+            strategy: conflictStrategy
+          });
+
+          if (resolution === "cancel") {
+            if (!quiet) {
+              setSyncStatus("Cancelled Drive save. Nothing was changed.", "info");
+            }
+            return {
+              success: false,
+              skipped: true,
+              cancelled: true,
+              remoteUpdatedAt: remoteStore.updatedAt || 0,
+              remoteFingerprint: computeStoreFingerprint(remoteStore),
+              remoteSavedAt: parseDriveModifiedTime(remotePayload.modifiedTime) || 0,
+              remoteUserUpdatedAt,
+              remoteUserFingerprint
+            };
+          }
+
+          if (resolution === "keep-drive") {
+            applyStore(remoteStore);
+            if (!quiet) {
+              setSyncStatus("Kept the Google Drive version and replaced local conflicting changes.", "success");
+            }
+            return {
+              success: true,
+              skipped: true,
+              remoteUpdatedAt: remoteStore.updatedAt || 0,
+              remoteFingerprint: computeStoreFingerprint(remoteStore),
+              remoteSavedAt: parseDriveModifiedTime(remotePayload.modifiedTime) || Date.now(),
+              remoteUserUpdatedAt,
+              remoteUserFingerprint
+            };
+          }
+
+          if (resolution === "auto-merge") {
+            applyStore(mergeStores(latestLocalStore, remoteStore));
+            currentStore = getStore();
+          } else {
+            currentStore = latestLocalStore;
+          }
+        } else {
+          applyStore(mergeStores(latestLocalStore, remoteStore));
+          currentStore = getStore();
+        }
       }
 
       const saveResponse = await fetch(`${apiBase}/api/lifetree/save`, {
@@ -314,7 +419,7 @@ export function createDriveSyncController({
         credentials: fetchCredentials,
         signal,
         body: JSON.stringify({
-          fileId: getStore().driveFileId || "",
+          fileId: preferredFileId || getStore().driveFileId || "",
           payload: getStore()
         })
       });
@@ -337,7 +442,11 @@ export function createDriveSyncController({
       const remoteUserFingerprint = savedStore.userFingerprint || computeUserContentFingerprint(savedStore);
 
       if (!quiet) {
-        setSyncStatus("Merged local and remote changes, then saved the Lifetree data to Google Drive app data.", "success");
+        if (remoteResponse.ok && remotePayload.found && conflictStrategy === "prompt") {
+          setSyncStatus("Saved the Lifetree data to Google Drive using your chosen conflict action.", "success");
+        } else {
+          setSyncStatus("Merged local and remote changes, then saved the Lifetree data to Google Drive app data.", "success");
+        }
       }
       return { success: true, remoteUpdatedAt, remoteFingerprint, remoteSavedAt, remoteUserUpdatedAt, remoteUserFingerprint };
     } catch (error) {
