@@ -1197,7 +1197,7 @@ function formatMaybeDate(dateString, formatDate) {
   if (typeof formatDate === "function") {
     return formatDate(dateString);
   }
-  return formatDateLabel(dateString, "");
+  return formatDateTimeLabel(dateString, "");
 }
 
 function formatDateTimeLabel(dateString, timeString) {
