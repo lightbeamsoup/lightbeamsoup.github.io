@@ -4,16 +4,8 @@
 
 ### Travel Buddy
 
-- 1. Create a `Travel Buddy` widget scaffold and register a new `Travel` category for widget-owned tasks.
-- 2. Build the shell around upcoming trip info, with canopy tasks surfacing from active trips.
-- 3. Add an `Overview` tab that shows a status board for all trips and includes a `New trip` button.
-- 4. Make each trip its own modal tab with trip-specific editing for itinerary, stay, and transit details.
-- 5. Let trips be deleted from within their own tabs.
-- 6. Add packing-list tabs so each trip can manage its own packing list and completion state.
-- 7. Add a dedicated saved packing-lists tab for reusable packing templates.
-- 8. Add a dedicated saved itineraries tab for reusable full-trip templates.
-- 9. Model each trip around an itinerary that supports transit, lodging, and custom trip notes/tasks.
-- 10. Route most Travel Buddy tasks into the `Travel` category by default.
+- Surface active trip tasks into the canopy from itinerary milestones.
+- Generate travel tasks from itinerary and packing details, and default those widget-owned tasks into the `Travel` category.
 
 - Widgets: Create a Hydration widget that tracks ounces consumed and grows a plant as you water it.
 - Integrations: Add Google Calendar integration.
@@ -62,6 +54,16 @@
 - 2026-03-26: Track calories burned and weight together in the workout modal history chart.
 - 2026-03-26: Add open weight logging plus optional scheduled weight check-ins.
 - 2026-03-26: Add per-widget weight units and decide how points should work for unscheduled weight logs.
+
+### Travel Buddy
+
+- 2026-03-29: Scaffold the `Travel Buddy` widget and register the widget-provided `Travel` category.
+- 2026-03-29: Build the shell around upcoming trip info with quick access into active and upcoming trip tabs.
+- 2026-03-29: Add an `Overview` tab with a trip status board and a `New trip` button.
+- 2026-03-29: Make each trip its own modal tab with editing for itinerary, transit, lodging, and trip notes.
+- 2026-03-29: Let trips be deleted from within their own tabs.
+- 2026-03-29: Add per-trip packing list management plus dedicated saved packing-list and saved itinerary tabs.
+- 2026-03-29: Add reusable itinerary and packing-list templates that can be saved from a trip and reused later.
 
 ### Widget Shells And Canopy
 

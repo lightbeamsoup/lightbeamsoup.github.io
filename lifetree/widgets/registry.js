@@ -1,4 +1,5 @@
 import { energyWidgetDefinition } from "./energy.js";
+import { travelWidgetDefinition } from "./travel.js";
 import { workoutWidgetDefinition } from "./workout.js";
 
 /**
@@ -12,7 +13,7 @@ import { workoutWidgetDefinition } from "./workout.js";
  * - `ensureTasks` for owned-task provisioning
  * - `shouldAutoSkipOwnedTask` for widget-specific lockout rules
  */
-const WIDGET_DEFINITIONS = [energyWidgetDefinition, workoutWidgetDefinition];
+const WIDGET_DEFINITIONS = [energyWidgetDefinition, workoutWidgetDefinition, travelWidgetDefinition];
 const WIDGET_DEFINITION_MAP = new Map(WIDGET_DEFINITIONS.map((definition) => [definition.type, definition]));
 
 export function listWidgetDefinitions() {
