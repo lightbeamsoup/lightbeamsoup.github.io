@@ -49,6 +49,7 @@ const DEV_EMAIL = "jbkallman@gmail.com";
 const LIFETREE_APP_URL = "https://www.joshcodes.ai/lifetree";
 const FLIGHTAWARE_AEROAPI_KEY = String(process.env.FLIGHTAWARE_AEROAPI_KEY || "").trim();
 const TRAVEL_WEATHER_CACHE_TTL_MS = 1000 * 60 * 15;
+const TRAVEL_WEATHER_RETRY_TTL_MS = 1000 * 60 * 2;
 const US_STATE_NAME_BY_CODE = {
   AL: "Alabama",
   AK: "Alaska",
@@ -1246,6 +1247,7 @@ function normalizeTravelLiveTrip(value) {
     weather,
     flight,
     forceFlightRefresh: value?.forceFlightRefresh === true,
+    forceWeatherRefresh: value?.forceWeatherRefresh === true,
     existingSnapshot: normalizeTravelLiveSnapshot(value?.existingSnapshot)
   };
 }
@@ -1370,7 +1372,9 @@ async function buildTravelLiveSnapshot(trip) {
   if (
     durableSnapshot
     && !trip.forceFlightRefresh
-    && !shouldRefreshTravelSnapshot(trip, durableSnapshot, now, { forceWeatherRefresh: !cached })
+    && !shouldRefreshTravelSnapshot(trip, durableSnapshot, now, {
+      forceWeatherRefresh: !cached || trip.forceWeatherRefresh === true
+    })
   ) {
     logTravelLive("verbose", "Reusing persisted travel live snapshot", {
       tripId: trip.tripId,
@@ -1396,6 +1400,7 @@ async function buildTravelLiveSnapshot(trip) {
     trip.weather
       ? (
           cachedSnapshot?.weather && !shouldRefreshTravelLiveComponent(cachedSnapshot.weather, now)
+          && !trip.forceWeatherRefresh
             ? (
                 logTravelLive("verbose", "Reusing cached travel weather snapshot", {
                   tripId: trip.tripId,
@@ -1413,7 +1418,7 @@ async function buildTravelLiveSnapshot(trip) {
                   status: "error",
                   message: "Forecast unavailable right now.",
                   fetchedAt: now,
-                  nextRefreshAt: now + TRAVEL_WEATHER_CACHE_TTL_MS
+                  nextRefreshAt: now + TRAVEL_WEATHER_RETRY_TTL_MS
                 };
               })
         )
@@ -1562,7 +1567,7 @@ async function fetchTravelWeatherSnapshot(request) {
       query: request.destinationQuery,
       message: `Could not find weather for ${request.destinationQuery}.`,
       fetchedAt: now,
-      nextRefreshAt: now + TRAVEL_WEATHER_CACHE_TTL_MS
+      nextRefreshAt: now + TRAVEL_WEATHER_RETRY_TTL_MS
     };
   }
 

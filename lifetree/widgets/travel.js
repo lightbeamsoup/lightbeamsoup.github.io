@@ -222,6 +222,7 @@ export const travelWidgetDefinition = {
         return {
           ...request,
           forceFlightRefresh: Boolean(uiState.forceFlightRefreshTripIds?.[trip.id]),
+          forceWeatherRefresh: Boolean(uiState.forceFlightRefreshTripIds?.[trip.id]),
           existingSnapshot: persistedSnapshot
         };
       })
@@ -1139,7 +1140,7 @@ export const travelWidgetDefinition = {
       uiState.shellLiveFetchedAt = 0;
       uiState.shellLivePendingKey = "";
       helpers.renderAll();
-      helpers.setSyncStatus("Refreshing flight status…", "info");
+      helpers.setSyncStatus("Refreshing live travel updates…", "info");
       return true;
     }
 
@@ -1761,7 +1762,7 @@ function mergeTravelLiveSnapshot(base, update) {
 
 function shouldRefreshTravelShellTrip({ request, persistedSnapshot, forceFlightRefresh = false }) {
   const now = Date.now();
-  if (forceFlightRefresh && request.flight) {
+  if (forceFlightRefresh && (request.flight || request.weather)) {
     return true;
   }
   if (!persistedSnapshot) {
