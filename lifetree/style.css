@@ -2592,6 +2592,8 @@ body.developer-open {
 .travel-detail-panel {
   display: grid;
   gap: 18px;
+  min-height: 0;
+  align-content: start;
 }
 
 .travel-overview-grid {
@@ -2663,7 +2665,7 @@ body.developer-open {
 
 .travel-template-item-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 92px 148px auto;
+  grid-template-columns: minmax(0, 1fr) 92px 184px auto;
   gap: 12px;
   align-items: end;
 }
@@ -2711,7 +2713,7 @@ body.developer-open {
 }
 
 .travel-packing-add-form {
-  grid-template-columns: minmax(0, 1fr) 88px 148px auto;
+  grid-template-columns: minmax(0, 1fr) 88px minmax(180px, 220px) auto;
 }
 
 .travel-packing-check {
