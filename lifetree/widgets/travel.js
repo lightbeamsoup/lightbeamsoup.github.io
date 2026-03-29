@@ -354,12 +354,17 @@ export const travelWidgetDefinition = {
     const settings = normalizeTravelSettings(widget.settings);
     const packingTemplates = normalizePackingTemplates(widget.data?.packingTemplates);
     const itineraryTemplates = normalizeItineraryTemplates(widget.data?.itineraryTemplates);
+    const packingCategoryListId = getTravelPackingCategoryListId(widget.id);
+    const packingCategories = collectTravelPackingCategories(widget);
     const activeTab = getTravelDetailTab(widget.id, trips);
     const activeTrip = activeTab.startsWith("trip:") ? trips.find((trip) => trip.id === activeTab.slice(5)) || null : null;
     const upcomingTrips = getUpcomingTrips(trips);
 
     return `
       <section class="energy-detail">
+        <datalist id="${escapeHtml(packingCategoryListId)}">
+          ${packingCategories.map((category) => `<option value="${escapeHtml(category)}"></option>`).join("")}
+        </datalist>
         <div class="workout-detail-tabs" role="tablist" aria-label="Travel detail sections">
           ${renderTravelDetailTabButton("overview", "Overview", activeTab, escapeHtml)}
           ${renderTravelDetailTabButton("settings", "Settings", activeTab, escapeHtml)}
@@ -434,7 +439,7 @@ export const travelWidgetDefinition = {
         </div>
 
         <div class="travel-detail-panel${activeTrip ? "" : " hidden"}" data-travel-tab-panel="trip">
-          ${activeTrip ? renderTravelTripPanel(activeTrip, packingTemplates, itineraryTemplates, settings, escapeHtml, formatDate) : ""}
+          ${activeTrip ? renderTravelTripPanel(activeTrip, packingTemplates, itineraryTemplates, settings, packingCategoryListId, escapeHtml, formatDate) : ""}
         </div>
 
         <div class="travel-detail-panel${activeTab === "packing-templates" ? "" : " hidden"}" data-travel-tab-panel="packing-templates">
@@ -448,7 +453,7 @@ export const travelWidgetDefinition = {
             </div>
             <form class="travel-template-form" data-travel-packing-template-form>
               <div class="travel-template-item-list" data-travel-template-item-list>
-                ${renderTravelTemplateItemRows([], escapeHtml)}
+                ${renderTravelTemplateItemRows([], packingCategoryListId, escapeHtml)}
               </div>
               <div class="widget-actions workout-inline-actions">
                 <button type="button" class="ghost-button" data-travel-add-template-item>Add item</button>
@@ -504,7 +509,9 @@ export const travelWidgetDefinition = {
       if (addTemplateItemButton) {
         const list = container.querySelector("[data-travel-template-item-list]");
         if (list) {
-          list.insertAdjacentHTML("beforeend", renderTravelTemplateItemRow({ label: "", quantity: 1, category: DEFAULT_TRAVEL_PACKING_CATEGORY }, helpers.createId(), helpers.escapeHtml || fallbackEscapeHtml));
+          const categoryListId = getTravelPackingCategoryListId(widget.id);
+          const defaultCategory = normalizeTravelSettings(widget.settings).lastPackingCategory || DEFAULT_TRAVEL_PACKING_CATEGORY;
+          list.insertAdjacentHTML("beforeend", renderTravelTemplateItemRow({ label: "", quantity: 1, category: defaultCategory }, helpers.createId(), categoryListId, helpers.escapeHtml || fallbackEscapeHtml));
         }
         return;
       }
@@ -1097,9 +1104,14 @@ export const travelWidgetDefinition = {
           helpers.setSyncStatus("That trip could not be found.", "error");
           return;
         }
+        widget.settings = {
+          ...normalizeTravelSettings(widget.settings),
+          lastPackingCategory: category,
+          updatedAt: now
+        };
         if (input) input.value = "";
         if (quantityInput) quantityInput.value = "1";
-        if (categoryInput) categoryInput.value = DEFAULT_TRAVEL_PACKING_CATEGORY;
+        if (categoryInput) categoryInput.value = category;
         widget.updatedAt = now;
         syncTravelOwnedTasks(widget, helpers.getStore(), helpers);
         helpers.persistStore();
@@ -1321,6 +1333,7 @@ function normalizeTravelSettings(value) {
   return {
     homeLocation: normalizeText(value?.homeLocation, 120),
     homeTimeZone: normalizeTimeZone(value?.homeTimeZone),
+    lastPackingCategory: normalizePackingCategory(value?.lastPackingCategory),
     updatedAt: typeof value?.updatedAt === "number" ? value.updatedAt : 0
   };
 }
@@ -1892,7 +1905,8 @@ function renderTravelOverviewCard(trip, escapeHtml, formatDate) {
   `;
 }
 
-function renderTravelTripPanel(trip, packingTemplates, itineraryTemplates, settings, escapeHtml, formatDate) {
+function renderTravelTripPanel(trip, packingTemplates, itineraryTemplates, settings, packingCategoryListId, escapeHtml, formatDate) {
+  const defaultPackingCategory = settings.lastPackingCategory || DEFAULT_TRAVEL_PACKING_CATEGORY;
   return `
     <section class="energy-detail-card">
       <div class="energy-detail-header">
@@ -2088,7 +2102,7 @@ function renderTravelTripPanel(trip, packingTemplates, itineraryTemplates, setti
         </label>
         <label>
           <span>Category</span>
-          <input type="text" maxlength="40" value="${escapeHtml(DEFAULT_TRAVEL_PACKING_CATEGORY)}" placeholder="General" data-travel-packing-category />
+          <input type="text" maxlength="40" value="${escapeHtml(defaultPackingCategory)}" placeholder="General" list="${escapeHtml(packingCategoryListId)}" data-travel-packing-category />
         </label>
         <button type="submit" class="ghost-button">Add item</button>
       </form>
@@ -2201,12 +2215,12 @@ function renderItineraryTemplateCard(template, escapeHtml, formatDate) {
   `;
 }
 
-function renderTravelTemplateItemRows(items, escapeHtml) {
+function renderTravelTemplateItemRows(items, packingCategoryListId, escapeHtml) {
   const normalizedItems = Array.isArray(items) && items.length ? items : [{ label: "", quantity: 1, category: DEFAULT_TRAVEL_PACKING_CATEGORY }];
-  return normalizedItems.map((item, index) => renderTravelTemplateItemRow(item, `travel-template-row-${index}`, escapeHtml)).join("");
+  return normalizedItems.map((item, index) => renderTravelTemplateItemRow(item, `travel-template-row-${index}`, packingCategoryListId, escapeHtml)).join("");
 }
 
-function renderTravelTemplateItemRow(item, rowId, escapeHtml) {
+function renderTravelTemplateItemRow(item, rowId, packingCategoryListId, escapeHtml) {
   const safeEscapeHtml = typeof escapeHtml === "function" ? escapeHtml : fallbackEscapeHtml;
   return `
     <div class="travel-template-item-row" data-travel-template-row="${rowId}">
@@ -2220,7 +2234,7 @@ function renderTravelTemplateItemRow(item, rowId, escapeHtml) {
       </label>
       <label>
         <span>Category</span>
-        <input type="text" maxlength="40" value="${safeEscapeHtml(item?.category || DEFAULT_TRAVEL_PACKING_CATEGORY)}" placeholder="General" data-travel-template-item-category />
+        <input type="text" maxlength="40" value="${safeEscapeHtml(item?.category || DEFAULT_TRAVEL_PACKING_CATEGORY)}" placeholder="General" list="${safeEscapeHtml(packingCategoryListId)}" data-travel-template-item-category />
       </label>
       <button type="button" class="ghost-button" data-travel-remove-template-item>Remove</button>
     </div>
@@ -3181,7 +3195,7 @@ function buildPackingTaskForTrip({ widget, trip, settings, helpers }) {
     dueDate,
     timeOfDay: packingTask.dueTime,
     lateGraceMinutes: graceMinutes,
-    notBeforeAt: dueTimestamp,
+    notBeforeAt: 0,
     pointsValue: 3,
     pointsEntryId: "",
     length: "medium",
@@ -3445,6 +3459,42 @@ function dedupePackingItems(items) {
     deduped.push(item);
   }
   return deduped;
+}
+
+function getTravelPackingCategoryListId(widgetId) {
+  return `travel-packing-categories-${widgetId}`;
+}
+
+function collectTravelPackingCategories(widget) {
+  const settings = normalizeTravelSettings(widget?.settings);
+  const categories = new Set([DEFAULT_TRAVEL_PACKING_CATEGORY]);
+  if (settings.lastPackingCategory) {
+    categories.add(settings.lastPackingCategory);
+  }
+  for (const trip of normalizeTrips(widget?.data?.trips)) {
+    for (const item of normalizePackingItems(trip?.packingList?.items)) {
+      categories.add(normalizePackingCategory(item.category));
+    }
+  }
+  for (const template of normalizePackingTemplates(widget?.data?.packingTemplates)) {
+    for (const item of normalizePackingItems(template?.items)) {
+      categories.add(normalizePackingCategory(item.category));
+    }
+  }
+  for (const template of normalizeItineraryTemplates(widget?.data?.itineraryTemplates)) {
+    for (const item of normalizePackingItems(template?.packingItems)) {
+      categories.add(normalizePackingCategory(item.category));
+    }
+  }
+  return Array.from(categories).sort((left, right) => {
+    if (left === DEFAULT_TRAVEL_PACKING_CATEGORY) {
+      return -1;
+    }
+    if (right === DEFAULT_TRAVEL_PACKING_CATEGORY) {
+      return 1;
+    }
+    return left.localeCompare(right);
+  });
 }
 
 function getUnpackedPackingItems(trip) {
