@@ -1419,6 +1419,7 @@ async function fetchTravelWeatherSnapshot(request) {
   if (!hasValidTravelCoordinates(result)) {
     return {
       status: "not-found",
+      query: request.destinationQuery,
       message: `Could not find weather for ${request.destinationQuery}.`,
       fetchedAt: now,
       nextRefreshAt: now + TRAVEL_WEATHER_CACHE_TTL_MS
@@ -1438,6 +1439,7 @@ async function fetchTravelWeatherSnapshot(request) {
   if (relevantDays.length === 0) {
     return {
       status: "out-of-range",
+      query: selectedQuery,
       locationLabel: buildWeatherLocationLabel(result),
       message: "Forecast will appear closer to departure.",
       fetchedAt: now,
@@ -1447,6 +1449,7 @@ async function fetchTravelWeatherSnapshot(request) {
 
   return {
     status: "ok",
+    query: selectedQuery,
     locationLabel: buildWeatherLocationLabel(result) || selectedQuery,
     days: relevantDays.slice(0, 4),
     fetchedAt: now,

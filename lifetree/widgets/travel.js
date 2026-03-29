@@ -785,6 +785,7 @@ export const travelWidgetDefinition = {
         const updatedTrip = updateTripById(widget, tripId, (trip) => ({
           ...trip,
           destination: template.destination || trip.destination,
+          forecastLocation: template.forecastLocation || trip.forecastLocation || template.destination || trip.destination,
           startDate: template.startDate || trip.startDate,
           endDate: template.endDate || trip.endDate,
           itinerary: normalizeTripItinerary(template.itinerary, helpers.createId),
@@ -831,6 +832,7 @@ export const travelWidgetDefinition = {
             id: helpers.createId(),
             name: templateName,
             destination: trip.destination,
+            forecastLocation: trip.forecastLocation,
             startDate: trip.startDate,
             endDate: trip.endDate,
             itinerary: normalizeTripItinerary(trip.itinerary, helpers.createId),
@@ -865,6 +867,7 @@ export const travelWidgetDefinition = {
           id: helpers.createId(),
           name: template.name,
           destination: template.destination,
+          forecastLocation: template.forecastLocation || template.destination,
           status: "planning",
           statusPreset: "planning",
           statusOverride: "",
@@ -980,6 +983,7 @@ export const travelWidgetDefinition = {
           ...trip,
           name: normalizeText(tripForm.querySelector("[data-travel-name]")?.value, 80) || "Trip",
           destination: normalizeText(tripForm.querySelector("[data-travel-destination]")?.value, 120),
+          forecastLocation: normalizeText(tripForm.querySelector("[data-travel-forecast-location]")?.value, 160),
           status: selectedStatus,
           statusPreset: selectedStatus === "planning" || selectedStatus === "booked"
             ? selectedStatus
@@ -1217,6 +1221,7 @@ function normalizeTravelWeatherSnapshot(value) {
   return {
     status: normalizeText(value.status, 32),
     message: normalizeText(value.message, 240),
+    query: normalizeText(value.query, 160),
     locationLabel: normalizeText(value.locationLabel, 120),
     fetchedAt: typeof value.fetchedAt === "number" ? value.fetchedAt : 0,
     nextRefreshAt: typeof value.nextRefreshAt === "number" ? value.nextRefreshAt : 0,
@@ -1253,6 +1258,7 @@ function normalizeTrip(value, createId) {
     id: typeof value.id === "string" && value.id ? value.id : createId(),
     name: normalizeText(value.name, 80) || "Trip",
     destination: normalizeText(value.destination, 120),
+    forecastLocation: normalizeText(value.forecastLocation, 160),
     status: rawStatus,
     statusPreset: normalizeTripStatusPreset(value.statusPreset || (rawStatus === "planning" || rawStatus === "booked" ? rawStatus : "booked")),
     statusOverride: normalizeTripStatusOverride(value.statusOverride || (rawStatus === "active" ? "active" : rawStatus === "complete" ? "complete" : "")),
@@ -1361,6 +1367,7 @@ function normalizeItineraryTemplates(value, createId = () => `itinerary-template
         id: typeof template.id === "string" && template.id ? template.id : createId(),
         name,
         destination: normalizeText(template.destination, 120),
+        forecastLocation: normalizeText(template.forecastLocation, 160),
         startDate: normalizeDateValue(template.startDate),
         endDate: normalizeDateValue(template.endDate),
         itinerary: normalizeTripItinerary(template.itinerary, createId),
@@ -1378,6 +1385,7 @@ function createEmptyTrip(createId, now, todayString) {
     id: createId(),
     name: "New trip",
     destination: "",
+    forecastLocation: "",
     status: "planning",
     statusPreset: "planning",
     statusOverride: "",
@@ -1759,6 +1767,14 @@ function shouldRefreshTravelShellTrip({ request, persistedSnapshot, forceFlightR
   if (!persistedSnapshot) {
     return true;
   }
+  const weatherQueryChanged = Boolean(
+    request.weather
+    && persistedSnapshot.weather
+    && normalizeText(persistedSnapshot.weather.query, 160) !== normalizeText(request.weather.destinationQuery, 160)
+  );
+  if (weatherQueryChanged) {
+    return true;
+  }
   const weatherDue = Boolean(request.weather) && shouldRefreshLiveComponent(persistedSnapshot.weather, now);
   const flightDue = Boolean(request.flight) && shouldRefreshLiveComponent(persistedSnapshot.flight, now);
   return weatherDue || flightDue;
@@ -1839,6 +1855,10 @@ function renderTravelTripPanel(trip, packingTemplates, itineraryTemplates, setti
           <label>
             <span>Destination</span>
             <input type="text" maxlength="120" value="${escapeHtml(trip.destination)}" data-travel-destination />
+          </label>
+          <label class="travel-wide-field">
+            <span>Forecast location</span>
+            <input type="text" maxlength="160" value="${escapeHtml(trip.forecastLocation || "")}" placeholder="${escapeHtml(trip.destination || "Albuquerque, New Mexico")}" data-travel-forecast-location />
           </label>
           <label>
             <span>Status</span>
@@ -2406,7 +2426,8 @@ function buildTravelShellLiveRequest(trip, settings) {
 
 function buildTravelWeatherRequest(trip) {
   const destinationQuery = normalizeText(
-    trip?.destination
+    trip?.forecastLocation
+    || trip?.destination
     || trip?.itinerary?.outboundDestination
     || trip?.itinerary?.lodgingAddress,
     160
