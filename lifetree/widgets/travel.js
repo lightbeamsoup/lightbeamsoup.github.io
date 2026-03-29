@@ -221,7 +221,8 @@ export const travelWidgetDefinition = {
         }
         return {
           ...request,
-          forceFlightRefresh: Boolean(uiState.forceFlightRefreshTripIds?.[trip.id])
+          forceFlightRefresh: Boolean(uiState.forceFlightRefreshTripIds?.[trip.id]),
+          existingSnapshot: persistedSnapshot
         };
       })
       .filter(Boolean);

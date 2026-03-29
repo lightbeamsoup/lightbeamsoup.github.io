@@ -1245,7 +1245,71 @@ function normalizeTravelLiveTrip(value) {
     tripId,
     weather,
     flight,
-    forceFlightRefresh: value?.forceFlightRefresh === true
+    forceFlightRefresh: value?.forceFlightRefresh === true,
+    existingSnapshot: normalizeTravelLiveSnapshot(value?.existingSnapshot)
+  };
+}
+
+function normalizeTravelLiveSnapshot(value) {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const weather = normalizeTravelWeatherSnapshot(value.weather);
+  const flight = normalizeTravelFlightSnapshot(value.flight);
+  if (!weather && !flight) {
+    return null;
+  }
+  return {
+    fetchedAt: typeof value.fetchedAt === "number" ? value.fetchedAt : 0,
+    updatedAt: typeof value.updatedAt === "number" ? value.updatedAt : (typeof value.fetchedAt === "number" ? value.fetchedAt : 0),
+    weather,
+    flight
+  };
+}
+
+function normalizeTravelWeatherSnapshot(value) {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const days = Array.isArray(value.days)
+    ? value.days
+        .slice(0, 6)
+        .map((day) => ({
+          date: normalizeDateString(day?.date),
+          shortLabel: sanitizeTravelText(day?.shortLabel, 24),
+          dateLabel: sanitizeTravelText(day?.dateLabel, 24),
+          temperatureLabel: sanitizeTravelText(day?.temperatureLabel, 40),
+          conditionLabel: sanitizeTravelText(day?.conditionLabel, 80)
+        }))
+        .filter((day) => day.date || day.shortLabel || day.temperatureLabel || day.conditionLabel)
+    : [];
+  return {
+    status: sanitizeTravelText(value.status, 32),
+    message: sanitizeTravelText(value.message, 240),
+    query: sanitizeTravelText(value.query, 160),
+    locationLabel: sanitizeTravelText(value.locationLabel, 120),
+    fetchedAt: typeof value.fetchedAt === "number" ? value.fetchedAt : 0,
+    nextRefreshAt: typeof value.nextRefreshAt === "number" ? value.nextRefreshAt : 0,
+    days
+  };
+}
+
+function normalizeTravelFlightSnapshot(value) {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  return {
+    status: sanitizeTravelText(value.status, 32),
+    message: sanitizeTravelText(value.message, 240),
+    flightLabel: sanitizeTravelText(value.flightLabel, 40),
+    statusLabel: sanitizeTravelText(value.statusLabel, 80),
+    departureCode: sanitizeTravelText(value.departureCode, 8).toUpperCase(),
+    arrivalCode: sanitizeTravelText(value.arrivalCode, 8).toUpperCase(),
+    departureTimeLabel: sanitizeTravelText(value.departureTimeLabel, 80),
+    gate: sanitizeTravelText(value.gate, 12),
+    terminal: sanitizeTravelText(value.terminal, 12),
+    fetchedAt: typeof value.fetchedAt === "number" ? value.fetchedAt : 0,
+    nextRefreshAt: typeof value.nextRefreshAt === "number" ? value.nextRefreshAt : 0
   };
 }
 
@@ -1295,6 +1359,7 @@ async function buildTravelLiveSnapshot(trip) {
   });
   const now = Date.now();
   const cached = travelLiveCache.get(cacheKey);
+  const durableSnapshot = pickTravelLiveSnapshot(cached?.snapshot || null, trip.existingSnapshot);
   if (cached && now < cached.expiresAt && !trip.forceFlightRefresh) {
     logTravelLive("verbose", "Travel live cache hit", {
       tripId: trip.tripId,
@@ -1302,12 +1367,27 @@ async function buildTravelLiveSnapshot(trip) {
     });
     return cached.snapshot;
   }
+  if (durableSnapshot && !trip.forceFlightRefresh && !shouldRefreshTravelSnapshot(trip, durableSnapshot, now)) {
+    logTravelLive("verbose", "Reusing persisted travel live snapshot", {
+      tripId: trip.tripId,
+      flightNextRefreshAt: durableSnapshot.flight?.nextRefreshAt || 0,
+      weatherNextRefreshAt: durableSnapshot.weather?.nextRefreshAt || 0
+    });
+    travelLiveCache.set(cacheKey, {
+      expiresAt: Math.min(
+        trip.weather ? resolveTravelComponentExpiresAt(durableSnapshot.weather, now + TRAVEL_WEATHER_CACHE_TTL_MS) : Number.POSITIVE_INFINITY,
+        trip.flight ? resolveTravelComponentExpiresAt(durableSnapshot.flight, computeFlightSnapshotExpiresAt(trip.flight, now)) : Number.POSITIVE_INFINITY
+      ),
+      snapshot: durableSnapshot
+    });
+    return durableSnapshot;
+  }
 
   logTravelLive("verbose", cached ? "Travel live cache stale" : "Travel live cache miss", {
     tripId: trip.tripId,
     forceFlightRefresh: trip.forceFlightRefresh === true
   });
-  const cachedSnapshot = cached?.snapshot || null;
+  const cachedSnapshot = durableSnapshot;
   const [weather, flight] = await Promise.all([
     trip.weather
       ? (
@@ -1383,6 +1463,26 @@ async function buildTravelLiveSnapshot(trip) {
     snapshot
   });
   return snapshot;
+}
+
+function pickTravelLiveSnapshot(left, right) {
+  const normalizedLeft = normalizeTravelLiveSnapshot(left);
+  const normalizedRight = normalizeTravelLiveSnapshot(right);
+  if (!normalizedLeft) {
+    return normalizedRight;
+  }
+  if (!normalizedRight) {
+    return normalizedLeft;
+  }
+  const leftUpdatedAt = Math.max(normalizedLeft.updatedAt || 0, normalizedLeft.fetchedAt || 0);
+  const rightUpdatedAt = Math.max(normalizedRight.updatedAt || 0, normalizedRight.fetchedAt || 0);
+  return rightUpdatedAt > leftUpdatedAt ? normalizedRight : normalizedLeft;
+}
+
+function shouldRefreshTravelSnapshot(trip, snapshot, now = Date.now()) {
+  const weatherDue = Boolean(trip.weather) && shouldRefreshTravelLiveComponent(snapshot.weather, now);
+  const flightDue = Boolean(trip.flight) && shouldRefreshTravelLiveComponent(snapshot.flight, now);
+  return weatherDue || flightDue;
 }
 
 function shouldRefreshTravelLiveComponent(component, now = Date.now()) {
