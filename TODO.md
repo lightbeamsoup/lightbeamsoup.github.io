@@ -5,6 +5,7 @@
 ### Travel Buddy
 
 - Generate travel tasks from itinerary and packing details, and default those widget-owned tasks into the `Travel` category.
+- Travel Buddy: Improve packing lists with check-off support and shell-level counts for items still unpacked on departure day.
 
 - Widgets: Create a Hydration widget that tracks ounces consumed and grows a plant as you water it.
 - Integrations: Add Google Calendar integration.
