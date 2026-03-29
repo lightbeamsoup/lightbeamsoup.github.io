@@ -4,11 +4,7 @@
 
 ### Travel Buddy
 
-- Add a Travel Buddy settings tab with home location and home time zone preferences.
-- Add flight numbers and richer transit leg details to trip itineraries.
-- Add packing-list item quantities and preserve them in saved packing templates and itinerary templates.
 - Surface active trip tasks into the canopy from itinerary milestones.
-- Generate flight check-in tasks 24 hours before departure and make them timezone-aware by trip stage.
 - Generate travel tasks from itinerary and packing details, and default those widget-owned tasks into the `Travel` category.
 
 - Widgets: Create a Hydration widget that tracks ounces consumed and grows a plant as you water it.
@@ -68,6 +64,10 @@
 - 2026-03-29: Let trips be deleted from within their own tabs.
 - 2026-03-29: Add per-trip packing list management plus dedicated saved packing-list and saved itinerary tabs.
 - 2026-03-29: Add reusable itinerary and packing-list templates that can be saved from a trip and reused later.
+- 2026-03-29: Add a Travel Buddy settings tab with home location and home time zone preferences.
+- 2026-03-29: Add flight numbers and richer transit leg details to trip itineraries.
+- 2026-03-29: Add packing-list item quantities and preserve them in saved packing templates and itinerary templates.
+- 2026-03-29: Generate flight check-in tasks 24 hours before departure and make them timezone-aware by trip stage.
 
 ### Widget Shells And Canopy
 

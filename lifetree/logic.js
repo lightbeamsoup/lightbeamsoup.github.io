@@ -258,7 +258,10 @@ function getTaskDueTimestamp(task) {
     return null;
   }
   const timeOfDay = task.timeOfDay || "23:59";
-  const timestamp = new Date(`${dueDate}T${timeOfDay}:00`).getTime();
+  const timeZone = getTaskTimeZone(task);
+  const timestamp = timeZone
+    ? zonedDateTimeToTimestamp(dueDate, timeOfDay, timeZone)
+    : new Date(`${dueDate}T${timeOfDay}:00`).getTime();
   return Number.isNaN(timestamp) ? null : timestamp;
 }
 
@@ -440,6 +443,11 @@ function buildTaskDateTime(task, fallbackTime = "23:59") {
   if (!date) {
     return null;
   }
+  const timeZone = getTaskTimeZone(task);
+  if (timeZone) {
+    const timestamp = zonedDateTimeToTimestamp(date, task.timeOfDay || fallbackTime, timeZone);
+    return Number.isFinite(timestamp) ? new Date(timestamp) : null;
+  }
   const time = task.timeOfDay || fallbackTime;
   const [hours, minutes] = time.split(":").map(Number);
   return new Date(
@@ -457,6 +465,12 @@ function buildTaskDayEndDateTime(task) {
   const date = taskScheduleKey(task);
   if (!date) {
     return null;
+  }
+  const timeZone = getTaskTimeZone(task);
+  if (timeZone) {
+    const nextDate = addDaysToDateString(date, 1);
+    const timestamp = zonedDateTimeToTimestamp(nextDate, "00:00", timeZone);
+    return Number.isFinite(timestamp) ? new Date(timestamp - 1) : null;
   }
   return new Date(
     Number(date.slice(0, 4)),
@@ -491,4 +505,84 @@ export function shouldAutoSkipTask(task, now = new Date()) {
   }
 
   return false;
+}
+
+function getTaskTimeZone(task) {
+  const timeZone = typeof task?.widgetTaskMeta?.timeZone === "string" ? task.widgetTaskMeta.timeZone.trim() : "";
+  if (!timeZone) {
+    return "";
+  }
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone }).format(new Date());
+    return timeZone;
+  } catch {
+    return "";
+  }
+}
+
+function zonedDateTimeToTimestamp(dateString, timeString, timeZone) {
+  const [year, month, day] = String(dateString || "").split("-").map(Number);
+  const [hours, minutes] = String(timeString || "23:59").split(":").map(Number);
+  if (!year || !month || !day) {
+    return Number.NaN;
+  }
+
+  let guess = Date.UTC(
+    year,
+    month - 1,
+    day,
+    Number.isFinite(hours) ? hours : 23,
+    Number.isFinite(minutes) ? minutes : 59,
+    0
+  );
+
+  for (let index = 0; index < 3; index += 1) {
+    const actual = getZonedParts(new Date(guess), timeZone);
+    const desiredUtc = Date.UTC(year, month - 1, day, Number.isFinite(hours) ? hours : 23, Number.isFinite(minutes) ? minutes : 59, 0);
+    const actualUtc = Date.UTC(actual.year, actual.month - 1, actual.day, actual.hours, actual.minutes, 0);
+    const diff = desiredUtc - actualUtc;
+    if (diff === 0) {
+      break;
+    }
+    guess += diff;
+  }
+
+  return guess;
+}
+
+function getZonedParts(date, timeZone) {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23"
+  });
+  const parts = formatter.formatToParts(date).reduce((result, item) => {
+    if (item.type !== "literal") {
+      result[item.type] = Number(item.value);
+    }
+    return result;
+  }, {});
+  return {
+    year: parts.year || 0,
+    month: parts.month || 1,
+    day: parts.day || 1,
+    hours: parts.hour || 0,
+    minutes: parts.minute || 0
+  };
+}
+
+function addDaysToDateString(value, count) {
+  const date = new Date(`${value}T12:00:00`);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  date.setDate(date.getDate() + count);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }

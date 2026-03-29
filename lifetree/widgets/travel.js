@@ -5,6 +5,62 @@ const TRAVEL_CATEGORY = {
   label: "Travel",
   color: "#6aa9ff"
 };
+const TRAVEL_WIDGET_AIRPORT_TIME_ZONES = {
+  SEA: "America/Los_Angeles",
+  PDX: "America/Los_Angeles",
+  SFO: "America/Los_Angeles",
+  SJC: "America/Los_Angeles",
+  LAX: "America/Los_Angeles",
+  SAN: "America/Los_Angeles",
+  LAS: "America/Los_Angeles",
+  PHX: "America/Phoenix",
+  DEN: "America/Denver",
+  SLC: "America/Denver",
+  DFW: "America/Chicago",
+  DAL: "America/Chicago",
+  AUS: "America/Chicago",
+  IAH: "America/Chicago",
+  ORD: "America/Chicago",
+  MSP: "America/Chicago",
+  ATL: "America/New_York",
+  MIA: "America/New_York",
+  JFK: "America/New_York",
+  LGA: "America/New_York",
+  EWR: "America/New_York",
+  BOS: "America/New_York",
+  DCA: "America/New_York",
+  IAD: "America/New_York",
+  CLT: "America/New_York",
+  HNL: "Pacific/Honolulu",
+  ANC: "America/Anchorage",
+  LHR: "Europe/London",
+  LGW: "Europe/London",
+  CDG: "Europe/Paris",
+  FCO: "Europe/Rome",
+  AMS: "Europe/Amsterdam",
+  MAD: "Europe/Madrid",
+  NRT: "Asia/Tokyo",
+  HND: "Asia/Tokyo",
+  ICN: "Asia/Seoul",
+  SYD: "Australia/Sydney"
+};
+const TRAVEL_LOCATION_TIME_ZONE_HINTS = [
+  { timeZone: "America/Los_Angeles", pattern: /\b(seattle|portland|san francisco|oakland|san jose|los angeles|san diego|las vegas|vegas|california|oregon|washington state|wa|or|ca)\b/i },
+  { timeZone: "America/Phoenix", pattern: /\b(phoenix|scottsdale|tempe|tucson|arizona|az)\b/i },
+  { timeZone: "America/Denver", pattern: /\b(denver|boulder|salt lake|utah|ut|colorado|co|boise|idaho|id)\b/i },
+  { timeZone: "America/Chicago", pattern: /\b(chicago|dallas|houston|austin|minneapolis|new orleans|texas|tx|illinois|il|minnesota|mn|wisconsin|wi|louisiana|la)\b/i },
+  { timeZone: "America/New_York", pattern: /\b(new york|nyc|boston|miami|atlanta|orlando|philadelphia|washington dc|dc|virginia|va|new jersey|nj|florida|fl|georgia|ga|massachusetts|ma)\b/i },
+  { timeZone: "Pacific/Honolulu", pattern: /\b(honolulu|hawaii|hi|maui)\b/i },
+  { timeZone: "America/Anchorage", pattern: /\b(anchorage|alaska|ak)\b/i },
+  { timeZone: "Europe/London", pattern: /\b(london|england|united kingdom|uk)\b/i },
+  { timeZone: "Europe/Paris", pattern: /\b(paris|france)\b/i },
+  { timeZone: "Europe/Rome", pattern: /\b(rome|italy)\b/i },
+  { timeZone: "Europe/Amsterdam", pattern: /\b(amsterdam|netherlands)\b/i },
+  { timeZone: "Europe/Madrid", pattern: /\b(madrid|barcelona|spain)\b/i },
+  { timeZone: "Asia/Tokyo", pattern: /\b(tokyo|japan)\b/i },
+  { timeZone: "Asia/Seoul", pattern: /\b(seoul|korea)\b/i },
+  { timeZone: "Australia/Sydney", pattern: /\b(sydney|melbourne|australia)\b/i }
+];
 const TRIP_STATUS_OPTIONS = [
   { value: "planning", label: "Planning" },
   { value: "booked", label: "Booked" },
@@ -81,6 +137,10 @@ export const travelWidgetDefinition = {
     return [TRAVEL_CATEGORY];
   },
 
+  ensureTasks({ widget, store, helpers }) {
+    syncTravelOwnedTasks(widget, store, helpers);
+  },
+
   render({ widget, tasks, escapeHtml }) {
     const trips = normalizeTrips(widget.data?.trips);
     const settings = normalizeTravelSettings(widget.settings);
@@ -116,7 +176,7 @@ export const travelWidgetDefinition = {
         <button type="button" class="ghost-button" data-widget-action="travel-new-trip">New trip</button>
         <button type="button" class="ghost-button" data-widget-action="open-widget-detail">Open panel</button>
       </div>
-      <p class="sync-status">Travel Buddy tasks will surface here once itinerary task generation is wired in. Current open travel tasks: ${openTravelTaskCount}.</p>
+      <p class="sync-status">Flight check-in tasks surface here automatically. Open travel tasks: ${openTravelTaskCount}. Broader itinerary task generation is still coming.</p>
     `;
   },
 
@@ -275,7 +335,7 @@ export const travelWidgetDefinition = {
       if (addTemplateItemButton) {
         const list = container.querySelector("[data-travel-template-item-list]");
         if (list) {
-          list.insertAdjacentHTML("beforeend", renderTravelTemplateItemRow({ label: "", quantity: 1 }, helpers.createId));
+          list.insertAdjacentHTML("beforeend", renderTravelTemplateItemRow({ label: "", quantity: 1 }, helpers.createId(), helpers.escapeHtml || fallbackEscapeHtml));
         }
         return;
       }
@@ -291,6 +351,7 @@ export const travelWidgetDefinition = {
         const nextTrip = createEmptyTrip(helpers.createId, Date.now(), helpers.todayString());
         widget.data.trips = [...normalizeTrips(widget.data?.trips), nextTrip].sort(compareTripDisplay);
         widget.updatedAt = Date.now();
+        syncTravelOwnedTasks(widget, helpers.getStore(), helpers);
         setTravelDetailTab(widget.id, `trip:${nextTrip.id}`, widget.data.trips);
         helpers.persistStore();
         helpers.renderAll();
@@ -316,6 +377,7 @@ export const travelWidgetDefinition = {
           return;
         }
         widget.updatedAt = Date.now();
+        syncTravelOwnedTasks(widget, helpers.getStore(), helpers);
         setTravelDetailTab(widget.id, "overview", widget.data.trips);
         helpers.persistStore();
         helpers.renderAll();
@@ -442,6 +504,7 @@ export const travelWidgetDefinition = {
           return;
         }
         widget.updatedAt = now;
+        syncTravelOwnedTasks(widget, helpers.getStore(), helpers);
         helpers.persistStore();
         helpers.renderAll();
         helpers.setSyncStatus(`Applied ${template.name} to ${updatedTrip.name}.`, "success");
@@ -594,6 +657,7 @@ export const travelWidgetDefinition = {
         };
         widget.data.trips = [...normalizeTrips(widget.data?.trips), trip].sort(compareTripDisplay);
         widget.updatedAt = now;
+        syncTravelOwnedTasks(widget, helpers.getStore(), helpers);
         setTravelDetailTab(widget.id, `trip:${trip.id}`, widget.data.trips);
         helpers.persistStore();
         helpers.renderAll();
@@ -650,6 +714,7 @@ export const travelWidgetDefinition = {
           updatedAt: Date.now()
         };
         widget.updatedAt = Date.now();
+        syncTravelOwnedTasks(widget, helpers.getStore(), helpers);
         helpers.persistStore();
         helpers.renderAll();
         helpers.setSyncStatus("Saved Travel Buddy settings.", "success");
@@ -694,6 +759,7 @@ export const travelWidgetDefinition = {
           return;
         }
         widget.updatedAt = now;
+        syncTravelOwnedTasks(widget, helpers.getStore(), helpers);
         helpers.persistStore();
         helpers.renderAll();
         helpers.setSyncStatus(`Saved ${updatedTrip.name}.`, "success");
@@ -789,6 +855,7 @@ export const travelWidgetDefinition = {
       const nextTrip = createEmptyTrip(helpers.createId, Date.now(), formatTodayLocal());
       widget.data.trips = [...normalizeTrips(widget.data?.trips), nextTrip].sort(compareTripDisplay);
       widget.updatedAt = Date.now();
+      syncTravelOwnedTasks(widget, helpers.getStore(), helpers);
       setTravelDetailTab(widget.id, `trip:${nextTrip.id}`, widget.data.trips);
       helpers.persistStore();
       helpers.openWidgetDetail(widget);
@@ -1330,11 +1397,12 @@ function renderTravelTemplateItemRows(items, escapeHtml) {
 }
 
 function renderTravelTemplateItemRow(item, rowId, escapeHtml) {
+  const safeEscapeHtml = typeof escapeHtml === "function" ? escapeHtml : fallbackEscapeHtml;
   return `
     <div class="travel-template-item-row" data-travel-template-row="${rowId}">
       <label class="quick-add-title">
         <span>Item</span>
-        <input type="text" maxlength="120" value="${escapeHtml(item?.label || "")}" placeholder="Passport" data-travel-template-item-label />
+        <input type="text" maxlength="120" value="${safeEscapeHtml(item?.label || "")}" placeholder="Passport" data-travel-template-item-label />
       </label>
       <label>
         <span>Qty</span>
@@ -1408,6 +1476,78 @@ function normalizeTimeZone(value) {
   } catch {
     return "";
   }
+}
+
+function fallbackEscapeHtml(value) {
+  return String(value || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function inferTravelTimeZone(...values) {
+  for (const value of values) {
+    const explicit = extractExplicitIanaTimeZone(value);
+    if (explicit) {
+      return explicit;
+    }
+  }
+
+  for (const value of values) {
+    const airportTimeZone = inferAirportTimeZone(value);
+    if (airportTimeZone) {
+      return airportTimeZone;
+    }
+  }
+
+  for (const value of values) {
+    const locationTimeZone = inferLocationTimeZone(value);
+    if (locationTimeZone) {
+      return locationTimeZone;
+    }
+  }
+
+  return "";
+}
+
+function extractExplicitIanaTimeZone(value) {
+  const text = normalizeText(value, 240);
+  if (!text) {
+    return "";
+  }
+  const matches = text.match(/[A-Za-z_]+\/[A-Za-z0-9_+-]+/g) || [];
+  for (const match of matches) {
+    const normalized = normalizeTimeZone(match);
+    if (normalized) {
+      return normalized;
+    }
+  }
+  return "";
+}
+
+function inferAirportTimeZone(value) {
+  const text = normalizeText(value, 240).toUpperCase();
+  if (!text) {
+    return "";
+  }
+  const codes = text.match(/\b[A-Z]{3}\b/g) || [];
+  for (const code of codes) {
+    if (TRAVEL_WIDGET_AIRPORT_TIME_ZONES[code]) {
+      return TRAVEL_WIDGET_AIRPORT_TIME_ZONES[code];
+    }
+  }
+  return "";
+}
+
+function inferLocationTimeZone(value) {
+  const text = normalizeText(value, 240);
+  if (!text) {
+    return "";
+  }
+  const match = TRAVEL_LOCATION_TIME_ZONE_HINTS.find((entry) => entry.pattern.test(text));
+  return match?.timeZone || "";
 }
 
 function formatDateTimeLabel(dateString, timeString) {
@@ -1514,6 +1654,319 @@ function toDateTime(dateString, timeString) {
   }
   const parsed = new Date(`${dateString}T${timeString || "12:00"}`);
   return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime();
+}
+
+function zonedDateTimeToTimestamp(dateString, timeString, timeZone) {
+  const normalizedDate = normalizeDateValue(dateString);
+  if (!normalizedDate) {
+    return Number.NaN;
+  }
+  const [year, month, day] = normalizedDate.split("-").map(Number);
+  const [hours, minutes] = normalizeTimeValue(timeString || "") ? String(timeString).split(":").map(Number) : [23, 59];
+  let guess = Date.UTC(year, month - 1, day, hours, minutes, 0);
+
+  for (let index = 0; index < 3; index += 1) {
+    const actual = getZonedParts(new Date(guess), timeZone);
+    const desiredUtc = Date.UTC(year, month - 1, day, hours, minutes, 0);
+    const actualUtc = Date.UTC(actual.year, actual.month - 1, actual.day, actual.hours, actual.minutes, 0);
+    const diff = desiredUtc - actualUtc;
+    if (diff === 0) {
+      break;
+    }
+    guess += diff;
+  }
+
+  return guess;
+}
+
+function getZonedParts(date, timeZone) {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23"
+  });
+  const parts = formatter.formatToParts(date).reduce((result, item) => {
+    if (item.type !== "literal") {
+      result[item.type] = Number(item.value);
+    }
+    return result;
+  }, {});
+  return {
+    year: parts.year || 0,
+    month: parts.month || 1,
+    day: parts.day || 1,
+    hours: parts.hour || 0,
+    minutes: parts.minute || 0
+  };
+}
+
+function formatZonedDateString(timestamp, timeZone) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(new Date(timestamp));
+}
+
+function formatZonedTimeString(timestamp, timeZone) {
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  }).format(new Date(timestamp));
+}
+
+function buildDesiredTravelTasks(widget, helpers) {
+  const settings = normalizeTravelSettings(widget.settings);
+  const desired = [];
+
+  for (const trip of normalizeTrips(widget.data?.trips)) {
+    const tripTasks = buildFlightCheckinTasksForTrip({ widget, trip, settings, helpers });
+    desired.push(...tripTasks);
+  }
+
+  return desired.sort(compareTravelTaskSchedule);
+}
+
+function buildFlightCheckinTasksForTrip({ widget, trip, settings, helpers }) {
+  const tasks = [];
+  const outboundTask = buildFlightCheckinTask({ widget, trip, leg: "outbound", settings, helpers });
+  if (outboundTask) {
+    tasks.push(outboundTask);
+  }
+  const returnTask = buildFlightCheckinTask({ widget, trip, leg: "return", settings, helpers });
+  if (returnTask) {
+    tasks.push(returnTask);
+  }
+  return tasks;
+}
+
+function buildFlightCheckinTask({ widget, trip, leg, settings, helpers }) {
+  const itinerary = normalizeTripItinerary(trip.itinerary);
+  const isOutbound = leg === "outbound";
+  const flightNumber = isOutbound ? itinerary.outboundFlightNumber : itinerary.returnFlightNumber;
+  const departureDate = isOutbound ? itinerary.outboundDate : itinerary.returnDate;
+  const departureTime = isOutbound ? itinerary.outboundTime : itinerary.returnTime;
+  const origin = isOutbound ? itinerary.outboundOrigin : itinerary.returnOrigin;
+  const destination = isOutbound ? itinerary.outboundDestination : itinerary.returnDestination;
+
+  if (!flightNumber || !departureDate || !departureTime) {
+    return null;
+  }
+
+  const stageTimeZone = normalizeTimeZone(
+    isOutbound
+      ? inferTravelTimeZone(
+        settings.homeTimeZone,
+        settings.homeLocation,
+        origin,
+        itinerary.outboundLabel,
+        itinerary.outboundDestination,
+        trip.destination
+      )
+      : inferTravelTimeZone(
+        itinerary.returnOrigin,
+        itinerary.lodgingAddress,
+        itinerary.lodgingName,
+        trip.destination,
+        itinerary.returnLabel,
+        itinerary.returnDestination
+      )
+  ) || normalizeTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone);
+
+  const departureTimestamp = zonedDateTimeToTimestamp(departureDate, departureTime, stageTimeZone);
+  if (!Number.isFinite(departureTimestamp) || departureTimestamp <= Date.now()) {
+    return null;
+  }
+
+  const dueTimestamp = departureTimestamp - 24 * 60 * 60 * 1000;
+  const dueDate = formatZonedDateString(dueTimestamp, stageTimeZone);
+  const dueTime = formatZonedTimeString(dueTimestamp, stageTimeZone);
+  const minutesUntilDeparture = Math.max(0, Math.round((departureTimestamp - dueTimestamp) / 60_000));
+  const travelCategory = helpers.resolveCategorySnapshot("travel");
+  const ownerTaskKey = [
+    "travel-flight-checkin",
+    trip.id,
+    leg,
+    flightNumber,
+    departureDate,
+    departureTime,
+    stageTimeZone
+  ].join(":");
+  const now = Date.now();
+
+  return {
+    id: helpers.createId(),
+    templateId: "",
+    occurrenceIndex: 0,
+    name: `${trip.name}: check in to ${flightNumber}`,
+    details: buildFlightCheckinDetails({
+      trip,
+      leg,
+      flightNumber,
+      origin,
+      destination,
+      departureDate,
+      departureTime,
+      stageTimeZone
+    }),
+    startDate: dueDate,
+    dueDate,
+    timeOfDay: dueTime,
+    lateGraceMinutes: minutesUntilDeparture,
+    notBeforeAt: dueTimestamp,
+    pointsValue: 1,
+    pointsEntryId: "",
+    length: "very-short",
+    categoryKey: travelCategory.key,
+    categoryLabel: travelCategory.label,
+    categoryColor: travelCategory.color,
+    importance: "high",
+    status: "open",
+    createdAt: now,
+    updatedAt: now,
+    ownerWidgetId: widget.id,
+    ownerWidgetType: widget.type,
+    ownerTaskKey,
+    widgetTaskKind: "flight-checkin",
+    widgetTaskMeta: {
+      tripId: trip.id,
+      leg,
+      flightNumber,
+      origin,
+      destination,
+      departureDate,
+      departureTime,
+      timeZone: stageTimeZone,
+      reminderDefaults: {
+        enabled: true,
+        dueSoonMinutes: 15,
+        overdueMinutes: minutesUntilDeparture
+      }
+    },
+    reminders: {
+      enabled: true,
+      dueSoonMinutes: 15,
+      overdueMinutes: minutesUntilDeparture
+    },
+    linkedSeries: {},
+    sequenceDependencyId: "",
+    widgetCompletion: {
+      mechanism: "",
+      lockout: "none"
+    },
+    skipRule: {
+      type: "after-due-minutes",
+      graceMinutes: minutesUntilDeparture
+    },
+    dependencies: [],
+    recurrence: { type: "none" },
+    history: []
+  };
+}
+
+function buildFlightCheckinDetails({ trip, leg, flightNumber, origin, destination, departureDate, departureTime, stageTimeZone }) {
+  const parts = [
+    `Created by Travel Buddy for ${trip.name}.`,
+    `Check in to ${flightNumber} 24 hours before departure.`,
+    `Leg: ${leg === "outbound" ? "Outbound" : "Return"}.`
+  ];
+  if (origin || destination) {
+    parts.push(`Route: ${origin || "origin TBD"} to ${destination || "destination TBD"}.`);
+  }
+  parts.push(`Departure: ${formatDateTimeLabel(departureDate, departureTime)} (${stageTimeZone}).`);
+  return parts.join(" ");
+}
+
+function compareTravelTaskSchedule(left, right) {
+  const leftSchedule = `${left.dueDate || left.startDate || ""}T${left.timeOfDay || "23:59"}`;
+  const rightSchedule = `${right.dueDate || right.startDate || ""}T${right.timeOfDay || "23:59"}`;
+  if (leftSchedule !== rightSchedule) {
+    return leftSchedule.localeCompare(rightSchedule);
+  }
+  return String(left.ownerTaskKey || "").localeCompare(String(right.ownerTaskKey || ""));
+}
+
+function syncTravelOwnedTasks(widget, store, helpers) {
+  if (!Array.isArray(store?.tasks)) {
+    return;
+  }
+
+  const desiredTasks = buildDesiredTravelTasks(widget, helpers);
+  const existingTasks = store.tasks.filter((task) => (
+    task.ownerWidgetId === widget.id
+    && task.ownerWidgetType === TRAVEL_WIDGET_TYPE
+    && task.widgetTaskKind === "flight-checkin"
+    && !task.templateId
+    && !task.archived
+  ));
+  const matchedTaskIds = new Set();
+  const removeTaskIds = new Set();
+
+  for (const desired of desiredTasks) {
+    const existing = existingTasks.find((task) => task.ownerTaskKey === desired.ownerTaskKey && !matchedTaskIds.has(task.id));
+    if (!existing) {
+      store.tasks.unshift(desired);
+      continue;
+    }
+    matchedTaskIds.add(existing.id);
+    if (!travelOwnedTaskChanged(existing, desired)) {
+      continue;
+    }
+    Object.assign(existing, {
+      ...desired,
+      id: existing.id,
+      createdAt: existing.createdAt,
+      status: existing.status,
+      history: Array.isArray(existing.history) ? existing.history : [],
+      pointsEntryId: existing.pointsEntryId || ""
+    });
+  }
+
+  for (const existing of existingTasks) {
+    if (matchedTaskIds.has(existing.id)) {
+      continue;
+    }
+    if (existing.status === "open" && (!Array.isArray(existing.history) || existing.history.length === 0)) {
+      removeTaskIds.add(existing.id);
+      continue;
+    }
+    existing.archived = true;
+    existing.updatedAt = Date.now();
+  }
+
+  if (removeTaskIds.size > 0) {
+    store.tasks = store.tasks.filter((task) => !removeTaskIds.has(task.id));
+  }
+}
+
+function travelOwnedTaskChanged(existing, desired) {
+  return (
+    existing.name !== desired.name
+    || existing.details !== desired.details
+    || existing.startDate !== desired.startDate
+    || existing.dueDate !== desired.dueDate
+    || existing.timeOfDay !== desired.timeOfDay
+    || existing.lateGraceMinutes !== desired.lateGraceMinutes
+    || existing.notBeforeAt !== desired.notBeforeAt
+    || existing.pointsValue !== desired.pointsValue
+    || existing.length !== desired.length
+    || existing.categoryKey !== desired.categoryKey
+    || existing.categoryLabel !== desired.categoryLabel
+    || existing.categoryColor !== desired.categoryColor
+    || existing.importance !== desired.importance
+    || existing.ownerTaskKey !== desired.ownerTaskKey
+    || existing.widgetTaskKind !== desired.widgetTaskKind
+    || JSON.stringify(existing.widgetTaskMeta || {}) !== JSON.stringify(desired.widgetTaskMeta || {})
+    || JSON.stringify(existing.reminders || {}) !== JSON.stringify(desired.reminders || {})
+    || JSON.stringify(existing.skipRule || {}) !== JSON.stringify(desired.skipRule || {})
+  );
 }
 
 function splitTemplateLines(value) {

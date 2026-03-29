@@ -397,19 +397,21 @@ function getReminderTaskDueTimestamp(task, timeZone) {
   if (!dueDate) {
     return Number.NaN;
   }
-  return zonedDateTimeToTimestamp(dueDate, task?.timeOfDay || "23:59", timeZone);
+  const taskTimeZone = getReminderTaskTimeZone(task, timeZone);
+  return zonedDateTimeToTimestamp(dueDate, task?.timeOfDay || "23:59", taskTimeZone);
 }
 
 function buildReminderPreviewItem(task, timeZone) {
   const dueDate = task?.dueDate || task?.startDate || "";
   const timeOfDay = task?.timeOfDay || "23:59";
-  const dueTimestamp = zonedDateTimeToTimestamp(dueDate, timeOfDay, timeZone);
+  const taskTimeZone = getReminderTaskTimeZone(task, timeZone);
+  const dueTimestamp = zonedDateTimeToTimestamp(dueDate, timeOfDay, taskTimeZone);
   const dueCopy = Number.isFinite(dueTimestamp)
-    ? formatDateTimeInTimeZone(dueTimestamp, timeZone)
+    ? formatDateTimeInTimeZone(dueTimestamp, taskTimeZone)
     : `${dueDate} ${timeOfDay}`.trim();
   const status = task?.status === "done" ? "completed" : (task?.status === "skipped" ? "skipped" : "open");
   return {
-    label: `${formatTaskDisplayName(task)} · Due ${dueCopy}`,
+    label: `${formatTaskDisplayName(task)} · Due ${dueCopy}${taskTimeZone !== timeZone ? ` (${taskTimeZone})` : ""}`,
     status
   };
 }
@@ -420,7 +422,10 @@ function collectDailyAgendaCandidates(tasks, currentDate, timeZone) {
       if (!task || task.archived) {
         return false;
       }
-      const dueDate = task?.dueDate || task?.startDate || "";
+      const dueTimestamp = getReminderTaskDueTimestamp(task, timeZone);
+      const dueDate = Number.isFinite(dueTimestamp)
+        ? getZonedDateString(new Date(dueTimestamp), timeZone)
+        : (task?.dueDate || task?.startDate || "");
       if (dueDate !== currentDate) {
         return false;
       }
@@ -431,6 +436,19 @@ function collectDailyAgendaCandidates(tasks, currentDate, timeZone) {
       task,
       dueTimestamp: getReminderTaskDueTimestamp(task, timeZone)
     }));
+}
+
+function getReminderTaskTimeZone(task, fallbackTimeZone) {
+  const candidate = typeof task?.widgetTaskMeta?.timeZone === "string" ? task.widgetTaskMeta.timeZone.trim() : "";
+  if (!candidate) {
+    return fallbackTimeZone;
+  }
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: candidate }).format(new Date());
+    return candidate;
+  } catch {
+    return fallbackTimeZone;
+  }
 }
 
 function renderReminderHtmlItem(item) {
