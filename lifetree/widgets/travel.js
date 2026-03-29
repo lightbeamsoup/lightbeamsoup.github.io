@@ -67,6 +67,7 @@ const TRIP_STATUS_OPTIONS = [
   { value: "active", label: "Active" },
   { value: "complete", label: "Complete" }
 ];
+const TRIP_PRESET_STATUS_OPTIONS = ["planning", "booked"];
 const travelWidgetUiState = new Map();
 
 export const travelWidgetDefinition = {
@@ -138,6 +139,7 @@ export const travelWidgetDefinition = {
   },
 
   ensureTasks({ widget, store, helpers }) {
+    syncTravelTripLifecycle(widget);
     syncTravelOwnedTasks(widget, store, helpers);
   },
 
@@ -346,10 +348,32 @@ export const travelWidgetDefinition = {
         return;
       }
 
+      const addCustomTaskButton = event.target.closest("[data-travel-add-custom-task]");
+      if (addCustomTaskButton) {
+        const list = container.querySelector("[data-travel-custom-task-list]");
+        if (list) {
+          list.querySelector(".empty-state")?.remove();
+          list.insertAdjacentHTML("beforeend", renderTravelCustomTaskRow({ name: "", details: "", offsetMinutes: 0 }, null, helpers.escapeHtml || fallbackEscapeHtml));
+        }
+        return;
+      }
+
+      const removeCustomTaskButton = event.target.closest("[data-travel-remove-custom-task]");
+      if (removeCustomTaskButton) {
+        const row = removeCustomTaskButton.closest(".travel-custom-task-row");
+        const list = row?.parentElement;
+        row?.remove();
+        if (list && !list.querySelector(".travel-custom-task-row")) {
+          list.innerHTML = `<p class="empty-state">No itinerary tasks yet. Add things like booking a ride or printing boarding passes.</p>`;
+        }
+        return;
+      }
+
       const newTripButton = event.target.closest("[data-travel-new-trip]");
       if (newTripButton) {
         const nextTrip = createEmptyTrip(helpers.createId, Date.now(), helpers.todayString());
         widget.data.trips = [...normalizeTrips(widget.data?.trips), nextTrip].sort(compareTripDisplay);
+        syncTravelTripLifecycle(widget);
         widget.updatedAt = Date.now();
         syncTravelOwnedTasks(widget, helpers.getStore(), helpers);
         setTravelDetailTab(widget.id, `trip:${nextTrip.id}`, widget.data.trips);
@@ -376,12 +400,59 @@ export const travelWidgetDefinition = {
           helpers.setSyncStatus("That trip could not be found.", "error");
           return;
         }
+        syncTravelTripLifecycle(widget);
         widget.updatedAt = Date.now();
         syncTravelOwnedTasks(widget, helpers.getStore(), helpers);
         setTravelDetailTab(widget.id, "overview", widget.data.trips);
         helpers.persistStore();
         helpers.renderAll();
         helpers.setSyncStatus("Removed that trip.", "info");
+        return;
+      }
+
+      const startTripButton = event.target.closest("[data-travel-start-trip]");
+      if (startTripButton) {
+        const tripId = startTripButton.getAttribute("data-trip-id") || "";
+        const now = Date.now();
+        const updatedTrip = updateTripById(widget, tripId, (trip) => ({
+          ...trip,
+          status: "active",
+          statusOverride: "active",
+          updatedAt: now
+        }));
+        if (!updatedTrip) {
+          helpers.setSyncStatus("That trip could not be found.", "error");
+          return;
+        }
+        syncTravelTripLifecycle(widget);
+        widget.updatedAt = now;
+        syncTravelOwnedTasks(widget, helpers.getStore(), helpers);
+        helpers.persistStore();
+        helpers.renderAll();
+        helpers.setSyncStatus(`Started ${updatedTrip.name}.`, "success");
+        return;
+      }
+
+      const endTripButton = event.target.closest("[data-travel-end-trip]");
+      if (endTripButton) {
+        const tripId = endTripButton.getAttribute("data-trip-id") || "";
+        const now = Date.now();
+        const updatedTrip = updateTripById(widget, tripId, (trip) => ({
+          ...trip,
+          status: "complete",
+          statusOverride: "complete",
+          updatedAt: now
+        }));
+        if (!updatedTrip) {
+          helpers.setSyncStatus("That trip could not be found.", "error");
+          return;
+        }
+        syncTravelTripLifecycle(widget);
+        widget.updatedAt = now;
+        syncTravelOwnedTasks(widget, helpers.getStore(), helpers);
+        helpers.persistStore();
+        helpers.renderAll();
+        helpers.setSyncStatus(`Ended ${updatedTrip.name}.`, "info");
         return;
       }
 
@@ -561,7 +632,7 @@ export const travelWidgetDefinition = {
           destination: template.destination || trip.destination,
           startDate: template.startDate || trip.startDate,
           endDate: template.endDate || trip.endDate,
-          itinerary: normalizeTripItinerary(template.itinerary),
+          itinerary: normalizeTripItinerary(template.itinerary, helpers.createId),
           packingList: {
             items: template.packingItems.map((item) => ({
               id: helpers.createId(),
@@ -579,7 +650,9 @@ export const travelWidgetDefinition = {
           helpers.setSyncStatus("That trip could not be found.", "error");
           return;
         }
+        syncTravelTripLifecycle(widget);
         widget.updatedAt = now;
+        syncTravelOwnedTasks(widget, helpers.getStore(), helpers);
         helpers.persistStore();
         helpers.renderAll();
         helpers.setSyncStatus(`Applied ${template.name} to ${updatedTrip.name}.`, "success");
@@ -605,7 +678,7 @@ export const travelWidgetDefinition = {
             destination: trip.destination,
             startDate: trip.startDate,
             endDate: trip.endDate,
-            itinerary: normalizeTripItinerary(trip.itinerary),
+            itinerary: normalizeTripItinerary(trip.itinerary, helpers.createId),
             packingItems: trip.packingList.items.map((item) => ({
               id: helpers.createId(),
               label: item.label,
@@ -638,9 +711,11 @@ export const travelWidgetDefinition = {
           name: template.name,
           destination: template.destination,
           status: "planning",
+          statusPreset: "planning",
+          statusOverride: "",
           startDate: template.startDate,
           endDate: template.endDate,
-          itinerary: normalizeTripItinerary(template.itinerary),
+          itinerary: normalizeTripItinerary(template.itinerary, helpers.createId),
           packingList: {
             items: template.packingItems.map((item) => ({
               id: helpers.createId(),
@@ -656,6 +731,7 @@ export const travelWidgetDefinition = {
           updatedAt: now
         };
         widget.data.trips = [...normalizeTrips(widget.data?.trips), trip].sort(compareTripDisplay);
+        syncTravelTripLifecycle(widget);
         widget.updatedAt = now;
         syncTravelOwnedTasks(widget, helpers.getStore(), helpers);
         setTravelDetailTab(widget.id, `trip:${trip.id}`, widget.data.trips);
@@ -713,6 +789,7 @@ export const travelWidgetDefinition = {
           homeTimeZone,
           updatedAt: Date.now()
         };
+        syncTravelTripLifecycle(widget);
         widget.updatedAt = Date.now();
         syncTravelOwnedTasks(widget, helpers.getStore(), helpers);
         helpers.persistStore();
@@ -726,11 +803,33 @@ export const travelWidgetDefinition = {
         event.preventDefault();
         const tripId = tripForm.getAttribute("data-trip-id") || "";
         const now = Date.now();
+        const selectedStatus = normalizeTripStatus(tripForm.querySelector("[data-travel-status]")?.value);
+        const outboundDate = normalizeDateValue(tripForm.querySelector("[data-travel-outbound-date]")?.value);
+        const outboundTime = normalizeTimeValue(tripForm.querySelector("[data-travel-outbound-time]")?.value);
+        const tripTaskEntries = collectTripCustomTasks({
+          form: tripForm,
+          createId: helpers.createId,
+          settings: normalizeTravelSettings(widget.settings),
+          outboundDate,
+          outboundTime,
+          outboundOrigin: normalizeText(tripForm.querySelector("[data-travel-outbound-origin]")?.value, 120),
+          outboundLabel: normalizeText(tripForm.querySelector("[data-travel-outbound-label]")?.value, 80),
+          outboundDestination: normalizeText(tripForm.querySelector("[data-travel-outbound-destination]")?.value, 120),
+          tripDestination: normalizeText(tripForm.querySelector("[data-travel-destination]")?.value, 120)
+        });
+        if (tripTaskEntries.error) {
+          helpers.setSyncStatus(tripTaskEntries.error, "error");
+          return;
+        }
         const updatedTrip = updateTripById(widget, tripId, (trip) => ({
           ...trip,
           name: normalizeText(tripForm.querySelector("[data-travel-name]")?.value, 80) || "Trip",
           destination: normalizeText(tripForm.querySelector("[data-travel-destination]")?.value, 120),
-          status: normalizeTripStatus(tripForm.querySelector("[data-travel-status]")?.value),
+          status: selectedStatus,
+          statusPreset: selectedStatus === "planning" || selectedStatus === "booked"
+            ? selectedStatus
+            : normalizeTripStatusPreset(trip.statusPreset || trip.status),
+          statusOverride: selectedStatus === "active" || selectedStatus === "complete" ? selectedStatus : "",
           startDate: normalizeDateValue(tripForm.querySelector("[data-travel-start-date]")?.value),
           endDate: normalizeDateValue(tripForm.querySelector("[data-travel-end-date]")?.value),
           itinerary: normalizeTripItinerary({
@@ -750,14 +849,16 @@ export const travelWidgetDefinition = {
             lodgingAddress: tripForm.querySelector("[data-travel-lodging-address]")?.value,
             checkInDate: tripForm.querySelector("[data-travel-checkin-date]")?.value,
             checkOutDate: tripForm.querySelector("[data-travel-checkout-date]")?.value,
-            notes: tripForm.querySelector("[data-travel-notes]")?.value
-          }),
+            notes: tripForm.querySelector("[data-travel-notes]")?.value,
+            customTasks: tripTaskEntries.items
+          }, helpers.createId),
           updatedAt: now
         }));
         if (!updatedTrip) {
           helpers.setSyncStatus("That trip could not be found.", "error");
           return;
         }
+        syncTravelTripLifecycle(widget);
         widget.updatedAt = now;
         syncTravelOwnedTasks(widget, helpers.getStore(), helpers);
         helpers.persistStore();
@@ -854,6 +955,7 @@ export const travelWidgetDefinition = {
     if (action === "travel-new-trip") {
       const nextTrip = createEmptyTrip(helpers.createId, Date.now(), formatTodayLocal());
       widget.data.trips = [...normalizeTrips(widget.data?.trips), nextTrip].sort(compareTripDisplay);
+      syncTravelTripLifecycle(widget);
       widget.updatedAt = Date.now();
       syncTravelOwnedTasks(widget, helpers.getStore(), helpers);
       setTravelDetailTab(widget.id, `trip:${nextTrip.id}`, widget.data.trips);
@@ -890,14 +992,17 @@ function normalizeTrip(value, createId) {
     return null;
   }
   const now = typeof value.updatedAt === "number" ? value.updatedAt : Date.now();
+  const rawStatus = normalizeTripStatus(value.status);
   return {
     id: typeof value.id === "string" && value.id ? value.id : createId(),
     name: normalizeText(value.name, 80) || "Trip",
     destination: normalizeText(value.destination, 120),
-    status: normalizeTripStatus(value.status),
+    status: rawStatus,
+    statusPreset: normalizeTripStatusPreset(value.statusPreset || (rawStatus === "planning" || rawStatus === "booked" ? rawStatus : "booked")),
+    statusOverride: normalizeTripStatusOverride(value.statusOverride || (rawStatus === "active" ? "active" : rawStatus === "complete" ? "complete" : "")),
     startDate: normalizeDateValue(value.startDate),
     endDate: normalizeDateValue(value.endDate),
-    itinerary: normalizeTripItinerary(value.itinerary),
+    itinerary: normalizeTripItinerary(value.itinerary, createId),
     packingList: {
       items: normalizePackingItems(value.packingList?.items, createId),
       updatedAt: typeof value.packingList?.updatedAt === "number" ? value.packingList.updatedAt : now
@@ -915,7 +1020,7 @@ function normalizeTravelSettings(value) {
   };
 }
 
-function normalizeTripItinerary(value) {
+function normalizeTripItinerary(value, createId = () => `travel-custom-task-${Math.random()}`) {
   return {
     outboundLabel: normalizeText(value?.outboundLabel, 80),
     outboundOrigin: normalizeText(value?.outboundOrigin, 120),
@@ -933,7 +1038,8 @@ function normalizeTripItinerary(value) {
     lodgingAddress: normalizeText(value?.lodgingAddress, 240),
     checkInDate: normalizeDateValue(value?.checkInDate),
     checkOutDate: normalizeDateValue(value?.checkOutDate),
-    notes: normalizeLongText(value?.notes, 2000)
+    notes: normalizeLongText(value?.notes, 2000),
+    customTasks: normalizeTravelCustomTasks(value?.customTasks, createId)
   };
 }
 
@@ -1001,7 +1107,7 @@ function normalizeItineraryTemplates(value, createId = () => `itinerary-template
         destination: normalizeText(template.destination, 120),
         startDate: normalizeDateValue(template.startDate),
         endDate: normalizeDateValue(template.endDate),
-        itinerary: normalizeTripItinerary(template.itinerary),
+        itinerary: normalizeTripItinerary(template.itinerary, createId),
         packingItems: normalizePackingItems(template.packingItems, createId),
         createdAt: typeof template.createdAt === "number" ? template.createdAt : now,
         updatedAt: now
@@ -1017,9 +1123,11 @@ function createEmptyTrip(createId, now, todayString) {
     name: "New trip",
     destination: "",
     status: "planning",
+    statusPreset: "planning",
+    statusOverride: "",
     startDate: todayString,
     endDate: todayString,
-    itinerary: normalizeTripItinerary({}),
+    itinerary: normalizeTripItinerary({}, createId),
     packingList: {
       items: [],
       updatedAt: now
@@ -1042,10 +1150,129 @@ function updateTripById(widget, tripId, updater) {
 }
 
 function getUpcomingTrips(trips) {
-  const today = formatTodayLocal();
   return normalizeTrips(trips)
-    .filter((trip) => trip.status !== "complete" || (trip.endDate && trip.endDate >= today))
+    .filter((trip) => trip.status !== "complete")
     .sort(compareTripDisplay);
+}
+
+function syncTravelTripLifecycle(widget) {
+  const trips = normalizeTrips(widget.data?.trips);
+  if (trips.length === 0) {
+    widget.data.trips = [];
+    return;
+  }
+
+  const settings = normalizeTravelSettings(widget.settings);
+  const now = Date.now();
+  const candidates = [];
+  let changed = false;
+
+  for (const trip of trips) {
+    const lifecycle = getTripLifecycle(trip, settings, now);
+    if (lifecycle.activeCandidate) {
+      candidates.push({ trip, lifecycle });
+    }
+  }
+
+  const selectedActiveId = chooseActiveTripId(candidates, now);
+  for (const trip of trips) {
+    const lifecycle = getTripLifecycle(trip, settings, now);
+    const previousStatus = trip.status;
+    const previousOverride = trip.statusOverride;
+    let nextOverride = trip.statusOverride;
+    let nextStatus = trip.statusPreset;
+
+    if (nextOverride === "complete" || lifecycle.ended) {
+      nextStatus = "complete";
+      if (nextOverride === "active" && lifecycle.ended) {
+        nextOverride = "";
+      }
+    } else if (selectedActiveId && trip.id === selectedActiveId) {
+      nextStatus = "active";
+    } else if (nextOverride === "active") {
+      nextOverride = "";
+      nextStatus = trip.statusPreset;
+    } else {
+      nextStatus = trip.statusPreset;
+    }
+
+    trip.statusOverride = nextOverride;
+    trip.status = nextStatus;
+    if (trip.status !== previousStatus || trip.statusOverride !== previousOverride) {
+      trip.updatedAt = now;
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    widget.updatedAt = now;
+  }
+  widget.data.trips = trips.sort(compareTripDisplay);
+}
+
+function chooseActiveTripId(candidates, now) {
+  if (!Array.isArray(candidates) || candidates.length === 0) {
+    return "";
+  }
+
+  const sorted = [...candidates].sort((left, right) => compareActiveTripCandidates(left, right, now));
+  return sorted[0]?.trip?.id || "";
+}
+
+function compareActiveTripCandidates(left, right, now) {
+  const leftManual = left.trip.statusOverride === "active";
+  const rightManual = right.trip.statusOverride === "active";
+  if (leftManual !== rightManual) {
+    return leftManual ? -1 : 1;
+  }
+
+  const leftInProgress = left.lifecycle.departureTimestamp > 0 && now >= left.lifecycle.departureTimestamp;
+  const rightInProgress = right.lifecycle.departureTimestamp > 0 && now >= right.lifecycle.departureTimestamp;
+  if (leftInProgress !== rightInProgress) {
+    return leftInProgress ? -1 : 1;
+  }
+
+  if (leftInProgress && rightInProgress) {
+    return right.lifecycle.departureTimestamp - left.lifecycle.departureTimestamp;
+  }
+
+  if (left.lifecycle.departureTimestamp !== right.lifecycle.departureTimestamp) {
+    return left.lifecycle.departureTimestamp - right.lifecycle.departureTimestamp;
+  }
+
+  return (right.trip.updatedAt || 0) - (left.trip.updatedAt || 0);
+}
+
+function getTripLifecycle(trip, settings, now = Date.now()) {
+  const departureTimestamp = resolveTravelDepartureTimestamp(trip, settings);
+  const returnTimestamp = resolveTravelReturnTimestamp(trip, settings);
+  const activeStart = Number.isFinite(departureTimestamp) && departureTimestamp > 0
+    ? departureTimestamp - 24 * 60 * 60 * 1000
+    : 0;
+  const activeEnd = Number.isFinite(returnTimestamp) && returnTimestamp > 0
+    ? returnTimestamp + 24 * 60 * 60 * 1000
+    : 0;
+  const autoActive = activeStart > 0 && now >= activeStart && (activeEnd === 0 || now <= activeEnd);
+  const ended = activeEnd > 0 && now > activeEnd;
+  const defaultStatus = trip.statusOverride === "complete"
+    ? "complete"
+    : trip.statusOverride === "active"
+      ? "active"
+      : ended
+        ? "complete"
+        : autoActive
+          ? "active"
+          : trip.statusPreset;
+  return {
+    departureTimestamp,
+    returnTimestamp,
+    activeStart,
+    activeEnd,
+    autoActive,
+    ended,
+    activeCandidate: trip.statusOverride === "active" || autoActive,
+    defaultStatus
+  };
 }
 
 function compareTripDisplay(left, right) {
@@ -1140,6 +1367,7 @@ function renderTravelTripPanel(trip, packingTemplates, itineraryTemplates, setti
           <p class="sync-status">${escapeHtml(describeTripMilestone(trip))}</p>
         </div>
         <div class="widget-actions workout-inline-actions">
+          <button type="button" class="ghost-button" data-travel-${trip.status === "active" ? "end" : "start"}-trip data-trip-id="${trip.id}">${trip.status === "active" ? "End trip" : "Start trip"}</button>
           <button type="button" class="ghost-button" data-travel-delete-trip data-trip-id="${trip.id}">Delete trip</button>
         </div>
       </div>
@@ -1254,6 +1482,17 @@ function renderTravelTripPanel(trip, packingTemplates, itineraryTemplates, setti
               <span>Trip notes</span>
               <textarea rows="5" data-travel-notes>${escapeHtml(trip.itinerary.notes)}</textarea>
             </label>
+          </section>
+
+          <section class="workout-recurrence-panel">
+            <h4>Itinerary tasks</h4>
+            <p class="sync-status">These tasks stay anchored to outbound departure time. Save the trip after editing to repair any missing generated tasks.</p>
+            <div class="travel-custom-task-list" data-travel-custom-task-list>
+              ${renderTravelCustomTaskRows(trip, settings, escapeHtml)}
+            </div>
+            <div class="widget-actions workout-inline-actions">
+              <button type="button" class="ghost-button" data-travel-add-custom-task data-trip-id="${trip.id}">Add itinerary task</button>
+            </div>
           </section>
         </div>
 
@@ -1413,6 +1652,41 @@ function renderTravelTemplateItemRow(item, rowId, escapeHtml) {
   `;
 }
 
+function renderTravelCustomTaskRows(trip, settings, escapeHtml) {
+  const items = Array.isArray(trip?.itinerary?.customTasks) ? trip.itinerary.customTasks : [];
+  if (items.length === 0) {
+    return `<p class="empty-state">No itinerary tasks yet. Add things like booking a ride or printing boarding passes.</p>`;
+  }
+  return items.map((item) => renderTravelCustomTaskRow(item, trip, escapeHtml, settings)).join("");
+}
+
+function renderTravelCustomTaskRow(item, trip, escapeHtml, settings) {
+  const safeEscapeHtml = typeof escapeHtml === "function" ? escapeHtml : fallbackEscapeHtml;
+  const schedule = trip ? describeTravelCustomTaskSchedule(item, trip, settings) : { dueDate: "", dueTime: "", relativeLabel: "" };
+  return `
+    <div class="travel-custom-task-row" data-travel-custom-task-row="${safeEscapeHtml(item?.id || "")}">
+      <label class="quick-add-title">
+        <span>Task</span>
+        <input type="text" maxlength="120" value="${safeEscapeHtml(item?.name || "")}" placeholder="Book airport ride" data-travel-custom-task-name />
+      </label>
+      <label>
+        <span>Due date</span>
+        <input type="date" value="${safeEscapeHtml(schedule.dueDate || "")}" data-travel-custom-task-date />
+      </label>
+      <label>
+        <span>Due time</span>
+        <input type="time" value="${safeEscapeHtml(schedule.dueTime || "")}" data-travel-custom-task-time />
+      </label>
+      <label class="travel-wide-field">
+        <span>Notes</span>
+        <input type="text" maxlength="240" value="${safeEscapeHtml(item?.details || "")}" placeholder="Pickup from hotel lobby" data-travel-custom-task-details />
+      </label>
+      <p class="sync-status">${safeEscapeHtml(schedule.relativeLabel || "Anchor this to outbound departure once the departure date/time is set.")}</p>
+      <button type="button" class="ghost-button" data-travel-remove-custom-task>Remove</button>
+    </div>
+  `;
+}
+
 function describeTemplateSummary(template) {
   const parts = [];
   if (template.itinerary.outboundLabel) {
@@ -1420,6 +1694,9 @@ function describeTemplateSummary(template) {
   }
   if (template.itinerary.lodgingName) {
     parts.push(template.itinerary.lodgingName);
+  }
+  if ((template.itinerary.customTasks || []).length) {
+    parts.push(`${template.itinerary.customTasks.length} itinerary task${template.itinerary.customTasks.length === 1 ? "" : "s"}`);
   }
   if (template.packingItems.length) {
     parts.push(`${template.packingItems.length} packing item${template.packingItems.length === 1 ? "" : "s"}`);
@@ -1476,6 +1753,39 @@ function normalizeTimeZone(value) {
   } catch {
     return "";
   }
+}
+
+function normalizeTripStatusPreset(value) {
+  return TRIP_PRESET_STATUS_OPTIONS.includes(value) ? value : "booked";
+}
+
+function normalizeTripStatusOverride(value) {
+  return value === "active" || value === "complete" ? value : "";
+}
+
+function normalizeTravelCustomTasks(value, createId = () => `travel-custom-task-${Math.random()}`) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((item) => normalizeTravelCustomTask(item, createId))
+    .filter(Boolean)
+    .sort((left, right) => left.offsetMinutes - right.offsetMinutes || left.name.localeCompare(right.name));
+}
+
+function normalizeTravelCustomTask(value, createId) {
+  const name = normalizeText(value?.name || value?.label, 120);
+  if (!name) {
+    return null;
+  }
+  const offsetMinutes = Number(value?.offsetMinutes);
+  return {
+    id: typeof value?.id === "string" && value.id ? value.id : createId(),
+    name,
+    details: normalizeText(value?.details, 240),
+    offsetMinutes: Number.isFinite(offsetMinutes) ? Math.round(offsetMinutes) : 0,
+    updatedAt: typeof value?.updatedAt === "number" ? value.updatedAt : Date.now()
+  };
 }
 
 function fallbackEscapeHtml(value) {
@@ -1722,13 +2032,157 @@ function formatZonedTimeString(timestamp, timeZone) {
   }).format(new Date(timestamp));
 }
 
+function resolveOutboundStageTimeZone(trip, settings) {
+  const itinerary = normalizeTripItinerary(trip?.itinerary);
+  return normalizeTimeZone(
+    inferTravelTimeZone(
+      settings?.homeTimeZone,
+      settings?.homeLocation,
+      itinerary.outboundOrigin,
+      itinerary.outboundLabel,
+      itinerary.outboundDestination,
+      trip?.destination
+    )
+  ) || normalizeTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone);
+}
+
+function resolveReturnStageTimeZone(trip, settings) {
+  const itinerary = normalizeTripItinerary(trip?.itinerary);
+  return normalizeTimeZone(
+    inferTravelTimeZone(
+      itinerary.returnOrigin,
+      itinerary.lodgingAddress,
+      itinerary.lodgingName,
+      trip?.destination,
+      itinerary.returnLabel,
+      itinerary.returnDestination,
+      settings?.homeLocation
+    )
+  ) || normalizeTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone);
+}
+
+function resolveTravelDepartureTimestamp(trip, settings) {
+  const itinerary = normalizeTripItinerary(trip?.itinerary);
+  if (itinerary.outboundDate && itinerary.outboundTime) {
+    return zonedDateTimeToTimestamp(itinerary.outboundDate, itinerary.outboundTime, resolveOutboundStageTimeZone(trip, settings));
+  }
+  if (trip?.startDate) {
+    return zonedDateTimeToTimestamp(trip.startDate, "12:00", resolveOutboundStageTimeZone(trip, settings));
+  }
+  return 0;
+}
+
+function resolveTravelReturnTimestamp(trip, settings) {
+  const itinerary = normalizeTripItinerary(trip?.itinerary);
+  if (itinerary.returnDate && itinerary.returnTime) {
+    return zonedDateTimeToTimestamp(itinerary.returnDate, itinerary.returnTime, resolveReturnStageTimeZone(trip, settings));
+  }
+  if (trip?.endDate) {
+    return zonedDateTimeToTimestamp(trip.endDate, "12:00", resolveReturnStageTimeZone(trip, settings));
+  }
+  return 0;
+}
+
+function describeTravelCustomTaskSchedule(item, trip, settings) {
+  const departureTimestamp = resolveTravelDepartureTimestamp(trip, settings);
+  if (!Number.isFinite(departureTimestamp) || departureTimestamp <= 0) {
+    return {
+      dueDate: "",
+      dueTime: "",
+      relativeLabel: "Set outbound departure date and time to anchor this task."
+    };
+  }
+  const timeZone = resolveOutboundStageTimeZone(trip, settings);
+  const dueTimestamp = departureTimestamp - (Number(item?.offsetMinutes) || 0) * 60_000;
+  return {
+    dueDate: formatZonedDateString(dueTimestamp, timeZone),
+    dueTime: formatZonedTimeString(dueTimestamp, timeZone),
+    relativeLabel: formatTravelOffsetLabel(Number(item?.offsetMinutes) || 0, timeZone)
+  };
+}
+
+function collectTripCustomTasks({
+  form,
+  createId,
+  settings,
+  outboundDate,
+  outboundTime,
+  outboundOrigin,
+  outboundLabel,
+  outboundDestination,
+  tripDestination
+}) {
+  const rows = Array.from(form.querySelectorAll(".travel-custom-task-row"));
+  const items = [];
+  const timeZone = normalizeTimeZone(
+    inferTravelTimeZone(
+      settings?.homeTimeZone,
+      settings?.homeLocation,
+      outboundOrigin,
+      outboundLabel,
+      outboundDestination,
+      tripDestination
+    )
+  ) || normalizeTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  const departureTimestamp = outboundDate && outboundTime
+    ? zonedDateTimeToTimestamp(outboundDate, outboundTime, timeZone)
+    : Number.NaN;
+
+  for (const row of rows) {
+    const name = normalizeText(row.querySelector("[data-travel-custom-task-name]")?.value, 120);
+    const details = normalizeText(row.querySelector("[data-travel-custom-task-details]")?.value, 240);
+    const dueDate = normalizeDateValue(row.querySelector("[data-travel-custom-task-date]")?.value);
+    const dueTime = normalizeTimeValue(row.querySelector("[data-travel-custom-task-time]")?.value || outboundTime);
+    if (!name && !details && !dueDate && !dueTime) {
+      continue;
+    }
+    if (!name) {
+      return { error: "Each itinerary task needs a name.", items: [] };
+    }
+    if (!outboundDate || !outboundTime || !Number.isFinite(departureTimestamp)) {
+      return { error: "Set the outbound departure date and time before saving itinerary tasks.", items: [] };
+    }
+    if (!dueDate || !dueTime) {
+      return { error: `Choose a due date and time for ${name}.`, items: [] };
+    }
+    const dueTimestamp = zonedDateTimeToTimestamp(dueDate, dueTime, timeZone);
+    if (!Number.isFinite(dueTimestamp)) {
+      return { error: `Could not understand the schedule for ${name}.`, items: [] };
+    }
+    items.push({
+      id: row.getAttribute("data-travel-custom-task-row") || createId(),
+      name,
+      details,
+      offsetMinutes: Math.round((departureTimestamp - dueTimestamp) / 60_000),
+      updatedAt: Date.now()
+    });
+  }
+
+  return { error: "", items: normalizeTravelCustomTasks(items, createId) };
+}
+
+function formatTravelOffsetLabel(offsetMinutes, timeZone) {
+  const minutes = Math.abs(Math.round(offsetMinutes || 0));
+  const days = Math.floor(minutes / (24 * 60));
+  const hours = Math.floor((minutes % (24 * 60)) / 60);
+  const remainderMinutes = minutes % 60;
+  const parts = [];
+  if (days) parts.push(`${days}d`);
+  if (hours) parts.push(`${hours}h`);
+  if (remainderMinutes || parts.length === 0) parts.push(`${remainderMinutes}m`);
+  return `${offsetMinutes >= 0 ? parts.join(" ") + " before" : parts.join(" ") + " after"} departure · ${timeZone}`;
+}
+
 function buildDesiredTravelTasks(widget, helpers) {
   const settings = normalizeTravelSettings(widget.settings);
   const desired = [];
 
   for (const trip of normalizeTrips(widget.data?.trips)) {
+    if (trip.status === "complete" || trip.statusOverride === "complete") {
+      continue;
+    }
     const tripTasks = buildFlightCheckinTasksForTrip({ widget, trip, settings, helpers });
-    desired.push(...tripTasks);
+    desired.push(...tripTasks, ...buildItineraryTasksForTrip({ widget, trip, settings, helpers }));
   }
 
   return desired.sort(compareTravelTaskSchedule);
@@ -1760,25 +2214,9 @@ function buildFlightCheckinTask({ widget, trip, leg, settings, helpers }) {
     return null;
   }
 
-  const stageTimeZone = normalizeTimeZone(
-    isOutbound
-      ? inferTravelTimeZone(
-        settings.homeTimeZone,
-        settings.homeLocation,
-        origin,
-        itinerary.outboundLabel,
-        itinerary.outboundDestination,
-        trip.destination
-      )
-      : inferTravelTimeZone(
-        itinerary.returnOrigin,
-        itinerary.lodgingAddress,
-        itinerary.lodgingName,
-        trip.destination,
-        itinerary.returnLabel,
-        itinerary.returnDestination
-      )
-  ) || normalizeTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  const stageTimeZone = isOutbound
+    ? resolveOutboundStageTimeZone(trip, settings)
+    : resolveReturnStageTimeZone(trip, settings);
 
   const departureTimestamp = zonedDateTimeToTimestamp(departureDate, departureTime, stageTimeZone);
   if (!Number.isFinite(departureTimestamp) || departureTimestamp <= Date.now()) {
@@ -1871,6 +2309,87 @@ function buildFlightCheckinTask({ widget, trip, leg, settings, helpers }) {
   };
 }
 
+function buildItineraryTasksForTrip({ widget, trip, settings, helpers }) {
+  const customTasks = normalizeTravelCustomTasks(trip?.itinerary?.customTasks, helpers.createId);
+  if (!customTasks.length) {
+    return [];
+  }
+
+  const departureTimestamp = resolveTravelDepartureTimestamp(trip, settings);
+  if (!Number.isFinite(departureTimestamp) || departureTimestamp <= 0) {
+    return [];
+  }
+  const timeZone = resolveOutboundStageTimeZone(trip, settings);
+  const travelCategory = helpers.resolveCategorySnapshot("travel");
+
+  return customTasks.map((item, index) => {
+    const dueTimestamp = departureTimestamp - item.offsetMinutes * 60_000;
+    const dueDate = formatZonedDateString(dueTimestamp, timeZone);
+    const dueTime = formatZonedTimeString(dueTimestamp, timeZone);
+    const now = Date.now() + index;
+    return {
+      id: helpers.createId(),
+      templateId: "",
+      occurrenceIndex: 0,
+      name: item.name,
+      details: buildTravelItineraryTaskDetails({ trip, item, timeZone }),
+      startDate: dueDate,
+      dueDate,
+      timeOfDay: dueTime,
+      lateGraceMinutes: 15,
+      notBeforeAt: dueTimestamp,
+      pointsValue: 1,
+      pointsEntryId: "",
+      length: "short",
+      categoryKey: travelCategory.key,
+      categoryLabel: travelCategory.label,
+      categoryColor: travelCategory.color,
+      importance: "medium",
+      status: "open",
+      createdAt: now,
+      updatedAt: now,
+      ownerWidgetId: widget.id,
+      ownerWidgetType: widget.type,
+      ownerTaskKey: [
+        "travel-itinerary-task",
+        trip.id,
+        item.id,
+        trip.itinerary.outboundDate || trip.startDate || "",
+        trip.itinerary.outboundTime || "12:00",
+        timeZone
+      ].join(":"),
+      widgetTaskKind: "travel-itinerary-task",
+      widgetTaskMeta: {
+        tripId: trip.id,
+        itineraryTaskId: item.id,
+        offsetMinutes: item.offsetMinutes,
+        timeZone
+      },
+      reminders: {
+        enabled: false,
+        dueSoonMinutes: null,
+        overdueMinutes: null
+      },
+      linkedSeries: {},
+      sequenceDependencyId: "",
+      widgetCompletion: {
+        mechanism: "",
+        lockout: "none"
+      },
+      skipRule: { type: "none" },
+      dependencies: [],
+      recurrence: { type: "none" },
+      history: []
+    };
+  });
+}
+
+function buildTravelItineraryTaskDetails({ trip, item, timeZone }) {
+  const parts = [`Created by Travel Buddy for ${trip.name}.`, item.details || ""].filter(Boolean);
+  parts.push(`${formatTravelOffsetLabel(item.offsetMinutes, timeZone)}.`);
+  return parts.join(" ");
+}
+
 function buildFlightCheckinDetails({ trip, leg, flightNumber, origin, destination, departureDate, departureTime, stageTimeZone }) {
   const parts = [
     `Created by Travel Buddy for ${trip.name}.`,
@@ -1902,7 +2421,7 @@ function syncTravelOwnedTasks(widget, store, helpers) {
   const existingTasks = store.tasks.filter((task) => (
     task.ownerWidgetId === widget.id
     && task.ownerWidgetType === TRAVEL_WIDGET_TYPE
-    && task.widgetTaskKind === "flight-checkin"
+    && (task.widgetTaskKind === "flight-checkin" || task.widgetTaskKind === "travel-itinerary-task")
     && !task.templateId
     && !task.archived
   ));

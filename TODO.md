@@ -68,6 +68,8 @@
 - 2026-03-29: Add flight numbers and richer transit leg details to trip itineraries.
 - 2026-03-29: Add packing-list item quantities and preserve them in saved packing templates and itinerary templates.
 - 2026-03-29: Generate flight check-in tasks 24 hours before departure and make them timezone-aware by trip stage.
+- 2026-03-29: Let trips auto-transition into and out of active status around departure/return while supporting manual start/end controls.
+- 2026-03-29: Add custom itinerary tasks that stay anchored to departure time and carry into saved itinerary templates.
 
 ### Widget Shells And Canopy
 

@@ -78,7 +78,8 @@ body[data-theme="dark"] .sync-meta-card,
 body[data-theme="dark"] .notifications-section,
 body[data-theme="dark"] .notifications-preview-card,
 body[data-theme="dark"] .notifications-preview-meta,
-body[data-theme="dark"] .notifications-history-item {
+body[data-theme="dark"] .notifications-history-item,
+body[data-theme="dark"] .travel-custom-task-row {
   background: rgba(15, 24, 38, 0.9);
   border-color: var(--line);
   box-shadow: var(--shadow);
@@ -2580,11 +2581,32 @@ body.developer-open {
   gap: 10px;
 }
 
+.travel-custom-task-list {
+  display: grid;
+  gap: 12px;
+}
+
 .travel-template-item-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 92px auto;
   gap: 12px;
   align-items: end;
+}
+
+.travel-custom-task-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 146px 118px auto;
+  gap: 12px;
+  align-items: end;
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(37, 50, 67, 0.1);
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.travel-custom-task-row .sync-status {
+  grid-column: 1 / -1;
+  margin: -2px 0 0;
 }
 
 .travel-wide-field,
@@ -4277,7 +4299,8 @@ textarea {
   .travel-inline-form,
   .travel-template-save-grid,
   .travel-template-apply-row,
-  .travel-template-item-row {
+  .travel-template-item-row,
+  .travel-custom-task-row {
     grid-template-columns: 1fr;
   }
 
