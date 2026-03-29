@@ -49,6 +49,59 @@ const DEV_EMAIL = "jbkallman@gmail.com";
 const LIFETREE_APP_URL = "https://www.joshcodes.ai/lifetree";
 const FLIGHTAWARE_AEROAPI_KEY = String(process.env.FLIGHTAWARE_AEROAPI_KEY || "").trim();
 const TRAVEL_WEATHER_CACHE_TTL_MS = 1000 * 60 * 60;
+const US_STATE_NAME_BY_CODE = {
+  AL: "Alabama",
+  AK: "Alaska",
+  AZ: "Arizona",
+  AR: "Arkansas",
+  CA: "California",
+  CO: "Colorado",
+  CT: "Connecticut",
+  DE: "Delaware",
+  FL: "Florida",
+  GA: "Georgia",
+  HI: "Hawaii",
+  ID: "Idaho",
+  IL: "Illinois",
+  IN: "Indiana",
+  IA: "Iowa",
+  KS: "Kansas",
+  KY: "Kentucky",
+  LA: "Louisiana",
+  ME: "Maine",
+  MD: "Maryland",
+  MA: "Massachusetts",
+  MI: "Michigan",
+  MN: "Minnesota",
+  MS: "Mississippi",
+  MO: "Missouri",
+  MT: "Montana",
+  NE: "Nebraska",
+  NV: "Nevada",
+  NH: "New Hampshire",
+  NJ: "New Jersey",
+  NM: "New Mexico",
+  NY: "New York",
+  NC: "North Carolina",
+  ND: "North Dakota",
+  OH: "Ohio",
+  OK: "Oklahoma",
+  OR: "Oregon",
+  PA: "Pennsylvania",
+  RI: "Rhode Island",
+  SC: "South Carolina",
+  SD: "South Dakota",
+  TN: "Tennessee",
+  TX: "Texas",
+  UT: "Utah",
+  VT: "Vermont",
+  VA: "Virginia",
+  WA: "Washington",
+  WV: "West Virginia",
+  WI: "Wisconsin",
+  WY: "Wyoming",
+  DC: "District of Columbia"
+};
 const OAUTH_SCOPES = [
   "openid",
   "email",
@@ -1340,14 +1393,30 @@ function resolveTravelComponentExpiresAt(component, fallback) {
 
 async function fetchTravelWeatherSnapshot(request) {
   const now = Date.now();
-  const geoUrl = new URL("https://geocoding-api.open-meteo.com/v1/search");
-  geoUrl.searchParams.set("name", request.destinationQuery);
-  geoUrl.searchParams.set("count", "1");
-  geoUrl.searchParams.set("language", "en");
-  geoUrl.searchParams.set("format", "json");
-  const geoPayload = await fetchJsonFromUrl(geoUrl);
-  const result = Array.isArray(geoPayload?.results) ? geoPayload.results[0] : null;
-  if (!result?.latitude || !result?.longitude) {
+  const candidateQueries = buildTravelWeatherQueries(request.destinationQuery);
+  let result = null;
+  let selectedQuery = candidateQueries[0] || request.destinationQuery;
+  for (const query of candidateQueries) {
+    const geoUrl = new URL("https://geocoding-api.open-meteo.com/v1/search");
+    geoUrl.searchParams.set("name", query);
+    geoUrl.searchParams.set("count", "1");
+    geoUrl.searchParams.set("language", "en");
+    geoUrl.searchParams.set("format", "json");
+    const geoPayload = await fetchJsonFromUrl(geoUrl);
+    const nextResult = Array.isArray(geoPayload?.results) ? geoPayload.results[0] : null;
+    if (hasValidTravelCoordinates(nextResult)) {
+      result = nextResult;
+      selectedQuery = query;
+      if (query !== request.destinationQuery) {
+        logTravelLive("verbose", "Weather lookup used fallback destination query", {
+          originalQuery: request.destinationQuery,
+          selectedQuery: query
+        });
+      }
+      break;
+    }
+  }
+  if (!hasValidTravelCoordinates(result)) {
     return {
       status: "not-found",
       message: `Could not find weather for ${request.destinationQuery}.`,
@@ -1378,11 +1447,50 @@ async function fetchTravelWeatherSnapshot(request) {
 
   return {
     status: "ok",
-    locationLabel: buildWeatherLocationLabel(result),
+    locationLabel: buildWeatherLocationLabel(result) || selectedQuery,
     days: relevantDays.slice(0, 4),
     fetchedAt: now,
     nextRefreshAt: now + TRAVEL_WEATHER_CACHE_TTL_MS
   };
+}
+
+function buildTravelWeatherQueries(destinationQuery) {
+  const base = sanitizeTravelText(destinationQuery, 160);
+  if (!base) {
+    return [];
+  }
+  const queries = [];
+  const pushQuery = (value) => {
+    const normalized = sanitizeTravelText(value, 160);
+    if (normalized && !queries.includes(normalized)) {
+      queries.push(normalized);
+    }
+  };
+
+  pushQuery(base);
+  const parts = base.split(",").map((part) => sanitizeTravelText(part, 80)).filter(Boolean);
+  if (parts.length >= 2) {
+    const city = parts[0];
+    const stateCode = parts[1].replace(/[^A-Za-z]/g, "").toUpperCase();
+    if (city && US_STATE_NAME_BY_CODE[stateCode]) {
+      pushQuery(`${city}, ${US_STATE_NAME_BY_CODE[stateCode]}`);
+    }
+    if (city) {
+      pushQuery(city);
+    }
+  }
+
+  const stripped = base.replace(/\s+[A-Z]{2}\.?$/, "").trim();
+  if (stripped && stripped !== base) {
+    pushQuery(stripped);
+  }
+  return queries;
+}
+
+function hasValidTravelCoordinates(result) {
+  const latitude = Number(result?.latitude);
+  const longitude = Number(result?.longitude);
+  return Number.isFinite(latitude) && Number.isFinite(longitude);
 }
 
 function buildWeatherDaySnapshots(daily) {
