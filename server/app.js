@@ -47,6 +47,8 @@ const SESSION_COOKIE = "lifetree_session";
 const DRIVE_FILE_NAME = "task-deck-store.json";
 const DEV_EMAIL = "jbkallman@gmail.com";
 const LIFETREE_APP_URL = "https://www.joshcodes.ai/lifetree";
+const AVIATIONSTACK_ACCESS_KEY = String(process.env.AVIATIONSTACK_ACCESS_KEY || "").trim();
+const TRAVEL_LIVE_CACHE_TTL_MS = 1000 * 60 * 15;
 const OAUTH_SCOPES = [
   "openid",
   "email",
@@ -58,6 +60,7 @@ const notificationSchedulerState = {
   inFlight: false,
   timerId: null
 };
+const travelLiveCache = new Map();
 
 const app = express();
 app.set("trust proxy", 1);
@@ -260,6 +263,24 @@ app.post("/api/lifetree/reset", async (req, res) => {
     res.json({ ok: true, cleared: true });
   } catch (error) {
     res.status(401).json({ error: error.message });
+  }
+});
+
+app.post("/api/travel/live", async (req, res) => {
+  try {
+    const trips = normalizeTravelLiveTrips(req.body?.trips);
+    if (trips.length === 0) {
+      res.json({ ok: true, trips: [] });
+      return;
+    }
+
+    const snapshots = await Promise.all(trips.map((trip) => buildTravelLiveSnapshot(trip)));
+    res.json({
+      ok: true,
+      trips: snapshots
+    });
+  } catch (error) {
+    res.status(500).json({ error: String(error?.message || "Travel live lookup failed") });
   }
 });
 
@@ -1116,6 +1137,388 @@ function buildRawEmailMessage({ fromEmail, recipientEmail, subject, html, text }
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
     .replace(/=+$/g, "");
+}
+
+function normalizeTravelLiveTrips(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .slice(0, 3)
+    .map((trip) => normalizeTravelLiveTrip(trip))
+    .filter(Boolean);
+}
+
+function normalizeTravelLiveTrip(value) {
+  const tripId = typeof value?.tripId === "string" ? value.tripId : "";
+  if (!tripId) {
+    return null;
+  }
+
+  const weather = normalizeTravelWeatherRequest(value?.weather);
+  const flight = normalizeTravelFlightRequest(value?.flight);
+  if (!weather && !flight) {
+    return null;
+  }
+
+  return {
+    tripId,
+    weather,
+    flight
+  };
+}
+
+function normalizeTravelWeatherRequest(value) {
+  const destinationQuery = sanitizeTravelText(value?.destinationQuery, 160);
+  if (!destinationQuery) {
+    return null;
+  }
+  return {
+    destinationQuery,
+    startDate: normalizeDateString(value?.startDate),
+    endDate: normalizeDateString(value?.endDate)
+  };
+}
+
+function normalizeTravelFlightRequest(value) {
+  const flightNumber = sanitizeTravelText(value?.flightNumber, 24).toUpperCase();
+  const flightDate = normalizeDateString(value?.flightDate);
+  if (!flightNumber || !flightDate) {
+    return null;
+  }
+  return {
+    leg: sanitizeTravelText(value?.leg, 16).toLowerCase(),
+    flightNumber,
+    flightDate,
+    departureCode: extractAirportCode(value?.departureCode),
+    arrivalCode: extractAirportCode(value?.arrivalCode),
+    displayTimeZone: sanitizeTravelText(value?.displayTimeZone, 80),
+    scheduledDate: normalizeDateString(value?.scheduledDate),
+    scheduledTime: normalizeTimeString(value?.scheduledTime)
+  };
+}
+
+async function buildTravelLiveSnapshot(trip) {
+  const cacheKey = JSON.stringify(trip);
+  const cached = travelLiveCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < TRAVEL_LIVE_CACHE_TTL_MS) {
+    return cached.snapshot;
+  }
+
+  const [weather, flight] = await Promise.all([
+    trip.weather
+      ? fetchTravelWeatherSnapshot(trip.weather).catch(() => ({
+          status: "error",
+          message: "Forecast unavailable right now."
+        }))
+      : Promise.resolve(null),
+    trip.flight
+      ? fetchTravelFlightSnapshot(trip.flight).catch(() => ({
+          status: "error",
+          message: "Live flight status is unavailable right now."
+        }))
+      : Promise.resolve(null)
+  ]);
+
+  const snapshot = {
+    tripId: trip.tripId,
+    status: "ok",
+    weather,
+    flight,
+    fetchedAt: Date.now()
+  };
+  travelLiveCache.set(cacheKey, {
+    at: Date.now(),
+    snapshot
+  });
+  return snapshot;
+}
+
+async function fetchTravelWeatherSnapshot(request) {
+  const geoUrl = new URL("https://geocoding-api.open-meteo.com/v1/search");
+  geoUrl.searchParams.set("name", request.destinationQuery);
+  geoUrl.searchParams.set("count", "1");
+  geoUrl.searchParams.set("language", "en");
+  geoUrl.searchParams.set("format", "json");
+  const geoPayload = await fetchJsonFromUrl(geoUrl);
+  const result = Array.isArray(geoPayload?.results) ? geoPayload.results[0] : null;
+  if (!result?.latitude || !result?.longitude) {
+    return {
+      status: "not-found",
+      message: `Could not find weather for ${request.destinationQuery}.`
+    };
+  }
+
+  const forecastUrl = new URL("https://api.open-meteo.com/v1/forecast");
+  forecastUrl.searchParams.set("latitude", String(result.latitude));
+  forecastUrl.searchParams.set("longitude", String(result.longitude));
+  forecastUrl.searchParams.set("daily", "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max");
+  forecastUrl.searchParams.set("temperature_unit", "fahrenheit");
+  forecastUrl.searchParams.set("timezone", "auto");
+  forecastUrl.searchParams.set("forecast_days", "16");
+  const forecastPayload = await fetchJsonFromUrl(forecastUrl);
+  const days = buildWeatherDaySnapshots(forecastPayload?.daily);
+  const relevantDays = selectRelevantWeatherDays(days, request.startDate, request.endDate);
+  if (relevantDays.length === 0) {
+    return {
+      status: "out-of-range",
+      locationLabel: buildWeatherLocationLabel(result),
+      message: "Forecast will appear closer to departure."
+    };
+  }
+
+  return {
+    status: "ok",
+    locationLabel: buildWeatherLocationLabel(result),
+    days: relevantDays.slice(0, 4)
+  };
+}
+
+function buildWeatherDaySnapshots(daily) {
+  const times = Array.isArray(daily?.time) ? daily.time : [];
+  return times.map((date, index) => {
+    const high = Number(daily?.temperature_2m_max?.[index]);
+    const low = Number(daily?.temperature_2m_min?.[index]);
+    const precip = Number(daily?.precipitation_probability_max?.[index]);
+    const weatherCode = Number(daily?.weather_code?.[index]);
+    return {
+      date,
+      shortLabel: formatShortWeekday(date),
+      dateLabel: formatMonthDay(date),
+      temperatureLabel: Number.isFinite(high) && Number.isFinite(low)
+        ? `${Math.round(high)}/${Math.round(low)}F`
+        : "",
+      conditionLabel: [
+        describeWeatherCode(weatherCode),
+        Number.isFinite(precip) ? `${Math.round(precip)}% rain` : ""
+      ].filter(Boolean).join(" · ")
+    };
+  });
+}
+
+function selectRelevantWeatherDays(days, startDate, endDate) {
+  if (!Array.isArray(days) || days.length === 0) {
+    return [];
+  }
+  const normalizedStart = normalizeDateString(startDate);
+  const normalizedEnd = normalizeDateString(endDate);
+  if (!normalizedStart) {
+    return days.slice(0, 4);
+  }
+  const filtered = days.filter((day) => {
+    if (!day?.date || day.date < normalizedStart) {
+      return false;
+    }
+    if (normalizedEnd && day.date > normalizedEnd) {
+      return false;
+    }
+    return true;
+  });
+  return filtered;
+}
+
+function buildWeatherLocationLabel(result) {
+  return [
+    sanitizeTravelText(result?.name, 80),
+    sanitizeTravelText(result?.admin1, 80),
+    sanitizeTravelText(result?.country, 80)
+  ].filter(Boolean).slice(0, 2).join(", ");
+}
+
+async function fetchTravelFlightSnapshot(request) {
+  if (!AVIATIONSTACK_ACCESS_KEY) {
+    return {
+      status: "unconfigured",
+      message: "Set AVIATIONSTACK_ACCESS_KEY to show live flight status."
+    };
+  }
+
+  const lookup = normalizeFlightLookup(request);
+  const flightsUrl = new URL("https://api.aviationstack.com/v1/flights");
+  flightsUrl.searchParams.set("access_key", AVIATIONSTACK_ACCESS_KEY);
+  flightsUrl.searchParams.set("limit", "10");
+  flightsUrl.searchParams.set("flight_date", lookup.flightDate);
+  if (lookup.flightIata) {
+    flightsUrl.searchParams.set("flight_iata", lookup.flightIata);
+  } else {
+    flightsUrl.searchParams.set("flight_number", lookup.flightNumber);
+  }
+  if (lookup.departureCode) {
+    flightsUrl.searchParams.set("dep_iata", lookup.departureCode);
+  }
+  if (lookup.arrivalCode) {
+    flightsUrl.searchParams.set("arr_iata", lookup.arrivalCode);
+  }
+
+  const payload = await fetchJsonFromUrl(flightsUrl);
+  const flight = pickBestFlight(payload?.data, lookup);
+  if (!flight) {
+    return {
+      status: "not-found",
+      message: `No live status found for ${lookup.flightLabel} yet.`
+    };
+  }
+
+  return {
+    status: "ok",
+    flightLabel: lookup.flightLabel,
+    statusLabel: titleCaseWords(flight?.flight_status || "scheduled"),
+    departureCode: sanitizeTravelText(flight?.departure?.iata, 8) || lookup.departureCode,
+    arrivalCode: sanitizeTravelText(flight?.arrival?.iata, 8) || lookup.arrivalCode,
+    departureTimeLabel: formatIsoInTimeZone(
+      flight?.departure?.estimated || flight?.departure?.scheduled,
+      request.displayTimeZone
+    ) || formatDateTimeLabel(request.scheduledDate, request.scheduledTime),
+    gate: sanitizeTravelText(flight?.departure?.gate, 12),
+    terminal: sanitizeTravelText(flight?.departure?.terminal, 12)
+  };
+}
+
+function normalizeFlightLookup(request) {
+  const compact = sanitizeTravelText(request.flightNumber, 24).toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const match = compact.match(/^([A-Z]{2,3})(\d{1,4}[A-Z]?)$/);
+  return {
+    flightIata: match ? compact : "",
+    flightNumber: match ? match[2] : compact,
+    airlineCode: match ? match[1] : "",
+    departureCode: extractAirportCode(request.departureCode),
+    arrivalCode: extractAirportCode(request.arrivalCode),
+    flightDate: normalizeDateString(request.flightDate),
+    flightLabel: compact || sanitizeTravelText(request.flightNumber, 24).toUpperCase()
+  };
+}
+
+function pickBestFlight(entries, lookup) {
+  const flights = Array.isArray(entries) ? entries : [];
+  const scored = flights.map((entry) => ({
+    entry,
+    score: scoreFlightEntry(entry, lookup)
+  })).sort((left, right) => right.score - left.score);
+  return scored[0]?.score > 0 ? scored[0].entry : null;
+}
+
+function scoreFlightEntry(entry, lookup) {
+  let score = 0;
+  const entryFlightIata = sanitizeTravelText(entry?.flight?.iata, 24).toUpperCase();
+  const entryFlightNumber = sanitizeTravelText(entry?.flight?.number, 12).toUpperCase();
+  const entryDeparture = sanitizeTravelText(entry?.departure?.iata, 8).toUpperCase();
+  const entryArrival = sanitizeTravelText(entry?.arrival?.iata, 8).toUpperCase();
+  if (lookup.flightIata && entryFlightIata === lookup.flightIata) {
+    score += 8;
+  }
+  if (lookup.flightNumber && entryFlightNumber === lookup.flightNumber) {
+    score += 4;
+  }
+  if (lookup.departureCode && entryDeparture === lookup.departureCode) {
+    score += 2;
+  }
+  if (lookup.arrivalCode && entryArrival === lookup.arrivalCode) {
+    score += 2;
+  }
+  return score;
+}
+
+async function fetchJsonFromUrl(url) {
+  const response = await fetch(url);
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload?.error?.message || `Request failed with ${response.status}`);
+  }
+  if (payload?.error?.message) {
+    throw new Error(payload.error.message);
+  }
+  return payload;
+}
+
+function sanitizeTravelText(value, maxLength = 120) {
+  return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
+}
+
+function normalizeDateString(value) {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : "";
+}
+
+function normalizeTimeString(value) {
+  return typeof value === "string" && /^\d{2}:\d{2}$/.test(value) ? value : "";
+}
+
+function extractAirportCode(value) {
+  const text = sanitizeTravelText(value, 120).toUpperCase();
+  const match = text.match(/\b([A-Z]{3})\b/);
+  return match?.[1] || "";
+}
+
+function formatShortWeekday(value) {
+  const date = new Date(`${value}T12:00:00Z`);
+  return Number.isNaN(date.getTime())
+    ? value
+    : new Intl.DateTimeFormat("en-US", { weekday: "short", timeZone: "UTC" }).format(date);
+}
+
+function formatMonthDay(value) {
+  const date = new Date(`${value}T12:00:00Z`);
+  return Number.isNaN(date.getTime())
+    ? value
+    : new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" }).format(date);
+}
+
+function formatIsoInTimeZone(value, timeZone) {
+  if (!value) {
+    return "";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  try {
+    return new Intl.DateTimeFormat("en-US", {
+      timeZone: timeZone || "UTC",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit"
+    }).format(date);
+  } catch {
+    return new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit"
+    }).format(date);
+  }
+}
+
+function formatDateTimeLabel(dateString, timeString) {
+  if (!dateString) {
+    return "";
+  }
+  const parsed = new Date(`${dateString}T${timeString || "12:00"}`);
+  if (Number.isNaN(parsed.getTime())) {
+    return dateString;
+  }
+  const options = timeString
+    ? { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }
+    : { month: "short", day: "numeric" };
+  return new Intl.DateTimeFormat("en-US", options).format(parsed);
+}
+
+function describeWeatherCode(code) {
+  if (code === 0) return "Clear";
+  if ([1, 2, 3].includes(code)) return "Clouds";
+  if ([45, 48].includes(code)) return "Fog";
+  if ([51, 53, 55, 56, 57].includes(code)) return "Drizzle";
+  if ([61, 63, 65, 66, 67, 80, 81, 82].includes(code)) return "Rain";
+  if ([71, 73, 75, 77, 85, 86].includes(code)) return "Snow";
+  if ([95, 96, 99].includes(code)) return "Storm";
+  return "Mixed";
+}
+
+function titleCaseWords(value) {
+  return String(value || "")
+    .split(/[\s_-]+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
 }
 
 function loadStore() {

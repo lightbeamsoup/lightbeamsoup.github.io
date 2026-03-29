@@ -2507,6 +2507,55 @@ body.developer-open {
   margin-top: 4px;
 }
 
+.travel-shell-live {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.travel-shell-live-section {
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.42);
+  border: 1px solid rgba(37, 50, 67, 0.08);
+}
+
+.travel-shell-live-section strong,
+.travel-shell-live-section span,
+.travel-shell-live-note {
+  margin: 0;
+  font-size: 0.88rem;
+}
+
+.travel-shell-live-label {
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.travel-shell-live-note {
+  color: var(--muted);
+}
+
+.travel-shell-forecast-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
+  gap: 8px;
+}
+
+.travel-shell-forecast-day {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.48);
+  border: 1px solid rgba(37, 50, 67, 0.08);
+}
+
 .travel-status-chip {
   display: inline-flex;
   align-items: center;

@@ -68,6 +68,9 @@ const TRIP_STATUS_OPTIONS = [
   { value: "complete", label: "Complete" }
 ];
 const TRIP_PRESET_STATUS_OPTIONS = ["planning", "booked"];
+const TRAVEL_SHELL_LIVE_TTL_MS = 1000 * 60 * 15;
+const TRAVEL_FLIGHT_LOOKAHEAD_MS = 1000 * 60 * 60 * 24;
+const TRAVEL_FLIGHT_LOOKBACK_MS = 1000 * 60 * 60 * 6;
 const travelWidgetUiState = new Map();
 
 export const travelWidgetDefinition = {
@@ -146,6 +149,7 @@ export const travelWidgetDefinition = {
   render({ widget, tasks, escapeHtml }) {
     const trips = normalizeTrips(widget.data?.trips);
     const settings = normalizeTravelSettings(widget.settings);
+    const shellLiveByTripId = getTravelUiState(widget.id).shellLiveByTripId || {};
     const upcomingTrips = getUpcomingTrips(trips);
     const nextTrip = upcomingTrips[0] || trips[0] || null;
     const activeTripCount = trips.filter((trip) => trip.status === "active").length;
@@ -171,7 +175,7 @@ export const travelWidgetDefinition = {
         : "Set your home location in Travel settings to support timezone-aware trip planning."}</p>
       <div class="travel-shell-list">
         ${upcomingTrips.length
-          ? upcomingTrips.slice(0, 3).map((trip) => renderTravelShellCard(trip, escapeHtml)).join("")
+          ? upcomingTrips.slice(0, 3).map((trip) => renderTravelShellCard(trip, escapeHtml, shellLiveByTripId[trip.id] || null, settings)).join("")
           : `<p class="empty-state">Your upcoming trips will show up here.</p>`}
       </div>
       <div class="widget-actions">
@@ -180,6 +184,101 @@ export const travelWidgetDefinition = {
       </div>
       <p class="sync-status">Flight check-in tasks surface here automatically. Open travel tasks: ${openTravelTaskCount}. Broader itinerary task generation is still coming.</p>
     `;
+  },
+
+  async hydrateShell({ widget, root, apiBase, fetchCredentials }) {
+    if (!root?.isConnected) {
+      return;
+    }
+
+    const trips = getUpcomingTrips(normalizeTrips(widget.data?.trips)).slice(0, 3);
+    const settings = normalizeTravelSettings(widget.settings);
+    const requests = trips
+      .map((trip) => buildTravelShellLiveRequest(trip, settings))
+      .filter(Boolean);
+    const uiState = getTravelUiState(widget.id);
+
+    applyTravelShellLiveData(root, trips, settings, uiState.shellLiveByTripId || {});
+
+    if (requests.length === 0) {
+      return;
+    }
+
+    const requestKey = JSON.stringify(requests);
+    const now = Date.now();
+    if (
+      uiState.shellLiveRequestKey === requestKey
+      && uiState.shellLiveFetchedAt
+      && now - uiState.shellLiveFetchedAt < TRAVEL_SHELL_LIVE_TTL_MS
+    ) {
+      return;
+    }
+    if (uiState.shellLivePendingKey === requestKey) {
+      return;
+    }
+
+    const pendingByTripId = {
+      ...(uiState.shellLiveByTripId || {})
+    };
+    for (const request of requests) {
+      if (!pendingByTripId[request.tripId]) {
+        pendingByTripId[request.tripId] = { status: "loading" };
+      }
+    }
+    uiState.shellLiveByTripId = pendingByTripId;
+    uiState.shellLivePendingKey = requestKey;
+    const requestToken = now;
+    uiState.shellLiveRequestToken = requestToken;
+    applyTravelShellLiveData(root, trips, settings, pendingByTripId);
+
+    try {
+      const response = await fetch(`${apiBase || ""}/api/travel/live`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        credentials: fetchCredentials || "same-origin",
+        body: JSON.stringify({ trips: requests })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.error || "Travel live lookup failed");
+      }
+      if (!root.isConnected || getTravelUiState(widget.id).shellLiveRequestToken !== requestToken) {
+        return;
+      }
+
+      const nextByTripId = {
+        ...(uiState.shellLiveByTripId || {})
+      };
+      for (const snapshot of Array.isArray(payload.trips) ? payload.trips : []) {
+        if (!snapshot?.tripId) {
+          continue;
+        }
+        nextByTripId[snapshot.tripId] = snapshot;
+      }
+      uiState.shellLiveByTripId = nextByTripId;
+      uiState.shellLiveFetchedAt = Date.now();
+      uiState.shellLiveRequestKey = requestKey;
+      uiState.shellLivePendingKey = "";
+      applyTravelShellLiveData(root, trips, settings, nextByTripId);
+    } catch (error) {
+      if (!root.isConnected || getTravelUiState(widget.id).shellLiveRequestToken !== requestToken) {
+        return;
+      }
+      const nextByTripId = {
+        ...(uiState.shellLiveByTripId || {})
+      };
+      for (const request of requests) {
+        nextByTripId[request.tripId] = {
+          status: "error",
+          message: String(error?.message || "Live travel lookup failed")
+        };
+      }
+      uiState.shellLiveByTripId = nextByTripId;
+      uiState.shellLivePendingKey = "";
+      applyTravelShellLiveData(root, trips, settings, nextByTripId);
+    }
   },
 
   renderDetail({ widget, escapeHtml, formatDate }) {
@@ -1318,7 +1417,12 @@ function getNextTripMilestone(trip) {
   };
 }
 
-function renderTravelShellCard(trip, escapeHtml) {
+function renderTravelShellCard(trip, escapeHtml, liveSnapshot = null, settings = {}) {
+  const liveMarkup = renderTravelShellLiveMarkup(
+    liveSnapshot,
+    escapeHtml,
+    Boolean(buildTravelShellLiveRequest(trip, settings))
+  );
   return `
     <article class="travel-shell-card">
       <div class="travel-shell-card-header">
@@ -1330,11 +1434,109 @@ function renderTravelShellCard(trip, escapeHtml) {
       </div>
       <p class="travel-shell-card-meta">${escapeHtml(describeTripRange(trip))}</p>
       <p class="travel-shell-card-meta">${escapeHtml(describeTripMilestone(trip))}</p>
+      <div class="travel-shell-live" data-travel-live-trip-id="${trip.id}">
+        ${liveMarkup}
+      </div>
       <div class="widget-actions travel-shell-actions">
         <button type="button" class="ghost-button" data-widget-action="travel-open-trip" data-trip-id="${trip.id}">View trip</button>
       </div>
     </article>
   `;
+}
+
+function renderTravelShellLiveMarkup(snapshot, escapeHtml, shouldShowPlaceholder = false) {
+  if (!snapshot) {
+    return shouldShowPlaceholder ? `<p class="travel-shell-live-note muted">Fetching live travel updates...</p>` : "";
+  }
+  if (snapshot.status === "loading") {
+    return `<p class="travel-shell-live-note muted">Fetching live travel updates...</p>`;
+  }
+  if (snapshot.status === "error") {
+    return `<p class="travel-shell-live-note muted">${escapeHtml(snapshot.message || "Live travel updates are unavailable right now.")}</p>`;
+  }
+
+  const sections = [];
+  if (snapshot.flight) {
+    sections.push(renderTravelFlightLiveSection(snapshot.flight, escapeHtml));
+  }
+  if (snapshot.weather) {
+    sections.push(renderTravelWeatherLiveSection(snapshot.weather, escapeHtml));
+  }
+
+  if (sections.length === 0) {
+    return shouldShowPlaceholder ? `<p class="travel-shell-live-note muted">No live travel updates are ready yet.</p>` : "";
+  }
+  return sections.join("");
+}
+
+function renderTravelFlightLiveSection(flight, escapeHtml) {
+  if (flight.status === "unconfigured") {
+    return `<p class="travel-shell-live-note muted">${escapeHtml(flight.message || "Add a flight API key to show live status.")}</p>`;
+  }
+  if (flight.status === "not-found") {
+    return `<p class="travel-shell-live-note muted">${escapeHtml(flight.message || "No live flight status is available yet.")}</p>`;
+  }
+  if (flight.status !== "ok") {
+    return "";
+  }
+
+  const routeLabel = [flight.departureCode, flight.arrivalCode].filter(Boolean).join(" -> ");
+  const detailBits = [
+    flight.statusLabel || "",
+    flight.departureTimeLabel ? `Dep ${flight.departureTimeLabel}` : "",
+    flight.gate ? `Gate ${flight.gate}` : "",
+    flight.terminal ? `T${flight.terminal}` : ""
+  ].filter(Boolean);
+
+  return `
+    <section class="travel-shell-live-section">
+      <span class="travel-shell-live-label">Flight</span>
+      <strong>${escapeHtml(flight.flightLabel || "Flight status")}</strong>
+      ${routeLabel ? `<span>${escapeHtml(routeLabel)}</span>` : ""}
+      ${detailBits.length ? `<span>${escapeHtml(detailBits.join(" · "))}</span>` : ""}
+    </section>
+  `;
+}
+
+function renderTravelWeatherLiveSection(weather, escapeHtml) {
+  if (weather.status === "out-of-range" || weather.status === "not-found" || weather.status === "error") {
+    return `<p class="travel-shell-live-note muted">${escapeHtml(weather.message || "Forecast unavailable.")}</p>`;
+  }
+  if (weather.status !== "ok" || !Array.isArray(weather.days) || weather.days.length === 0) {
+    return "";
+  }
+
+  return `
+    <section class="travel-shell-live-section">
+      <span class="travel-shell-live-label">Forecast${weather.locationLabel ? ` · ${escapeHtml(weather.locationLabel)}` : ""}</span>
+      <div class="travel-shell-forecast-strip">
+        ${weather.days.slice(0, 4).map((day) => `
+          <div class="travel-shell-forecast-day">
+            <strong>${escapeHtml(day.shortLabel || day.dateLabel || day.date || "")}</strong>
+            <span>${escapeHtml(day.temperatureLabel || "")}</span>
+            <span>${escapeHtml(day.conditionLabel || "")}</span>
+          </div>
+        `).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function applyTravelShellLiveData(root, trips, settings, liveByTripId = {}) {
+  if (!root?.isConnected) {
+    return;
+  }
+  for (const trip of trips) {
+    const container = root.querySelector(`[data-travel-live-trip-id="${trip.id}"]`);
+    if (!container) {
+      continue;
+    }
+    container.innerHTML = renderTravelShellLiveMarkup(
+      liveByTripId[trip.id] || null,
+      fallbackEscapeHtml,
+      Boolean(buildTravelShellLiveRequest(trip, settings))
+    );
+  }
 }
 
 function renderTravelOverviewCard(trip, escapeHtml, formatDate) {
@@ -1797,6 +1999,12 @@ function fallbackEscapeHtml(value) {
     .replaceAll("'", "&#39;");
 }
 
+function extractAirportCode(value) {
+  const text = normalizeText(value, 120).toUpperCase();
+  const match = text.match(/\b([A-Z]{3})\b/);
+  return match?.[1] || "";
+}
+
 function inferTravelTimeZone(...values) {
   for (const value of values) {
     const explicit = extractExplicitIanaTimeZone(value);
@@ -1916,6 +2124,100 @@ function normalizeTravelDetailTab(value, trips = []) {
     return normalizeTrips(trips).some((trip) => trip.id === tripId) ? value : "overview";
   }
   return "overview";
+}
+
+function buildTravelShellLiveRequest(trip, settings) {
+  const weather = buildTravelWeatherRequest(trip);
+  const flight = buildTravelFlightRequest(trip, settings);
+  if (!weather && !flight) {
+    return null;
+  }
+  return {
+    tripId: trip.id,
+    weather,
+    flight
+  };
+}
+
+function buildTravelWeatherRequest(trip) {
+  const destinationQuery = normalizeText(
+    trip?.destination
+    || trip?.itinerary?.outboundDestination
+    || trip?.itinerary?.lodgingAddress,
+    160
+  );
+  if (!destinationQuery) {
+    return null;
+  }
+  return {
+    destinationQuery,
+    startDate: normalizeDateValue(trip?.startDate || trip?.itinerary?.checkInDate || trip?.itinerary?.outboundDate),
+    endDate: normalizeDateValue(trip?.endDate || trip?.itinerary?.checkOutDate || trip?.itinerary?.returnDate)
+  };
+}
+
+function buildTravelFlightRequest(trip, settings) {
+  const now = Date.now();
+  const outboundTimestamp = resolveTravelDepartureTimestamp(trip, settings);
+  const returnTimestamp = resolveTravelReturnTimestamp(trip, settings);
+  const candidates = [
+    buildTravelFlightLegRequest({
+      leg: "outbound",
+      timestamp: outboundTimestamp,
+      timeZone: resolveOutboundStageTimeZone(trip, settings),
+      date: trip?.itinerary?.outboundDate,
+      time: trip?.itinerary?.outboundTime,
+      flightNumber: trip?.itinerary?.outboundFlightNumber,
+      origin: trip?.itinerary?.outboundOrigin,
+      destination: trip?.itinerary?.outboundDestination
+    }),
+    buildTravelFlightLegRequest({
+      leg: "return",
+      timestamp: returnTimestamp,
+      timeZone: resolveReturnStageTimeZone(trip, settings),
+      date: trip?.itinerary?.returnDate,
+      time: trip?.itinerary?.returnTime,
+      flightNumber: trip?.itinerary?.returnFlightNumber,
+      origin: trip?.itinerary?.returnOrigin,
+      destination: trip?.itinerary?.returnDestination
+    })
+  ]
+    .filter(Boolean)
+    .filter((entry) => entry.timestamp >= now - TRAVEL_FLIGHT_LOOKBACK_MS && entry.timestamp <= now + TRAVEL_FLIGHT_LOOKAHEAD_MS)
+    .sort((left, right) => left.timestamp - right.timestamp);
+
+  if (!candidates.length) {
+    return null;
+  }
+  const nextFlight = candidates[0];
+  return {
+    leg: nextFlight.leg,
+    flightNumber: nextFlight.flightNumber,
+    flightDate: nextFlight.date,
+    departureCode: extractAirportCode(nextFlight.origin),
+    arrivalCode: extractAirportCode(nextFlight.destination),
+    displayTimeZone: nextFlight.timeZone,
+    scheduledDate: nextFlight.date,
+    scheduledTime: nextFlight.time
+  };
+}
+
+function buildTravelFlightLegRequest({ leg, timestamp, timeZone, date, time, flightNumber, origin, destination }) {
+  const normalizedFlightNumber = normalizeText(flightNumber, 24).toUpperCase();
+  const normalizedDate = normalizeDateValue(date);
+  if (!normalizedFlightNumber || !normalizedDate || !Number.isFinite(timestamp) || timestamp <= 0) {
+    return null;
+  }
+  return {
+    leg,
+    timestamp,
+    timeZone: timeZone || "",
+    date: normalizedDate,
+    time: normalizeTimeValue(time),
+    flightNumber: normalizedFlightNumber,
+    origin: normalizeText(origin, 120),
+    destination: normalizeText(destination, 120)
+  };
 }
 
 function normalizeTripStatus(value) {

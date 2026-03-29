@@ -4889,6 +4889,18 @@ function renderWidgetOrbit() {
         getPendingActionForWidget
       })}
       `;
+      if (definition.hydrateShell) {
+        Promise.resolve(definition.hydrateShell({
+          widget,
+          tasks: store.tasks,
+          root: slot,
+          apiBase: API_BASE,
+          fetchCredentials: FETCH_CREDENTIALS,
+          setSyncStatus
+        })).catch((error) => {
+          console.error(`Widget shell hydration failed for ${widget.type}:`, error);
+        });
+      }
       continue;
     }
 
