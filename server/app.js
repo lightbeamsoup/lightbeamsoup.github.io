@@ -274,12 +274,28 @@ app.post("/api/travel/live", async (req, res) => {
       return;
     }
 
+    logTravelLive("verbose", "Received travel live request", {
+      tripCount: trips.length,
+      forcedFlightRefreshCount: trips.filter((trip) => trip.forceFlightRefresh).length,
+      tripIds: trips.map((trip) => trip.tripId)
+    });
     const snapshots = await Promise.all(trips.map((trip) => buildTravelLiveSnapshot(trip)));
+    logTravelLive("verbose", "Resolved travel live request", {
+      tripCount: snapshots.length,
+      flightStatusCounts: snapshots.reduce((result, snapshot) => {
+        const key = snapshot?.flight?.status || "none";
+        result[key] = (result[key] || 0) + 1;
+        return result;
+      }, {})
+    });
     res.json({
       ok: true,
       trips: snapshots
     });
   } catch (error) {
+    logTravelLive("basic", "Travel live request failed", {
+      message: String(error?.message || "Travel live lookup failed")
+    });
     res.status(500).json({ error: String(error?.message || "Travel live lookup failed") });
   }
 });
@@ -625,6 +641,17 @@ function logNotification(level, message, context = null) {
     return;
   }
   console.log(`[notifications] ${message}`);
+}
+
+function logTravelLive(level, message, context = null) {
+  if (!shouldLogNotifications(level)) {
+    return;
+  }
+  if (context && Object.keys(context).length > 0) {
+    console.log(`[travel-live] ${message} ${JSON.stringify(context)}`);
+    return;
+  }
+  console.log(`[travel-live] ${message}`);
 }
 
 async function handleNotificationSendRequest(req, res, {
@@ -1164,7 +1191,8 @@ function normalizeTravelLiveTrip(value) {
   return {
     tripId,
     weather,
-    flight
+    flight,
+    forceFlightRefresh: value?.forceFlightRefresh === true
   };
 }
 
@@ -1200,25 +1228,81 @@ function normalizeTravelFlightRequest(value) {
 }
 
 async function buildTravelLiveSnapshot(trip) {
-  const cacheKey = JSON.stringify(trip);
+  const cacheKey = JSON.stringify({
+    tripId: trip.tripId,
+    weather: trip.weather,
+    flight: trip.flight
+  });
+  const now = Date.now();
   const cached = travelLiveCache.get(cacheKey);
-  if (cached && Date.now() < cached.expiresAt) {
+  if (cached && now < cached.expiresAt && !trip.forceFlightRefresh) {
+    logTravelLive("verbose", "Travel live cache hit", {
+      tripId: trip.tripId,
+      expiresAt: cached.expiresAt
+    });
     return cached.snapshot;
   }
 
-  const now = Date.now();
+  logTravelLive("verbose", cached ? "Travel live cache stale" : "Travel live cache miss", {
+    tripId: trip.tripId,
+    forceFlightRefresh: trip.forceFlightRefresh === true
+  });
+  const cachedSnapshot = cached?.snapshot || null;
   const [weather, flight] = await Promise.all([
     trip.weather
-      ? fetchTravelWeatherSnapshot(trip.weather).catch(() => ({
-          status: "error",
-          message: "Forecast unavailable right now."
-        }))
+      ? (
+          cachedSnapshot?.weather && !shouldRefreshTravelLiveComponent(cachedSnapshot.weather, now)
+            ? (
+                logTravelLive("verbose", "Reusing cached travel weather snapshot", {
+                  tripId: trip.tripId,
+                  nextRefreshAt: cachedSnapshot.weather?.nextRefreshAt || 0
+                }),
+                Promise.resolve(cachedSnapshot.weather)
+              )
+            : fetchTravelWeatherSnapshot(trip.weather).catch((error) => {
+                logTravelLive("basic", "Weather lookup failed", {
+                  tripId: trip.tripId,
+                  destinationQuery: trip.weather?.destinationQuery || "",
+                  message: String(error?.message || "Forecast unavailable right now.")
+                });
+                return {
+                  status: "error",
+                  message: "Forecast unavailable right now.",
+                  fetchedAt: now,
+                  nextRefreshAt: now + TRAVEL_WEATHER_CACHE_TTL_MS
+                };
+              })
+        )
       : Promise.resolve(null),
     trip.flight
-      ? fetchTravelFlightSnapshot(trip.flight).catch(() => ({
-          status: "error",
-          message: "Live flight status is unavailable right now."
-        }))
+      ? (
+          !trip.forceFlightRefresh && cachedSnapshot?.flight && !shouldRefreshTravelLiveComponent(cachedSnapshot.flight, now)
+            ? (
+                logTravelLive("verbose", "Reusing cached FlightAware snapshot", {
+                  tripId: trip.tripId,
+                  flightNumber: trip.flight?.flightNumber || "",
+                  nextRefreshAt: cachedSnapshot.flight?.nextRefreshAt || 0
+                }),
+                Promise.resolve(cachedSnapshot.flight)
+              )
+            : fetchTravelFlightSnapshot(trip.flight, {
+                tripId: trip.tripId,
+                forceRefresh: trip.forceFlightRefresh === true
+              }).catch((error) => {
+                const message = String(error?.message || "Live flight status is unavailable right now.");
+                logTravelLive("basic", "FlightAware lookup failed", {
+                  tripId: trip.tripId,
+                  flightNumber: trip.flight?.flightNumber || "",
+                  message
+                });
+                return {
+                  status: "error",
+                  message: "Live flight status is unavailable right now.",
+                  fetchedAt: now,
+                  nextRefreshAt: computeFlightSnapshotExpiresAt(trip.flight, now)
+                };
+              })
+        )
       : Promise.resolve(null)
   ]);
 
@@ -1227,11 +1311,12 @@ async function buildTravelLiveSnapshot(trip) {
     status: "ok",
     weather,
     flight,
-    fetchedAt: now
+    fetchedAt: now,
+    updatedAt: now
   };
   const expiresAt = Math.min(
-    trip.weather ? now + TRAVEL_WEATHER_CACHE_TTL_MS : Number.POSITIVE_INFINITY,
-    trip.flight ? computeFlightSnapshotExpiresAt(trip.flight, now) : Number.POSITIVE_INFINITY
+    trip.weather ? resolveTravelComponentExpiresAt(weather, now + TRAVEL_WEATHER_CACHE_TTL_MS) : Number.POSITIVE_INFINITY,
+    trip.flight ? resolveTravelComponentExpiresAt(flight, computeFlightSnapshotExpiresAt(trip.flight, now)) : Number.POSITIVE_INFINITY
   );
   travelLiveCache.set(cacheKey, {
     expiresAt: Number.isFinite(expiresAt) ? expiresAt : now + TRAVEL_WEATHER_CACHE_TTL_MS,
@@ -1240,7 +1325,21 @@ async function buildTravelLiveSnapshot(trip) {
   return snapshot;
 }
 
+function shouldRefreshTravelLiveComponent(component, now = Date.now()) {
+  const nextRefreshAt = Number(component?.nextRefreshAt || 0);
+  if (!nextRefreshAt) {
+    return true;
+  }
+  return nextRefreshAt <= now;
+}
+
+function resolveTravelComponentExpiresAt(component, fallback) {
+  const nextRefreshAt = Number(component?.nextRefreshAt || 0);
+  return Number.isFinite(nextRefreshAt) && nextRefreshAt > 0 ? nextRefreshAt : fallback;
+}
+
 async function fetchTravelWeatherSnapshot(request) {
+  const now = Date.now();
   const geoUrl = new URL("https://geocoding-api.open-meteo.com/v1/search");
   geoUrl.searchParams.set("name", request.destinationQuery);
   geoUrl.searchParams.set("count", "1");
@@ -1251,7 +1350,9 @@ async function fetchTravelWeatherSnapshot(request) {
   if (!result?.latitude || !result?.longitude) {
     return {
       status: "not-found",
-      message: `Could not find weather for ${request.destinationQuery}.`
+      message: `Could not find weather for ${request.destinationQuery}.`,
+      fetchedAt: now,
+      nextRefreshAt: now + TRAVEL_WEATHER_CACHE_TTL_MS
     };
   }
 
@@ -1269,14 +1370,18 @@ async function fetchTravelWeatherSnapshot(request) {
     return {
       status: "out-of-range",
       locationLabel: buildWeatherLocationLabel(result),
-      message: "Forecast will appear closer to departure."
+      message: "Forecast will appear closer to departure.",
+      fetchedAt: now,
+      nextRefreshAt: now + TRAVEL_WEATHER_CACHE_TTL_MS
     };
   }
 
   return {
     status: "ok",
     locationLabel: buildWeatherLocationLabel(result),
-    days: relevantDays.slice(0, 4)
+    days: relevantDays.slice(0, 4),
+    fetchedAt: now,
+    nextRefreshAt: now + TRAVEL_WEATHER_CACHE_TTL_MS
   };
 }
 
@@ -1331,50 +1436,93 @@ function buildWeatherLocationLabel(result) {
   ].filter(Boolean).slice(0, 2).join(", ");
 }
 
-async function fetchTravelFlightSnapshot(request) {
+async function fetchTravelFlightSnapshot(request, { tripId = "", forceRefresh = false } = {}) {
+  const now = Date.now();
   if (!FLIGHTAWARE_AEROAPI_KEY) {
     return {
       status: "unconfigured",
-      message: "Set FLIGHTAWARE_AEROAPI_KEY to show live flight status."
+      message: "Set FLIGHTAWARE_AEROAPI_KEY to show live flight status.",
+      fetchedAt: now,
+      nextRefreshAt: now + TRAVEL_WEATHER_CACHE_TTL_MS
     };
   }
 
   const lookup = normalizeFlightLookup(request);
   const flightsUrl = new URL(`https://aeroapi.flightaware.com/aeroapi/flights/${encodeURIComponent(lookup.flightLabel)}`);
   flightsUrl.searchParams.set("max_pages", "1");
-
-  const payload = await fetchJsonFromUrl(flightsUrl, {
-    headers: {
-      "x-apikey": FLIGHTAWARE_AEROAPI_KEY
-    }
+  logTravelLive("verbose", "FlightAware lookup started", {
+    tripId,
+    flightLabel: lookup.flightLabel,
+    flightDate: lookup.flightDate,
+    departureCode: lookup.departureCode,
+    arrivalCode: lookup.arrivalCode,
+    forceRefresh
   });
-  const flight = pickBestFlight(payload?.flights, lookup);
-  if (!flight) {
+
+  try {
+    const payload = await fetchJsonFromUrl(flightsUrl, {
+      headers: {
+        "x-apikey": FLIGHTAWARE_AEROAPI_KEY
+      }
+    });
+    const flight = pickBestFlight(payload?.flights, lookup);
+    if (!flight) {
+      logTravelLive("verbose", "FlightAware could not match flight", {
+        tripId,
+        flightLabel: lookup.flightLabel,
+        candidateCount: Array.isArray(payload?.flights) ? payload.flights.length : 0
+      });
+      return {
+        status: "not-found",
+        message: `No live status found for ${lookup.flightLabel} yet.`,
+        fetchedAt: now,
+        nextRefreshAt: computeFlightSnapshotExpiresAt(request, now)
+      };
+    }
+
+    const snapshot = {
+      status: "ok",
+      flightLabel: lookup.flightLabel,
+      statusLabel: titleCaseWords(flight?.status || "scheduled"),
+      departureCode: sanitizeTravelText(
+        flight?.origin?.code_iata || flight?.origin?.code || flight?.origin?.code_icao,
+        8
+      ) || lookup.departureCode,
+      arrivalCode: sanitizeTravelText(
+        flight?.destination?.code_iata || flight?.destination?.code || flight?.destination?.code_icao,
+        8
+      ) || lookup.arrivalCode,
+      departureTimeLabel: formatIsoInTimeZone(
+        flight?.estimated_out || flight?.scheduled_out,
+        request.displayTimeZone
+      ) || formatDateTimeLabel(request.scheduledDate, request.scheduledTime),
+      gate: sanitizeTravelText(flight?.gate_origin, 12),
+      terminal: sanitizeTravelText(flight?.terminal_origin, 12),
+      fetchedAt: now,
+      nextRefreshAt: computeFlightSnapshotExpiresAt(request, now)
+    };
+    logTravelLive("verbose", "FlightAware matched flight", {
+      tripId,
+      flightLabel: lookup.flightLabel,
+      statusLabel: snapshot.statusLabel,
+      departureCode: snapshot.departureCode,
+      arrivalCode: snapshot.arrivalCode
+    });
+    return snapshot;
+  } catch (error) {
+    const message = String(error?.message || "Live flight status is unavailable right now.");
+    logTravelLive("basic", "FlightAware request failed", {
+      tripId,
+      flightLabel: lookup.flightLabel,
+      message
+    });
     return {
-      status: "not-found",
-      message: `No live status found for ${lookup.flightLabel} yet.`
+      status: "error",
+      message: "Live flight status is unavailable right now.",
+      fetchedAt: now,
+      nextRefreshAt: computeFlightSnapshotExpiresAt(request, now)
     };
   }
-
-  return {
-    status: "ok",
-    flightLabel: lookup.flightLabel,
-    statusLabel: titleCaseWords(flight?.status || "scheduled"),
-    departureCode: sanitizeTravelText(
-      flight?.origin?.code_iata || flight?.origin?.code || flight?.origin?.code_icao,
-      8
-    ) || lookup.departureCode,
-    arrivalCode: sanitizeTravelText(
-      flight?.destination?.code_iata || flight?.destination?.code || flight?.destination?.code_icao,
-      8
-    ) || lookup.arrivalCode,
-    departureTimeLabel: formatIsoInTimeZone(
-      flight?.estimated_out || flight?.scheduled_out,
-      request.displayTimeZone
-    ) || formatDateTimeLabel(request.scheduledDate, request.scheduledTime),
-    gate: sanitizeTravelText(flight?.gate_origin, 12),
-    terminal: sanitizeTravelText(flight?.terminal_origin, 12)
-  };
 }
 
 function normalizeFlightLookup(request) {

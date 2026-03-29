@@ -4896,6 +4896,7 @@ function renderWidgetOrbit() {
           root: slot,
           apiBase: API_BASE,
           fetchCredentials: FETCH_CREDENTIALS,
+          persistStore,
           setSyncStatus
         })).catch((error) => {
           console.error(`Widget shell hydration failed for ${widget.type}:`, error);

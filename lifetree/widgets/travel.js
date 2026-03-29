@@ -102,7 +102,8 @@ export const travelWidgetDefinition = {
       data: {
         trips: [],
         packingTemplates: [],
-        itineraryTemplates: []
+        itineraryTemplates: [],
+        liveSnapshots: {}
       },
       createdAt: now,
       updatedAt: now
@@ -122,7 +123,8 @@ export const travelWidgetDefinition = {
       data: {
         trips: normalizeTrips(widget.data?.trips, createId),
         packingTemplates: normalizePackingTemplates(widget.data?.packingTemplates, createId),
-        itineraryTemplates: normalizeItineraryTemplates(widget.data?.itineraryTemplates, createId)
+        itineraryTemplates: normalizeItineraryTemplates(widget.data?.itineraryTemplates, createId),
+        liveSnapshots: normalizeTravelLiveSnapshots(widget.data?.liveSnapshots, widget.data?.trips, createId)
       },
       createdAt: typeof widget.createdAt === "number" ? widget.createdAt : now,
       updatedAt: typeof widget.updatedAt === "number" ? widget.updatedAt : now
@@ -133,7 +135,8 @@ export const travelWidgetDefinition = {
     const latestTrip = normalizeTrips(widget?.data?.trips).reduce((max, trip) => Math.max(max, trip.updatedAt || 0), 0);
     const latestPackingTemplate = normalizePackingTemplates(widget?.data?.packingTemplates).reduce((max, template) => Math.max(max, template.updatedAt || 0), 0);
     const latestItineraryTemplate = normalizeItineraryTemplates(widget?.data?.itineraryTemplates).reduce((max, template) => Math.max(max, template.updatedAt || 0), 0);
-    return Math.max(widget?.updatedAt || 0, widget?.createdAt || 0, latestTrip, latestPackingTemplate, latestItineraryTemplate, widget?.settings?.updatedAt || 0);
+    const latestLiveSnapshot = Object.values(normalizeTravelLiveSnapshots(widget?.data?.liveSnapshots, widget?.data?.trips)).reduce((max, snapshot) => Math.max(max, snapshot?.updatedAt || snapshot?.fetchedAt || 0), 0);
+    return Math.max(widget?.updatedAt || 0, widget?.createdAt || 0, latestTrip, latestPackingTemplate, latestItineraryTemplate, latestLiveSnapshot, widget?.settings?.updatedAt || 0);
   },
 
   getCategories() {
@@ -148,6 +151,7 @@ export const travelWidgetDefinition = {
   render({ widget, tasks, escapeHtml }) {
     const trips = normalizeTrips(widget.data?.trips);
     const settings = normalizeTravelSettings(widget.settings);
+    const persistedLiveByTripId = normalizeTravelLiveSnapshots(widget.data?.liveSnapshots, trips);
     const shellLiveByTripId = getTravelUiState(widget.id).shellLiveByTripId || {};
     const upcomingTrips = getUpcomingTrips(trips);
     const nextTrip = upcomingTrips[0] || trips[0] || null;
@@ -174,7 +178,7 @@ export const travelWidgetDefinition = {
         : "Set your home location in Travel settings to support timezone-aware trip planning."}</p>
       <div class="travel-shell-list">
         ${upcomingTrips.length
-          ? upcomingTrips.slice(0, 3).map((trip) => renderTravelShellCard(trip, escapeHtml, shellLiveByTripId[trip.id] || null, settings)).join("")
+          ? upcomingTrips.slice(0, 3).map((trip) => renderTravelShellCard(trip, escapeHtml, buildTravelDisplaySnapshot(persistedLiveByTripId[trip.id], shellLiveByTripId[trip.id]), settings)).join("")
           : `<p class="empty-state">Your upcoming trips will show up here.</p>`}
       </div>
       <div class="widget-actions">
@@ -185,19 +189,42 @@ export const travelWidgetDefinition = {
     `;
   },
 
-  async hydrateShell({ widget, root, apiBase, fetchCredentials }) {
+  async hydrateShell({ widget, root, apiBase, fetchCredentials, persistStore }) {
     if (!root?.isConnected) {
       return;
     }
 
     const trips = getUpcomingTrips(normalizeTrips(widget.data?.trips)).slice(0, 3);
     const settings = normalizeTravelSettings(widget.settings);
-    const requests = trips
-      .map((trip) => buildTravelShellLiveRequest(trip, settings))
-      .filter(Boolean);
     const uiState = getTravelUiState(widget.id);
+    const persistedLiveByTripId = normalizeTravelLiveSnapshots(widget.data?.liveSnapshots, trips);
+    const displayLiveByTripId = {};
+    for (const trip of trips) {
+      displayLiveByTripId[trip.id] = buildTravelDisplaySnapshot(persistedLiveByTripId[trip.id], uiState.shellLiveByTripId?.[trip.id]);
+    }
+    applyTravelShellLiveData(root, trips, settings, displayLiveByTripId);
 
-    applyTravelShellLiveData(root, trips, settings, uiState.shellLiveByTripId || {});
+    const requests = trips
+      .map((trip) => {
+        const request = buildTravelShellLiveRequest(trip, settings);
+        if (!request) {
+          return null;
+        }
+        const persistedSnapshot = persistedLiveByTripId[trip.id] || null;
+        const shouldRefresh = shouldRefreshTravelShellTrip({
+          request,
+          persistedSnapshot,
+          forceFlightRefresh: Boolean(uiState.forceFlightRefreshTripIds?.[trip.id])
+        });
+        if (!shouldRefresh) {
+          return null;
+        }
+        return {
+          ...request,
+          forceFlightRefresh: Boolean(uiState.forceFlightRefreshTripIds?.[trip.id])
+        };
+      })
+      .filter(Boolean);
 
     if (requests.length === 0) {
       return;
@@ -216,19 +243,21 @@ export const travelWidgetDefinition = {
       return;
     }
 
-    const pendingByTripId = {
-      ...(uiState.shellLiveByTripId || {})
-    };
+    const pendingByTripId = { ...(uiState.shellLiveByTripId || {}) };
     for (const request of requests) {
-      if (!pendingByTripId[request.tripId]) {
-        pendingByTripId[request.tripId] = { status: "loading" };
-      }
+      pendingByTripId[request.tripId] = {
+        ...(pendingByTripId[request.tripId] || {}),
+        pending: true,
+        flightNotice: ""
+      };
     }
     uiState.shellLiveByTripId = pendingByTripId;
     uiState.shellLivePendingKey = requestKey;
     const requestToken = now;
     uiState.shellLiveRequestToken = requestToken;
-    applyTravelShellLiveData(root, trips, settings, pendingByTripId);
+    applyTravelShellLiveData(root, trips, settings, Object.fromEntries(
+      trips.map((trip) => [trip.id, buildTravelDisplaySnapshot(persistedLiveByTripId[trip.id], pendingByTripId[trip.id])])
+    ));
 
     try {
       const response = await fetch(`${apiBase || ""}/api/travel/live`, {
@@ -254,13 +283,31 @@ export const travelWidgetDefinition = {
         if (!snapshot?.tripId) {
           continue;
         }
-        nextByTripId[snapshot.tripId] = snapshot;
+        const persistedSnapshot = persistedLiveByTripId[snapshot.tripId] || null;
+        const mergedSnapshot = mergeTravelLiveSnapshot(persistedSnapshot, snapshot);
+        nextByTripId[snapshot.tripId] = mergedSnapshot;
+        persistTravelLiveSnapshot(widget, snapshot.tripId, mergedSnapshot);
       }
       uiState.shellLiveByTripId = nextByTripId;
       uiState.shellLiveFetchedAt = Date.now();
       uiState.shellLiveRequestKey = requestKey;
       uiState.shellLivePendingKey = "";
-      applyTravelShellLiveData(root, trips, settings, nextByTripId);
+      uiState.shellLiveRequestToken = 0;
+      if (typeof persistStore === "function") {
+        widget.updatedAt = Date.now();
+        persistStore({ touchUserUpdatedAt: false });
+      }
+      applyTravelShellLiveData(root, trips, settings, Object.fromEntries(
+        trips.map((trip) => [trip.id, buildTravelDisplaySnapshot(
+          normalizeTravelLiveSnapshots(widget.data?.liveSnapshots, trips)[trip.id],
+          nextByTripId[trip.id]
+        )])
+      ));
+      for (const request of requests) {
+        if (uiState.forceFlightRefreshTripIds) {
+          delete uiState.forceFlightRefreshTripIds[request.tripId];
+        }
+      }
     } catch (error) {
       if (!root.isConnected || getTravelUiState(widget.id).shellLiveRequestToken !== requestToken) {
         return;
@@ -270,13 +317,23 @@ export const travelWidgetDefinition = {
       };
       for (const request of requests) {
         nextByTripId[request.tripId] = {
-          status: "error",
-          message: String(error?.message || "Live travel lookup failed")
+          ...(nextByTripId[request.tripId] || {}),
+          pending: false,
+          flightNotice: request.flight ? String(error?.message || "Live flight status is unavailable right now.") : "",
+          weatherNotice: request.weather ? String(error?.message || "Live weather is unavailable right now.") : ""
         };
       }
       uiState.shellLiveByTripId = nextByTripId;
       uiState.shellLivePendingKey = "";
-      applyTravelShellLiveData(root, trips, settings, nextByTripId);
+      uiState.shellLiveRequestToken = 0;
+      for (const request of requests) {
+        if (uiState.forceFlightRefreshTripIds) {
+          delete uiState.forceFlightRefreshTripIds[request.tripId];
+        }
+      }
+      applyTravelShellLiveData(root, trips, settings, Object.fromEntries(
+        trips.map((trip) => [trip.id, buildTravelDisplaySnapshot(persistedLiveByTripId[trip.id], nextByTripId[trip.id])])
+      ));
     }
   },
 
@@ -1064,6 +1121,24 @@ export const travelWidgetDefinition = {
       return true;
     }
 
+    if (action === "travel-refresh-flight") {
+      const tripId = actionTarget.getAttribute("data-trip-id") || "";
+      if (!tripId) {
+        return false;
+      }
+      const uiState = getTravelUiState(widget.id);
+      uiState.forceFlightRefreshTripIds = {
+        ...(uiState.forceFlightRefreshTripIds || {}),
+        [tripId]: true
+      };
+      uiState.shellLiveRequestKey = "";
+      uiState.shellLiveFetchedAt = 0;
+      uiState.shellLivePendingKey = "";
+      helpers.renderAll();
+      helpers.setSyncStatus("Refreshing flight status…", "info");
+      return true;
+    }
+
     if (action === "travel-open-trip") {
       const tripId = actionTarget.getAttribute("data-trip-id") || "";
       setTravelDetailTab(widget.id, `trip:${tripId}`, widget.data?.trips);
@@ -1083,6 +1158,89 @@ function normalizeTrips(value, createId = () => `travel-trip-${Math.random()}`) 
     .map((trip) => normalizeTrip(trip, createId))
     .filter(Boolean)
     .sort(compareTripDisplay);
+}
+
+function normalizeTravelLiveSnapshots(value, trips = [], createId = () => `travel-live-${Math.random()}`) {
+  const tripIds = new Set(normalizeTrips(trips, createId).map((trip) => trip.id));
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+
+  return Object.entries(value).reduce((result, [tripId, snapshot]) => {
+    if (!tripIds.has(tripId)) {
+      return result;
+    }
+    const normalized = normalizeTravelLiveSnapshot(snapshot);
+    if (normalized) {
+      result[tripId] = normalized;
+    }
+    return result;
+  }, {});
+}
+
+function normalizeTravelLiveSnapshot(value) {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const normalized = {
+    fetchedAt: typeof value.fetchedAt === "number" ? value.fetchedAt : 0,
+    updatedAt: typeof value.updatedAt === "number" ? value.updatedAt : (typeof value.fetchedAt === "number" ? value.fetchedAt : 0),
+    weather: normalizeTravelWeatherSnapshot(value.weather),
+    flight: normalizeTravelFlightSnapshot(value.flight),
+    flightNotice: normalizeText(value.flightNotice, 240),
+    flightNoticeAt: typeof value.flightNoticeAt === "number" ? value.flightNoticeAt : 0,
+    weatherNotice: normalizeText(value.weatherNotice, 240),
+    weatherNoticeAt: typeof value.weatherNoticeAt === "number" ? value.weatherNoticeAt : 0,
+    pending: value.pending === true
+  };
+
+  if (!normalized.weather && !normalized.flight && !normalized.flightNotice && !normalized.weatherNotice && !normalized.pending) {
+    return null;
+  }
+  return normalized;
+}
+
+function normalizeTravelWeatherSnapshot(value) {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const days = Array.isArray(value.days)
+    ? value.days.slice(0, 6).map((day) => ({
+        date: normalizeDateValue(day?.date),
+        shortLabel: normalizeText(day?.shortLabel, 24),
+        dateLabel: normalizeText(day?.dateLabel, 24),
+        temperatureLabel: normalizeText(day?.temperatureLabel, 40),
+        conditionLabel: normalizeText(day?.conditionLabel, 80)
+      })).filter((day) => day.date || day.shortLabel || day.temperatureLabel || day.conditionLabel)
+    : [];
+  return {
+    status: normalizeText(value.status, 32),
+    message: normalizeText(value.message, 240),
+    locationLabel: normalizeText(value.locationLabel, 120),
+    fetchedAt: typeof value.fetchedAt === "number" ? value.fetchedAt : 0,
+    nextRefreshAt: typeof value.nextRefreshAt === "number" ? value.nextRefreshAt : 0,
+    days
+  };
+}
+
+function normalizeTravelFlightSnapshot(value) {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  return {
+    status: normalizeText(value.status, 32),
+    message: normalizeText(value.message, 240),
+    flightLabel: normalizeText(value.flightLabel, 40),
+    statusLabel: normalizeText(value.statusLabel, 80),
+    departureCode: normalizeText(value.departureCode, 8).toUpperCase(),
+    arrivalCode: normalizeText(value.arrivalCode, 8).toUpperCase(),
+    departureTimeLabel: normalizeText(value.departureTimeLabel, 80),
+    gate: normalizeText(value.gate, 12),
+    terminal: normalizeText(value.terminal, 12),
+    fetchedAt: typeof value.fetchedAt === "number" ? value.fetchedAt : 0,
+    nextRefreshAt: typeof value.nextRefreshAt === "number" ? value.nextRefreshAt : 0
+  };
 }
 
 function normalizeTrip(value, createId) {
@@ -1417,6 +1575,7 @@ function getNextTripMilestone(trip) {
 }
 
 function renderTravelShellCard(trip, escapeHtml, liveSnapshot = null, settings = {}) {
+  const hasFlightRefresh = Boolean(buildTravelFlightRequest(trip, settings));
   const liveMarkup = renderTravelShellLiveMarkup(
     liveSnapshot,
     escapeHtml,
@@ -1437,6 +1596,9 @@ function renderTravelShellCard(trip, escapeHtml, liveSnapshot = null, settings =
         ${liveMarkup}
       </div>
       <div class="widget-actions travel-shell-actions">
+        ${hasFlightRefresh
+          ? `<button type="button" class="ghost-button" data-widget-action="travel-refresh-flight" data-trip-id="${trip.id}">Refresh flight</button>`
+          : ""}
         <button type="button" class="ghost-button" data-widget-action="travel-open-trip" data-trip-id="${trip.id}">View trip</button>
       </div>
     </article>
@@ -1447,12 +1609,6 @@ function renderTravelShellLiveMarkup(snapshot, escapeHtml, shouldShowPlaceholder
   if (!snapshot) {
     return shouldShowPlaceholder ? `<p class="travel-shell-live-note muted">Fetching live travel updates...</p>` : "";
   }
-  if (snapshot.status === "loading") {
-    return `<p class="travel-shell-live-note muted">Fetching live travel updates...</p>`;
-  }
-  if (snapshot.status === "error") {
-    return `<p class="travel-shell-live-note muted">${escapeHtml(snapshot.message || "Live travel updates are unavailable right now.")}</p>`;
-  }
 
   const sections = [];
   if (snapshot.flight) {
@@ -1461,7 +1617,15 @@ function renderTravelShellLiveMarkup(snapshot, escapeHtml, shouldShowPlaceholder
   if (snapshot.weather) {
     sections.push(renderTravelWeatherLiveSection(snapshot.weather, escapeHtml));
   }
-
+  if (snapshot.pending) {
+    sections.push(`<p class="travel-shell-live-note muted">Refreshing live travel updates…</p>`);
+  }
+  if (snapshot.flightNotice) {
+    sections.push(`<p class="travel-shell-live-note muted">${escapeHtml(snapshot.flightNotice)}</p>`);
+  }
+  if (snapshot.weatherNotice) {
+    sections.push(`<p class="travel-shell-live-note muted">${escapeHtml(snapshot.weatherNotice)}</p>`);
+  }
   if (sections.length === 0) {
     return shouldShowPlaceholder ? `<p class="travel-shell-live-note muted">No live travel updates are ready yet.</p>` : "";
   }
@@ -1475,6 +1639,9 @@ function renderTravelFlightLiveSection(flight, escapeHtml) {
   if (flight.status === "not-found") {
     return `<p class="travel-shell-live-note muted">${escapeHtml(flight.message || "No live flight status is available yet.")}</p>`;
   }
+  if (flight.status === "error") {
+    return `<p class="travel-shell-live-note muted">${escapeHtml(flight.message || "Live flight status is unavailable right now.")}</p>`;
+  }
   if (flight.status !== "ok") {
     return "";
   }
@@ -1486,6 +1653,7 @@ function renderTravelFlightLiveSection(flight, escapeHtml) {
     flight.gate ? `Gate ${flight.gate}` : "",
     flight.terminal ? `T${flight.terminal}` : ""
   ].filter(Boolean);
+  const freshnessLabel = flight.fetchedAt ? `Checked ${formatRelativeMinutesAgo(flight.fetchedAt)}` : "";
 
   return `
     <section class="travel-shell-live-section">
@@ -1493,6 +1661,7 @@ function renderTravelFlightLiveSection(flight, escapeHtml) {
       <strong>${escapeHtml(flight.flightLabel || "Flight status")}</strong>
       ${routeLabel ? `<span>${escapeHtml(routeLabel)}</span>` : ""}
       ${detailBits.length ? `<span>${escapeHtml(detailBits.join(" · "))}</span>` : ""}
+      ${freshnessLabel ? `<span>${escapeHtml(freshnessLabel)}</span>` : ""}
     </section>
   `;
 }
@@ -1536,6 +1705,95 @@ function applyTravelShellLiveData(root, trips, settings, liveByTripId = {}) {
       Boolean(buildTravelShellLiveRequest(trip, settings))
     );
   }
+}
+
+function buildTravelDisplaySnapshot(persistedSnapshot, uiSnapshot) {
+  const base = normalizeTravelLiveSnapshot(persistedSnapshot) || null;
+  if (!uiSnapshot) {
+    return base;
+  }
+  return mergeTravelLiveSnapshot(base, uiSnapshot);
+}
+
+function mergeTravelLiveSnapshot(base, update) {
+  const normalizedBase = normalizeTravelLiveSnapshot(base) || {};
+  const normalizedUpdate = normalizeTravelLiveSnapshot(update) || {};
+  const updateFlightFailed = normalizedUpdate.flight && normalizedUpdate.flight.status && normalizedUpdate.flight.status !== "ok";
+  const updateWeatherFailed = normalizedUpdate.weather && normalizedUpdate.weather.status && normalizedUpdate.weather.status !== "ok";
+  const mergedFlight = normalizedUpdate.flight
+    ? (normalizedUpdate.flight.status === "ok"
+        ? normalizedUpdate.flight
+        : (normalizedBase.flight || normalizedUpdate.flight))
+    : normalizedBase.flight;
+  const mergedWeather = normalizedUpdate.weather
+    ? (normalizedUpdate.weather.status === "ok" ? normalizedUpdate.weather : (normalizedBase.weather || normalizedUpdate.weather))
+    : (normalizedBase.weather || null);
+  return {
+    ...normalizedBase,
+    ...normalizedUpdate,
+    fetchedAt: Math.max(normalizedBase.fetchedAt || 0, normalizedUpdate.fetchedAt || 0),
+    updatedAt: Math.max(normalizedBase.updatedAt || 0, normalizedUpdate.updatedAt || 0, normalizedUpdate.fetchedAt || 0),
+    flight: mergedFlight || null,
+    weather: mergedWeather,
+    flightNotice: updateFlightFailed && normalizedBase.flight
+      ? (normalizedUpdate.flight?.message || normalizedUpdate.flightNotice || normalizedBase.flightNotice || "")
+      : (normalizedUpdate.flight?.status === "ok" ? "" : (normalizedUpdate.flightNotice || normalizedBase.flightNotice || "")),
+    flightNoticeAt: updateFlightFailed
+      ? Math.max(normalizedUpdate.flight?.fetchedAt || 0, normalizedUpdate.flightNoticeAt || 0, normalizedUpdate.fetchedAt || 0)
+      : 0,
+    weatherNotice: updateWeatherFailed && normalizedBase.weather
+      ? (normalizedUpdate.weather?.message || normalizedUpdate.weatherNotice || normalizedBase.weatherNotice || "")
+      : (normalizedUpdate.weather?.status === "ok" ? "" : (normalizedUpdate.weatherNotice || normalizedBase.weatherNotice || "")),
+    weatherNoticeAt: updateWeatherFailed
+      ? Math.max(normalizedUpdate.weather?.fetchedAt || 0, normalizedUpdate.weatherNoticeAt || 0, normalizedUpdate.fetchedAt || 0)
+      : 0,
+    pending: normalizedUpdate.pending === true
+  };
+}
+
+function shouldRefreshTravelShellTrip({ request, persistedSnapshot, forceFlightRefresh = false }) {
+  const now = Date.now();
+  if (forceFlightRefresh && request.flight) {
+    return true;
+  }
+  if (!persistedSnapshot) {
+    return true;
+  }
+  const weatherDue = Boolean(request.weather) && shouldRefreshLiveComponent(persistedSnapshot.weather, now);
+  const flightDue = Boolean(request.flight) && shouldRefreshLiveComponent(persistedSnapshot.flight, now);
+  return weatherDue || flightDue;
+}
+
+function shouldRefreshLiveComponent(componentSnapshot, now = Date.now()) {
+  if (!componentSnapshot) {
+    return true;
+  }
+  const nextRefreshAt = Number(componentSnapshot.nextRefreshAt || 0);
+  if (!nextRefreshAt) {
+    return true;
+  }
+  return nextRefreshAt <= now;
+}
+
+function persistTravelLiveSnapshot(widget, tripId, snapshot) {
+  const trips = normalizeTrips(widget.data?.trips);
+  const persistedByTripId = normalizeTravelLiveSnapshots(widget.data?.liveSnapshots, trips);
+  const merged = mergeTravelLiveSnapshot(persistedByTripId[tripId], snapshot);
+  merged.pending = false;
+  widget.data.liveSnapshots = {
+    ...persistedByTripId,
+    [tripId]: merged
+  };
+}
+
+function formatRelativeMinutesAgo(at) {
+  const diffMs = Math.max(0, Date.now() - at);
+  const diffMinutes = Math.max(1, Math.round(diffMs / 60000));
+  if (diffMinutes < 60) {
+    return `${diffMinutes} min ago`;
+  }
+  const hours = Math.round(diffMinutes / 60);
+  return `${hours} hr ago`;
 }
 
 function renderTravelOverviewCard(trip, escapeHtml, formatDate) {
@@ -2098,7 +2356,15 @@ function renderTravelDetailTabButton(key, label, activeTab, escapeHtml) {
 
 function getTravelUiState(widgetId) {
   if (!travelWidgetUiState.has(widgetId)) {
-    travelWidgetUiState.set(widgetId, { detailTab: "overview" });
+    travelWidgetUiState.set(widgetId, {
+      detailTab: "overview",
+      shellLiveByTripId: {},
+      shellLiveFetchedAt: 0,
+      shellLiveRequestKey: "",
+      shellLivePendingKey: "",
+      shellLiveRequestToken: 0,
+      forceFlightRefreshTripIds: {}
+    });
   }
   return travelWidgetUiState.get(widgetId);
 }
