@@ -470,6 +470,10 @@ const remoteDriftState = {
   checkInFlight: false,
   lastCheckedAt: 0
 };
+const syncChannelState = {
+  channel: null,
+  tabId: createId()
+};
 const driveConflictState = {
   resolver: null
 };
@@ -555,6 +559,7 @@ let autosaveController = createAutosaveController({
           userUpdatedAt: result.remoteUserUpdatedAt,
           userFingerprint: result.remoteUserFingerprint
         });
+        announceRemoteStoreState();
         renderSyncMeta();
       }
       return result;
@@ -735,6 +740,7 @@ cancelQuickAddButton.addEventListener("click", closeQuickAdd);
 initializeApp();
 
 function initializeApp() {
+  initializeSyncChannel();
   setSyncStatus("Using local data while checking Google Drive in the background.", "info");
   renderSyncMeta();
   finalizeStoreState();
@@ -763,6 +769,7 @@ async function continueStartup() {
       userUpdatedAt: startupResult.remoteUserUpdatedAt,
       userFingerprint: startupResult.remoteUserFingerprint
     });
+    announceRemoteStoreState();
   }
 
   if (startupResult.loaded) {
@@ -816,10 +823,18 @@ async function handleManualLoadFromDrive() {
       userUpdatedAt: result.remoteUserUpdatedAt,
       userFingerprint: result.remoteUserFingerprint
     });
-    setRemoteComparisonBase({
-      userUpdatedAt: result.remoteUserUpdatedAt,
-      userFingerprint: result.remoteUserFingerprint
-    });
+    if (result.applied || result.synced) {
+      setRemoteComparisonBase({
+        userUpdatedAt: result.remoteUserUpdatedAt,
+        userFingerprint: result.remoteUserFingerprint
+      });
+      announceRemoteStoreState();
+    } else if (result.keptLocalChanges) {
+      remoteDriftState.remoteChangedSinceBase = Boolean(
+        result.remoteUserFingerprint
+        && result.remoteUserFingerprint !== getCurrentUserFingerprint()
+      );
+    }
   } else if (result && result.found === false) {
     clearRemoteStoreState();
   }
@@ -853,6 +868,7 @@ async function saveCurrentStoreToDrive({ quiet = false, force = false, mode = "m
         userUpdatedAt: result.remoteUserUpdatedAt,
         userFingerprint: result.remoteUserFingerprint
       });
+      announceRemoteStoreState();
       autosaveController.markCurrentAsSaved();
     }
     return result;
@@ -1017,15 +1033,17 @@ function isCanopyDetailOpen() {
 }
 
 function buildDriveConflictCopy({ operation, localUserUpdatedAt, remoteUserUpdatedAt }) {
+  const localLabel = localUserUpdatedAt ? formatDateTime(localUserUpdatedAt) : "No local edits recorded";
+  const remoteLabel = remoteUserUpdatedAt ? formatDateTime(remoteUserUpdatedAt) : "No Drive edits recorded";
   const newerSide = localUserUpdatedAt > remoteUserUpdatedAt
-    ? "Local data is newer."
+    ? "This browser has the newer version."
     : remoteUserUpdatedAt > localUserUpdatedAt
-      ? "Google Drive data is newer."
-      : "Both copies changed around the same time.";
-  if (operation === "save") {
-    return `${newerSide} Auto Merge will combine both versions and prefer newer entries when the same item changed in both places. Keep Local will overwrite Google Drive with this browser's current data. Keep Drive will discard local conflicting changes and restore the Google Drive version on this browser.`;
-  }
-  return `${newerSide} Auto Merge will combine both versions and prefer newer entries when the same item changed in both places. Keep Local leaves this browser's data as-is. Keep Drive replaces local data with the current Google Drive version.`;
+      ? "Google Drive has the newer version."
+      : "Both copies were updated at about the same time.";
+  const operationNote = operation === "save"
+    ? "Saving now without a choice could overwrite Drive with this tab's version."
+    : "Loading now without a choice could overwrite what you currently have in this tab.";
+  return `${newerSide} Local last changed: ${localLabel}. Drive last changed: ${remoteLabel}. ${operationNote}`;
 }
 
 function openDriveConflictPrompt({ operation = "load", localUserUpdatedAt = 0, remoteUserUpdatedAt = 0 } = {}) {
@@ -1033,18 +1051,18 @@ function openDriveConflictPrompt({ operation = "load", localUserUpdatedAt = 0, r
     ? "Resolve Drive conflict before saving"
     : "Resolve Drive conflict before loading";
   driveConflictSubtitle.textContent = operation === "save"
-    ? "Local data and Google Drive both changed."
-    : "This browser and Google Drive do not match.";
+    ? "Choose whether to overwrite, keep Drive, or auto-merge before this save finishes."
+    : "Choose whether to keep this tab, replace it with Drive, or auto-merge both copies.";
   driveConflictCopy.textContent = buildDriveConflictCopy({ operation, localUserUpdatedAt, remoteUserUpdatedAt });
   driveConflictAutoMergeButton.querySelector("span").textContent = operation === "save"
-    ? "Merge both versions, prefer newer conflicting entries, then save the merged result back to Google Drive."
-    : "Merge both versions and prefer newer conflicting entries when loading.";
+    ? "Recommended. Combine both versions, prefer the newer copy of any conflicting item, then save that merged result to Google Drive."
+    : "Recommended. Combine both versions and prefer the newer copy of any conflicting item while loading.";
   driveConflictKeepLocalButton.querySelector("span").textContent = operation === "save"
-    ? "Overwrite Google Drive with this browser’s current data."
-    : "Leave this browser’s data untouched and skip loading from Google Drive.";
+    ? "Overwrite Google Drive with the exact data currently in this browser."
+    : "Keep what is currently in this browser and do not load the Drive copy.";
   driveConflictKeepDriveButton.querySelector("span").textContent = operation === "save"
-    ? "Discard local conflicting changes and restore the Google Drive version here."
-    : "Replace local data with the current Google Drive version.";
+    ? "Discard this browser's conflicting changes and restore the current Google Drive version here."
+    : "Replace this browser's data with the current Google Drive version.";
   driveConflictModal.classList.remove("hidden");
   driveConflictModal.setAttribute("aria-hidden", "false");
   document.body.classList.add("drive-conflict-open");
@@ -2807,6 +2825,7 @@ function buildTaskFromValues(values, originalTask = null, categorySnapshot = nul
     importance: normalizedImportance,
     status: originalTask?.status || "open",
     createdAt: originalTask?.createdAt || Date.now(),
+    updatedAt: Date.now(),
     ownerWidgetId: originalTask?.ownerWidgetId || "",
     ownerWidgetType: originalTask?.ownerWidgetType || "",
     ownerTaskKey: originalTask?.ownerTaskKey || "",
@@ -3174,6 +3193,7 @@ function applyTaskEdit(formData) {
 }
 
 function replaceTask(nextTask) {
+  touchTask(nextTask);
   store.tasks = store.tasks.map((task) => (task.id === nextTask.id ? nextTask : task));
   syncTaskPointAward(nextTask);
 }
@@ -4112,6 +4132,16 @@ function setRemoteComparisonBase({
   remoteDriftState.remoteChangedSinceBase = false;
 }
 
+function announceRemoteStoreState() {
+  broadcastSyncEvent("remote-state", {
+    updatedAt: syncState.remoteUpdatedAt || 0,
+    fingerprint: syncState.remoteFingerprint || "",
+    savedAt: syncState.remoteSavedAt || 0,
+    userUpdatedAt: syncState.remoteUserUpdatedAt || 0,
+    userFingerprint: syncState.remoteUserFingerprint || ""
+  });
+}
+
 function clearRemoteStoreState() {
   syncState.remoteUpdatedAt = 0;
   syncState.remoteFingerprint = "";
@@ -4213,6 +4243,78 @@ async function checkForRemoteDrift({ reason = "manual", force = false } = {}) {
     return result;
   } finally {
     remoteDriftState.checkInFlight = false;
+  }
+}
+
+function initializeSyncChannel() {
+  if (typeof window.BroadcastChannel !== "function" || syncChannelState.channel) {
+    return;
+  }
+  try {
+    const channel = new window.BroadcastChannel("lifetree-sync");
+    channel.addEventListener("message", handleSyncChannelMessage);
+    syncChannelState.channel = channel;
+  } catch {
+    syncChannelState.channel = null;
+  }
+}
+
+function broadcastSyncEvent(type, payload = {}) {
+  const channel = syncChannelState.channel;
+  if (!channel) {
+    return;
+  }
+  try {
+    channel.postMessage({
+      type,
+      tabId: syncChannelState.tabId,
+      at: Date.now(),
+      ...payload
+    });
+  } catch {}
+}
+
+function handleSyncChannelMessage(event) {
+  const message = event?.data;
+  if (!message || message.tabId === syncChannelState.tabId || typeof message.type !== "string") {
+    return;
+  }
+
+  if (message.type === "remote-state") {
+    const nextFingerprint = typeof message.userFingerprint === "string" ? message.userFingerprint : "";
+    observeRemoteStoreState({
+      updatedAt: typeof message.updatedAt === "number" ? message.updatedAt : 0,
+      fingerprint: typeof message.fingerprint === "string" ? message.fingerprint : "",
+      savedAt: typeof message.savedAt === "number" ? message.savedAt : 0,
+      userUpdatedAt: typeof message.userUpdatedAt === "number" ? message.userUpdatedAt : 0,
+      userFingerprint: nextFingerprint
+    });
+    if (remoteDriftState.baseRemoteUserFingerprint) {
+      remoteDriftState.remoteChangedSinceBase = Boolean(
+        nextFingerprint && nextFingerprint !== remoteDriftState.baseRemoteUserFingerprint
+      );
+    } else if (nextFingerprint) {
+      setRemoteComparisonBase({
+        userUpdatedAt: typeof message.userUpdatedAt === "number" ? message.userUpdatedAt : 0,
+        userFingerprint: nextFingerprint
+      });
+    }
+    if (remoteDriftState.remoteChangedSinceBase) {
+      setSyncStatus(
+        hasUnresolvedRemoteConflict()
+          ? "Another Lifetree tab saved newer Drive changes while this tab also has local edits. Resolve the conflict before autosave runs again."
+          : "Another Lifetree tab saved newer Drive changes. Load from Drive to refresh, or choose a conflict action when saving.",
+        hasUnresolvedRemoteConflict() ? "error" : "info"
+      );
+    }
+    renderSyncMeta();
+    return;
+  }
+
+  if (message.type === "local-edit") {
+    if (!remoteDriftState.remoteChangedSinceBase) {
+      setSyncStatus("Another Lifetree tab has unsaved local changes. Save carefully if both tabs edit the same items.", "info");
+    }
   }
 }
 
@@ -5243,6 +5345,7 @@ function removeHistoryEntriesById(historyIds) {
     if (nextHistory.length !== currentHistory.length) {
       const wasClosed = task.status !== "open";
       task.history = nextHistory;
+      touchTask(task);
       changed = true;
 
       if ((Array.isArray(task.history) ? task.history.length : 0) === 0 && wasClosed) {
@@ -5315,6 +5418,7 @@ function repairTaskStatusFromHistory() {
       task.status = nextStatus;
       task.historyOnly = false;
       task.hideAfterAt = 0;
+      touchTask(task);
       changed = true;
     }
 
@@ -5339,6 +5443,7 @@ function syncTaskStatusWithLifecycle(task) {
     task.status = nextStatus;
     task.historyOnly = false;
     task.hideAfterAt = 0;
+    touchTask(task);
     changed = true;
   }
 
@@ -5387,6 +5492,7 @@ function advanceRecurringTemplateAfterHistoryRemoval(task) {
   task.historyOnly = false;
   task.hideAfterAt = 0;
   task.history = [];
+  touchTask(task);
   regenerateSeries(task.id, { preserveClosed: true });
   return true;
 }
@@ -5598,10 +5704,12 @@ function handleTaskAction(event) {
 
   if (action === "archive") {
     task.archived = true;
+    touchTask(task);
   }
 
   if (action === "restore") {
     task.archived = false;
+    touchTask(task);
   }
 
   if (action === "edit") {
@@ -5642,6 +5750,7 @@ function markTaskCompleted(task, at = Date.now()) {
   task.hideAfterAt = isAutoDismissTask(task) ? at + COMPLETED_ONE_OFF_DISMISS_MS : 0;
   awardPointsForTask(task, at);
   pushHistory(task, "completed", at);
+  touchTask(task, at);
 }
 
 function markTaskSkipped(task, at = Date.now()) {
@@ -5649,6 +5758,7 @@ function markTaskSkipped(task, at = Date.now()) {
   task.historyOnly = false;
   task.hideAfterAt = 0;
   pushHistory(task, "skipped", at);
+  touchTask(task, at);
 }
 
 function markTaskOpen(task, at = Date.now()) {
@@ -5657,6 +5767,7 @@ function markTaskOpen(task, at = Date.now()) {
   task.hideAfterAt = 0;
   revokePointsForTask(task);
   pushHistory(task, "reopened", at);
+  touchTask(task, at);
 }
 
 function isAutoDismissTask(task) {
@@ -5669,6 +5780,7 @@ function applyCompletedTaskHistoryOnly(now = Date.now()) {
     if (!task.historyOnly && task.status === "done" && isAutoDismissTask(task) && task.hideAfterAt && task.hideAfterAt <= now) {
       task.historyOnly = true;
       task.hideAfterAt = 0;
+      touchTask(task, now);
       changed = true;
     }
   }
@@ -6056,6 +6168,13 @@ function pushHistory(task, type, at = Date.now()) {
   task.history.push({ id: createId(), type, at });
 }
 
+function touchTask(task, at = Date.now()) {
+  if (!task) {
+    return;
+  }
+  task.updatedAt = Math.max(at, task.updatedAt || 0, task.createdAt || 0);
+}
+
 function applyAutoArchiving() {
   const visibleHistoryEntries = buildHistoryFeed(store.tasks, "newest", "all").filter((item) => !item.archived);
   if (visibleHistoryEntries.length <= MAX_VISIBLE_HISTORY_ENTRIES) {
@@ -6356,6 +6475,14 @@ function normalizeTask(task) {
     importance: normalizedImportance,
     status: normalizeStatus(task),
     createdAt: typeof task.createdAt === "number" ? task.createdAt : Date.now(),
+    updatedAt: typeof task.updatedAt === "number"
+      ? task.updatedAt
+      : Math.max(
+        typeof task.createdAt === "number" ? task.createdAt : 0,
+        Array.isArray(task.history)
+          ? task.history.reduce((latest, item) => Math.max(latest, item?.at || 0), 0)
+          : 0
+      ),
     ownerWidgetId: typeof task.ownerWidgetId === "string" ? task.ownerWidgetId : "",
     ownerWidgetType: typeof task.ownerWidgetType === "string" ? task.ownerWidgetType : "",
     ownerTaskKey: typeof task.ownerTaskKey === "string" ? task.ownerTaskKey : "",
@@ -6751,6 +6878,10 @@ function persistStore({ touchUpdatedAt = true, touchUserUpdatedAt = touchUpdated
   if (touchUserUpdatedAt) {
     store.userUpdatedAt = now;
     store.userFingerprint = computeUserContentFingerprint(store);
+    broadcastSyncEvent("local-edit", {
+      userUpdatedAt: store.userUpdatedAt || 0,
+      userFingerprint: store.userFingerprint || ""
+    });
   }
   if (hasUnresolvedRemoteConflict()) {
     setSyncStatus(
@@ -7050,13 +7181,73 @@ function shouldAlwaysKeepUnpairedTask(task) {
 }
 
 function latestTaskTimestampForMerge(task) {
-  let latest = Math.max(0, task?.createdAt || 0, task?.hideAfterAt || 0);
+  let latest = Math.max(0, task?.createdAt || 0, task?.updatedAt || 0, task?.hideAfterAt || 0);
   if (Array.isArray(task?.history)) {
     for (const item of task.history) {
       latest = Math.max(latest, item?.at || 0);
     }
   }
   return latest;
+}
+
+function getTaskMergeUpdatedAt(task) {
+  return latestTaskTimestampForMerge(task);
+}
+
+function buildTaskMergeSignature(task) {
+  return JSON.stringify({
+    templateId: task.templateId || "",
+    occurrenceIndex: task.occurrenceIndex || 0,
+    name: task.name,
+    details: task.details,
+    startDate: task.startDate || "",
+    dueDate: task.dueDate || "",
+    timeOfDay: task.timeOfDay || "",
+    lateGraceMinutes: task.lateGraceMinutes || 0,
+    notBeforeAt: task.notBeforeAt || 0,
+    pointsValue: task.pointsValue,
+    pointsEntryId: task.pointsEntryId || "",
+    length: task.length,
+    categoryKey: task.categoryKey,
+    categoryLabel: task.categoryLabel,
+    categoryColor: task.categoryColor,
+    importance: task.importance,
+    status: task.status,
+    ownerWidgetId: task.ownerWidgetId || "",
+    ownerWidgetType: task.ownerWidgetType || "",
+    ownerTaskKey: task.ownerTaskKey || "",
+    widgetTaskKind: task.widgetTaskKind || "",
+    widgetTaskMeta: normalizeWidgetTaskMeta(task.widgetTaskMeta),
+    reminders: normalizeTaskReminders(task.reminders, {
+      importance: task.importance,
+      lateGraceMinutes: task.lateGraceMinutes,
+      widgetTaskMeta: task.widgetTaskMeta
+    }),
+    linkedSeries: normalizeLinkedSeries(task.linkedSeries),
+    sequenceDependencyId: task.sequenceDependencyId || "",
+    widgetCompletion: normalizeWidgetCompletion(task.widgetCompletion),
+    skipRule: normalizeSkipRule(task.skipRule),
+    dependencies: [...(task.dependencies || [])].sort(),
+    recurrence: normalizeRecurrence(task.recurrence),
+    archived: task.archived === true,
+    historyOnly: task.historyOnly === true,
+    hideAfterAt: task.hideAfterAt || 0,
+    seriesOriginId: task.seriesOriginId || "",
+    history: compactTaskHistory(task.history || []).map((item) => ({
+      id: item.id,
+      type: item.type,
+      at: item.at
+    }))
+  });
+}
+
+function chooseByTaskUpdatedAt(localTask, remoteTask, localStoreUpdatedAt, remoteStoreUpdatedAt) {
+  const localTaskUpdatedAt = getTaskMergeUpdatedAt(localTask);
+  const remoteTaskUpdatedAt = getTaskMergeUpdatedAt(remoteTask);
+  if (localTaskUpdatedAt !== remoteTaskUpdatedAt) {
+    return localTaskUpdatedAt >= remoteTaskUpdatedAt ? localTask : remoteTask;
+  }
+  return localStoreUpdatedAt >= remoteStoreUpdatedAt ? localTask : remoteTask;
 }
 
 function choosePreferredTask(localTask, remoteTask, localUpdatedAt, remoteUpdatedAt) {
@@ -7071,37 +7262,10 @@ function choosePreferredTask(localTask, remoteTask, localUpdatedAt, remoteUpdate
     if (resolutionComparison !== 0) {
       return resolutionComparison >= 0 ? localTask : remoteTask;
     }
-    return localUpdatedAt >= remoteUpdatedAt ? localTask : remoteTask;
+    return chooseByTaskUpdatedAt(localTask, remoteTask, localUpdatedAt, remoteUpdatedAt);
   }
-  if (localTask.historyOnly !== remoteTask.historyOnly || localTask.hideAfterAt !== remoteTask.hideAfterAt) {
-    return localUpdatedAt >= remoteUpdatedAt ? localTask : remoteTask;
-  }
-  if (
-    localTask.name !== remoteTask.name ||
-    localTask.details !== remoteTask.details ||
-    localTask.timeOfDay !== remoteTask.timeOfDay ||
-    localTask.lateGraceMinutes !== remoteTask.lateGraceMinutes ||
-    (localTask.notBeforeAt || 0) !== (remoteTask.notBeforeAt || 0) ||
-    localTask.pointsValue !== remoteTask.pointsValue ||
-    (localTask.pointsEntryId || "") !== (remoteTask.pointsEntryId || "") ||
-    localTask.categoryKey !== remoteTask.categoryKey ||
-    localTask.categoryLabel !== remoteTask.categoryLabel ||
-    localTask.categoryColor !== remoteTask.categoryColor ||
-    localTask.importance !== remoteTask.importance ||
-    (localTask.dueDate || "") !== (remoteTask.dueDate || "") ||
-    JSON.stringify(normalizeTaskReminders(localTask.reminders, {
-      importance: localTask.importance,
-      lateGraceMinutes: localTask.lateGraceMinutes,
-      widgetTaskMeta: localTask.widgetTaskMeta
-    })) !== JSON.stringify(normalizeTaskReminders(remoteTask.reminders, {
-      importance: remoteTask.importance,
-      lateGraceMinutes: remoteTask.lateGraceMinutes,
-      widgetTaskMeta: remoteTask.widgetTaskMeta
-    })) ||
-    (localTask.widgetTaskKind || "") !== (remoteTask.widgetTaskKind || "") ||
-    JSON.stringify(normalizeWidgetTaskMeta(localTask.widgetTaskMeta)) !== JSON.stringify(normalizeWidgetTaskMeta(remoteTask.widgetTaskMeta))
-  ) {
-    return localUpdatedAt >= remoteUpdatedAt ? localTask : remoteTask;
+  if (buildTaskMergeSignature(localTask) !== buildTaskMergeSignature(remoteTask)) {
+    return chooseByTaskUpdatedAt(localTask, remoteTask, localUpdatedAt, remoteUpdatedAt);
   }
   return localTask.createdAt >= remoteTask.createdAt ? localTask : remoteTask;
 }
@@ -8120,6 +8284,7 @@ function buildGeneratedInstance(template, occurrenceIndex, startDate, dueDate, e
     importance: normalizeImportance(existingTask?.importance || template.importance || DEFAULT_IMPORTANCE),
     status: existingTask?.status || "open",
     createdAt: existingTask?.createdAt || Date.now() + occurrenceIndex,
+    updatedAt: existingTask?.updatedAt || template.updatedAt || template.createdAt || Date.now(),
     ownerWidgetId: existingTask?.ownerWidgetId || template.ownerWidgetId || "",
     ownerWidgetType: existingTask?.ownerWidgetType || template.ownerWidgetType || "",
     ownerTaskKey: existingTask?.ownerTaskKey || template.ownerTaskKey || "",
