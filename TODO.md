@@ -10,6 +10,8 @@
 - Drive sync: Make merge/conflict popups clearer about what happened and what each choice will do.
 - Notifications: Move auth/session storage into a shared backend before re-enabling the dedicated Railway worker.
 - Canopy: Decide how dailies should be marked complete directly from the shell view.
+- Workout Coach: Improve organization of the calories/weight graph in the workout modal.
+- Notifications: Consolidate repeated activities in email summaries and reminders.
 
 ## Recently completed
 
