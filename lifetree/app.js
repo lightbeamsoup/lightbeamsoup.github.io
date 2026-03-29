@@ -521,6 +521,7 @@ const driveSyncController = createDriveSyncController({
   setSyncStatus,
   updateGoogleButtons,
   promptDriveConflictChoice,
+  canAutoMergeDriveConflict,
   getReturnToTarget,
   describeMergeResult,
   computeStoreFingerprint,
@@ -1041,9 +1042,9 @@ function buildDriveConflictCopy({ operation, localUserUpdatedAt, remoteUserUpdat
       ? "Google Drive has the newer version."
       : "Both copies were updated at about the same time.";
   const operationNote = operation === "save"
-    ? "Saving now without a choice could overwrite Drive with this tab's version."
-    : "Loading now without a choice could overwrite what you currently have in this tab.";
-  return `${newerSide} Local last changed: ${localLabel}. Drive last changed: ${remoteLabel}. ${operationNote}`;
+    ? "Choose only if you do not want the recommended merge."
+    : "Auto Merge is recommended unless you want one side to fully replace the other.";
+  return `${newerSide} Local: ${localLabel}. Drive: ${remoteLabel}. ${operationNote}`;
 }
 
 function openDriveConflictPrompt({ operation = "load", localUserUpdatedAt = 0, remoteUserUpdatedAt = 0 } = {}) {
@@ -1051,18 +1052,18 @@ function openDriveConflictPrompt({ operation = "load", localUserUpdatedAt = 0, r
     ? "Resolve Drive conflict before saving"
     : "Resolve Drive conflict before loading";
   driveConflictSubtitle.textContent = operation === "save"
-    ? "Choose whether to overwrite, keep Drive, or auto-merge before this save finishes."
-    : "Choose whether to keep this tab, replace it with Drive, or auto-merge both copies.";
+    ? "Auto Merge is available, but this save needs a choice first."
+    : "Choose how this tab should use the Drive copy.";
   driveConflictCopy.textContent = buildDriveConflictCopy({ operation, localUserUpdatedAt, remoteUserUpdatedAt });
   driveConflictAutoMergeButton.querySelector("span").textContent = operation === "save"
-    ? "Recommended. Combine both versions, prefer the newer copy of any conflicting item, then save that merged result to Google Drive."
-    : "Recommended. Combine both versions and prefer the newer copy of any conflicting item while loading.";
+    ? "Recommended. Save a merged copy that keeps the newer conflicting items."
+    : "Recommended. Combine both copies and keep the newer conflicting items.";
   driveConflictKeepLocalButton.querySelector("span").textContent = operation === "save"
-    ? "Overwrite Google Drive with the exact data currently in this browser."
-    : "Keep what is currently in this browser and do not load the Drive copy.";
+    ? "Overwrite Drive with exactly what is in this browser."
+    : "Keep this browser version and do not load Drive.";
   driveConflictKeepDriveButton.querySelector("span").textContent = operation === "save"
-    ? "Discard this browser's conflicting changes and restore the current Google Drive version here."
-    : "Replace this browser's data with the current Google Drive version.";
+    ? "Discard this browser version and restore the current Drive copy."
+    : "Replace this browser with the current Drive version.";
   driveConflictModal.classList.remove("hidden");
   driveConflictModal.setAttribute("aria-hidden", "false");
   document.body.classList.add("drive-conflict-open");
@@ -6983,6 +6984,160 @@ function mergeStores(localStore, remoteStore) {
     recurringBonusSelections: mergeRecurringBonusSelections(localStore.recurringBonusSelections, remoteStore.recurringBonusSelections),
     deletionMarkers: mergedDeletionMarkers
   };
+}
+
+function canAutoMergeDriveConflict(localStore, remoteStore) {
+  const local = normalizeStore(localStore || createEmptyStore());
+  const remote = normalizeStore(remoteStore || createEmptyStore());
+  return !hasAmbiguousDriveMergeConflict(local, remote);
+}
+
+function hasAmbiguousDriveMergeConflict(localStore, remoteStore) {
+  return hasAmbiguousProfileMerge(localStore.profile, remoteStore.profile)
+    || hasAmbiguousNotificationsMerge(localStore.notifications, remoteStore.notifications)
+    || hasAmbiguousTreeStateMerge(localStore.treeState, remoteStore.treeState)
+    || hasAmbiguousDevSettingsMerge(localStore.devSettings, remoteStore.devSettings, localStore.updatedAt, remoteStore.updatedAt)
+    || hasAmbiguousCategoryMerge(localStore.categories, remoteStore.categories)
+    || hasAmbiguousWidgetMerge(localStore.widgets, remoteStore.widgets)
+    || hasAmbiguousRecurringBonusMerge(localStore.recurringBonusSelections, remoteStore.recurringBonusSelections)
+    || hasAmbiguousTaskMerge(localStore.tasks, remoteStore.tasks, localStore.updatedAt, remoteStore.updatedAt);
+}
+
+function hasAmbiguousProfileMerge(localProfile, remoteProfile) {
+  const local = normalizeProfile(localProfile);
+  const remote = normalizeProfile(remoteProfile);
+  return (local.updatedAt || 0) === (remote.updatedAt || 0)
+    && buildComparableValueSignature(local) !== buildComparableValueSignature(remote);
+}
+
+function hasAmbiguousNotificationsMerge(localNotifications, remoteNotifications) {
+  const local = normalizeNotifications(localNotifications).email;
+  const remote = normalizeNotifications(remoteNotifications).email;
+  return (local.updatedAt || 0) === (remote.updatedAt || 0)
+    && buildComparableValueSignature({
+      recipientEmail: local.recipientEmail,
+      summaries: local.summaries,
+      reminders: local.reminders
+    }) !== buildComparableValueSignature({
+      recipientEmail: remote.recipientEmail,
+      summaries: remote.summaries,
+      reminders: remote.reminders
+    });
+}
+
+function hasAmbiguousTreeStateMerge(localTreeState, remoteTreeState) {
+  const local = normalizeTreeState(localTreeState);
+  const remote = normalizeTreeState(remoteTreeState);
+  return (local.updatedAt || 0) === (remote.updatedAt || 0)
+    && buildComparableValueSignature(local) !== buildComparableValueSignature(remote);
+}
+
+function hasAmbiguousDevSettingsMerge(localDevSettings, remoteDevSettings, localStoreUpdatedAt = 0, remoteStoreUpdatedAt = 0) {
+  return (localStoreUpdatedAt || 0) === (remoteStoreUpdatedAt || 0)
+    && buildComparableValueSignature(normalizeDevSettings(localDevSettings)) !== buildComparableValueSignature(normalizeDevSettings(remoteDevSettings));
+}
+
+function hasAmbiguousCategoryMerge(localCategories = [], remoteCategories = []) {
+  const localByKey = new Map(normalizeCategoryDefinitions(localCategories).map((category) => [category.key, category]));
+  const remoteByKey = new Map(normalizeCategoryDefinitions(remoteCategories).map((category) => [category.key, category]));
+  for (const key of new Set([...localByKey.keys(), ...remoteByKey.keys()])) {
+    const local = localByKey.get(key);
+    const remote = remoteByKey.get(key);
+    if (!local || !remote) {
+      continue;
+    }
+    if ((local.updatedAt || 0) === (remote.updatedAt || 0)
+      && buildCategoryMergeSignature(local) !== buildCategoryMergeSignature(remote)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function hasAmbiguousWidgetMerge(localWidgets = [], remoteWidgets = []) {
+  const localByType = new Map(normalizeWidgetList(localWidgets, widgetRegistryHelpers(), MAX_WIDGETS).map((widget) => [widget.type, widget]));
+  const remoteByType = new Map(normalizeWidgetList(remoteWidgets, widgetRegistryHelpers(), MAX_WIDGETS).map((widget) => [widget.type, widget]));
+  for (const type of new Set([...localByType.keys(), ...remoteByType.keys()])) {
+    const local = localByType.get(type);
+    const remote = remoteByType.get(type);
+    if (!local || !remote) {
+      continue;
+    }
+    if (getWidgetUpdatedAt(local) === getWidgetUpdatedAt(remote)
+      && buildWidgetMergeSignature(local) !== buildWidgetMergeSignature(remote)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function hasAmbiguousRecurringBonusMerge(localSelections = [], remoteSelections = []) {
+  const localByKey = new Map(normalizeRecurringBonusSelections(localSelections).map((entry) => [entry.key, entry]));
+  const remoteByKey = new Map(normalizeRecurringBonusSelections(remoteSelections).map((entry) => [entry.key, entry]));
+  for (const key of new Set([...localByKey.keys(), ...remoteByKey.keys()])) {
+    const local = localByKey.get(key);
+    const remote = remoteByKey.get(key);
+    if (!local || !remote) {
+      continue;
+    }
+    if ((local.updatedAt || 0) === (remote.updatedAt || 0)
+      && buildComparableValueSignature(local) !== buildComparableValueSignature(remote)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function hasAmbiguousTaskMerge(localTasks = [], remoteTasks = [], localStoreUpdatedAt = 0, remoteStoreUpdatedAt = 0) {
+  const localById = new Map((Array.isArray(localTasks) ? localTasks : []).map((task) => [task.id, task]));
+  const remoteById = new Map((Array.isArray(remoteTasks) ? remoteTasks : []).map((task) => [task.id, task]));
+  for (const taskId of new Set([...localById.keys(), ...remoteById.keys()])) {
+    const local = localById.get(taskId);
+    const remote = remoteById.get(taskId);
+    if (!local || !remote) {
+      continue;
+    }
+    if (!tasksNeedAmbiguousMergePrompt(local, remote, localStoreUpdatedAt, remoteStoreUpdatedAt)) {
+      continue;
+    }
+    return true;
+  }
+  return false;
+}
+
+function tasksNeedAmbiguousMergePrompt(localTask, remoteTask, localStoreUpdatedAt = 0, remoteStoreUpdatedAt = 0) {
+  if (buildTaskMergeSignature(localTask) === buildTaskMergeSignature(remoteTask)) {
+    return false;
+  }
+  if ((localTask.status === "done" && localTask.pointsEntryId && !remoteTask.pointsEntryId)
+    || (remoteTask.status === "done" && remoteTask.pointsEntryId && !localTask.pointsEntryId)) {
+    return false;
+  }
+  if (compareTaskResolutionPreference(localTask, remoteTask) !== 0) {
+    return false;
+  }
+  if (getTaskMergeUpdatedAt(localTask) !== getTaskMergeUpdatedAt(remoteTask)) {
+    return false;
+  }
+  return (localStoreUpdatedAt || 0) === (remoteStoreUpdatedAt || 0);
+}
+
+function buildComparableValueSignature(value) {
+  return JSON.stringify(sortObjectKeys(value));
+}
+
+function buildCategoryMergeSignature(category) {
+  return buildComparableValueSignature({
+    key: category.key,
+    label: category.label,
+    color: category.color,
+    builtin: category.builtin === true,
+    active: category.active !== false
+  });
+}
+
+function buildWidgetMergeSignature(widget) {
+  return buildComparableValueSignature(sortObjectKeys(widget));
 }
 
 function computeStoreFingerprint(sourceStore) {

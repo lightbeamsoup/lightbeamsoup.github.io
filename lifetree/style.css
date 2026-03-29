@@ -1186,35 +1186,37 @@ body.developer-open {
 }
 
 .drive-conflict-panel {
-  width: min(640px, calc(100vw - 24px));
+  width: min(540px, calc(100vw - 24px));
   height: auto;
   max-height: calc(100dvh - 24px);
 }
 
 .drive-conflict-body {
   display: grid;
-  gap: 14px;
+  gap: 10px;
   overflow-y: auto;
-  padding-right: 6px;
+  padding-right: 4px;
 }
 
 .drive-conflict-copy {
   margin: 0;
   color: var(--muted);
-  line-height: 1.55;
+  font-size: 0.92rem;
+  line-height: 1.45;
 }
 
 .drive-conflict-options {
   display: grid;
-  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .drive-conflict-option {
   display: grid;
-  gap: 6px;
-  padding: 14px;
+  gap: 4px;
+  padding: 12px;
   text-align: left;
-  border-radius: 18px;
+  border-radius: 16px;
   border: 1px solid rgba(37, 50, 67, 0.12);
   background: rgba(255, 255, 255, 0.72);
   color: var(--ink);
@@ -1222,13 +1224,13 @@ body.developer-open {
 }
 
 .drive-conflict-option strong {
-  font-size: 0.98rem;
+  font-size: 0.94rem;
 }
 
 .drive-conflict-option span {
   color: var(--muted);
-  font-size: 0.9rem;
-  line-height: 1.45;
+  font-size: 0.82rem;
+  line-height: 1.35;
 }
 
 .drive-conflict-option:hover,
@@ -1242,6 +1244,12 @@ body.developer-open {
     linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(248, 237, 219, 0.98)),
     linear-gradient(90deg, rgba(227, 124, 82, 0.16), transparent 36%);
   border-color: rgba(227, 124, 82, 0.3);
+}
+
+@media (max-width: 640px) {
+  .drive-conflict-options {
+    grid-template-columns: 1fr;
+  }
 }
 
 .canopy-group-task {

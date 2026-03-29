@@ -48,6 +48,7 @@ export function createDriveSyncController({
   setSyncStatus,
   updateGoogleButtons,
   promptDriveConflictChoice,
+  canAutoMergeDriveConflict,
   getReturnToTarget,
   describeMergeResult,
   computeStoreFingerprint,
@@ -388,7 +389,13 @@ export function createDriveSyncController({
     }
   }
 
-  async function saveToDrive({ suppressAuthError = false, quiet = false, signal, force = false, conflictStrategy = quiet ? "auto-merge" : "prompt" } = {}) {
+  async function saveToDrive({
+    suppressAuthError = false,
+    quiet = false,
+    signal,
+    force = false,
+    conflictStrategy = quiet ? "auto-merge" : "prompt-if-auto-merge-fails"
+  } = {}) {
     const authenticated = await ensureAuthenticated({
       suppressUnavailableError: suppressAuthError || quiet,
       signal
@@ -401,6 +408,7 @@ export function createDriveSyncController({
     }
     try {
       let currentStore = getStore();
+      let saveOutcome = "plain-save";
       const currentFingerprint = computeStoreFingerprint(currentStore);
       const knownRemoteState = typeof getKnownRemoteState === "function" ? getKnownRemoteState() : {};
       const knownRemoteFingerprint = knownRemoteState?.remoteFingerprint || "";
@@ -438,11 +446,16 @@ export function createDriveSyncController({
         const remoteUserUpdatedAt = remoteStore.userUpdatedAt || remoteStore.updatedAt || 0;
 
         if (localUserFingerprint !== remoteUserFingerprint) {
+          const effectiveConflictStrategy = conflictStrategy === "prompt-if-auto-merge-fails"
+            ? (typeof canAutoMergeDriveConflict === "function" && canAutoMergeDriveConflict(latestLocalStore, remoteStore)
+                ? "auto-merge"
+                : "prompt")
+            : conflictStrategy;
           const resolution = await chooseDriveConflictResolution({
             operation: "save",
             localUserUpdatedAt,
             remoteUserUpdatedAt,
-            strategy: conflictStrategy
+            strategy: effectiveConflictStrategy
           });
 
           if (resolution === "cancel") {
@@ -480,12 +493,15 @@ export function createDriveSyncController({
           if (resolution === "auto-merge") {
             applyStore(mergeStores(latestLocalStore, remoteStore));
             currentStore = getStore();
+            saveOutcome = "auto-merge";
           } else {
             currentStore = latestLocalStore;
+            saveOutcome = "keep-local";
           }
         } else {
           applyStore(mergeStores(latestLocalStore, remoteStore));
           currentStore = getStore();
+          saveOutcome = "auto-merge";
         }
       }
 
@@ -518,11 +534,12 @@ export function createDriveSyncController({
       const remoteUserFingerprint = savedStore.userFingerprint || computeUserContentFingerprint(savedStore);
 
       if (!quiet) {
-        if (remoteResponse.ok && remotePayload.found && conflictStrategy === "prompt") {
-          setSyncStatus("Saved the Lifetree data to Google Drive using your chosen conflict action.", "success");
-        } else {
-          setSyncStatus("Merged local and remote changes, then saved the Lifetree data to Google Drive app data.", "success");
-        }
+        const successMessage = saveOutcome === "keep-local"
+          ? "Saved this browser's version to Google Drive."
+          : saveOutcome === "auto-merge"
+            ? "Auto-merged local and Drive changes where possible, then saved the result to Google Drive."
+            : "Saved the Lifetree data to Google Drive app data.";
+        setSyncStatus(successMessage, "success");
       }
       return { success: true, remoteUpdatedAt, remoteFingerprint, remoteSavedAt, remoteUserUpdatedAt, remoteUserFingerprint };
     } catch (error) {
