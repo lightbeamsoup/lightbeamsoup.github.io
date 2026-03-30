@@ -95,7 +95,8 @@ import {
 import { buildTemporalState, formatDate, formatDateTime } from "./modules/time.js";
 import {
   renderTreeDetailContent as renderTreeDetailContentShared,
-  renderTreeFruitMarkup as renderTreeFruitMarkupShared
+  renderTreeFruitMarkup as renderTreeFruitMarkupShared,
+  renderTreeStyleContent as renderTreeStyleContentShared
 } from "./modules/treeUi.js";
 import { createWidgetDetailController } from "./modules/widgetDetail.js";
 import {
@@ -4256,76 +4257,20 @@ function renderTreeStyleIfOpen() {
     .filter((entry) => entry.points > 0)
     .sort((left, right) => right.points - left.points || left.label.localeCompare(right.label));
 
-  treeStyleBody.innerHTML = `
-    <section class="tree-style-layout">
-      <section class="tree-style-summary">
-        <div>
-          <p class="eyebrow">Unlocked Looks</p>
-          <h3>Spend harvested points on new appearances</h3>
-          <p class="sync-status">Owned skins stay available once purchased. Equip any owned skin for each tree part whenever you want.</p>
-        </div>
-        <div class="tree-style-bank-grid">
-          ${bankedCategories.length > 0 ? bankedCategories.map((entry) => `
-            <span class="task-chip category-chip tree-style-bank-pill" style="--chip-color: ${escapeHtml(entry.color)}">
-              ${escapeHtml(entry.label)} · ${escapeHtml(formatPointsLabel(entry.points))}
-            </span>
-          `).join("") : '<span class="tree-point-empty">No harvested points banked yet.</span>'}
-        </div>
-      </section>
-
-      ${catalog.map((part) => {
-        const equipped = getTreeSkin(part.equippedSkinId);
-        return `
-          <section class="tree-style-section">
-            <div class="tree-style-part-header">
-              <div>
-                <p class="eyebrow">${escapeHtml(getTreeStylePartLabel(part.key))}</p>
-                <h3>${escapeHtml(getTreeStylePartLabel(part.key))}</h3>
-              </div>
-              <span class="task-chip">${escapeHtml(equipped?.label || "Default")}</span>
-            </div>
-            <div class="tree-style-grid">
-              ${part.skins.map((skin) => {
-                const costCategory = skin.cost ? resolveCategorySnapshot(skin.cost.categoryKey) : null;
-                return `
-                  <article class="tree-style-card${skin.equipped ? " equipped" : ""}${!skin.owned ? " locked" : ""}">
-                    <div class="tree-style-card-header">
-                      <strong>${escapeHtml(skin.label)}</strong>
-                      <span class="task-chip${skin.equipped ? " importance-high" : ""}">${escapeHtml(
-                        skin.equipped
-                          ? "Equipped"
-                          : skin.owned
-                            ? "Owned"
-                            : skin.default
-                              ? "Default"
-                              : "Locked"
-                      )}</span>
-                    </div>
-                    <p>${escapeHtml(skin.description || "Appearance option for this tree part.")}</p>
-                    ${skin.cost ? `
-                      <div class="tree-style-cost">
-                        <span class="task-chip category-chip" style="--chip-color: ${escapeHtml(costCategory?.color || DEFAULT_CATEGORY_COLOR)}">
-                          ${escapeHtml(costCategory?.label || skin.cost.categoryKey)}
-                        </span>
-                        <span>${escapeHtml(formatPointsLabel(skin.cost.points))} required · ${escapeHtml(formatPointsLabel(skin.bankedPoints || 0))} banked</span>
-                      </div>
-                    ` : '<div class="tree-style-cost"><span class="task-action-note">Always available.</span></div>'}
-                    <div class="tree-style-card-actions">
-                      ${skin.equipped
-                        ? '<span class="task-action-note">Currently active</span>'
-                        : skin.owned
-                          ? `<button type="button" class="primary-button" data-tree-style-action="equip" data-tree-style-part="${escapeHtml(part.key)}" data-tree-style-skin="${escapeHtml(skin.id)}">Equip</button>`
-                          : `<button type="button" class="ghost-button" data-tree-style-action="buy" data-tree-style-part="${escapeHtml(part.key)}" data-tree-style-skin="${escapeHtml(skin.id)}" ${skin.affordable ? "" : "disabled"}>Buy skin</button>`}
-                    </div>
-                  </article>
-                `;
-              }).join("")}
-            </div>
-          </section>
-        `;
-      }).join("")}
-    </section>
-  `;
+  treeStyleBody.innerHTML = renderTreeStyleContentShared(
+    {
+      catalog,
+      bankedCategories,
+      defaultCategoryColor: DEFAULT_CATEGORY_COLOR
+    },
+    {
+      escapeHtml,
+      formatPointsLabel,
+      getTreeStylePartLabel,
+      getTreeSkin,
+      resolveCategorySnapshot
+    }
+  );
 }
 
 function handleTreeStyleAction(event) {
