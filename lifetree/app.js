@@ -374,6 +374,7 @@ const grantTreeSkinButton = document.getElementById("grantTreeSkin");
 const removeTreeSkinButton = document.getElementById("removeTreeSkin");
 const copyWidgetDiagnosticsButton = document.getElementById("copyWidgetDiagnostics");
 const copyNotificationDiagnosticsButton = document.getElementById("copyNotificationDiagnostics");
+const downloadLocalDataButton = document.getElementById("downloadLocalData");
 const downloadDriveDataButton = document.getElementById("downloadDriveData");
 const importDriveDataButton = document.getElementById("importDriveData");
 const sendDeveloperNotificationTestButton = document.getElementById("sendDeveloperNotificationTest");
@@ -695,6 +696,7 @@ removeTreeSkinButton.addEventListener("click", removeSelectedTreeSkin);
 resetFruitGrowthButton.addEventListener("click", resetDeveloperFruitGrowth);
 copyWidgetDiagnosticsButton.addEventListener("click", copyWidgetDiagnostics);
 copyNotificationDiagnosticsButton.addEventListener("click", copyNotificationDiagnostics);
+downloadLocalDataButton.addEventListener("click", downloadLocalBackup);
 downloadDriveDataButton.addEventListener("click", downloadDriveData);
 sendDeveloperNotificationTestButton.addEventListener("click", sendDeveloperNotificationTest);
 sendDeveloperDailySummaryButton.addEventListener("click", sendDeveloperDailySummary);
@@ -7757,6 +7759,7 @@ function renderDeveloperPanel() {
   developerTreeSkin.disabled = !hasSkins;
   grantTreeSkinButton.disabled = !hasSkins;
   removeTreeSkinButton.disabled = !hasSkins;
+  downloadLocalDataButton.disabled = !visible;
   importDriveDataButton.disabled = !visible;
   const notificationsBusy = !authState.authenticated || notificationSendState.inFlight;
   copyNotificationDiagnosticsButton.disabled = !authState.authenticated;
@@ -9022,6 +9025,37 @@ async function downloadDriveData() {
   }
 }
 
+function downloadLocalBackup() {
+  if (!isDeveloperUser()) {
+    return;
+  }
+
+  try {
+    const normalized = normalizeStore(store);
+    const backup = {
+      kind: "lifetree-local-backup",
+      exportedAt: Date.now(),
+      exportedFrom: window.location.origin,
+      payload: normalized
+    };
+    const blob = new Blob([`${JSON.stringify(backup, null, 2)}\n`], {
+      type: "application/json"
+    });
+    const url = URL.createObjectURL(blob);
+    const timestamp = toDateString(new Date()).replace(/-/g, "");
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `lifetree-local-${timestamp}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    setSyncStatus("Downloaded the current local Lifetree backup from this browser.", "success");
+  } catch (error) {
+    setSyncStatus(`Local backup download failed: ${error.message}`, "error");
+  }
+}
+
 function openDeveloperImportPicker() {
   if (!isDeveloperUser()) {
     return;
@@ -9042,7 +9076,7 @@ async function handleDeveloperImportJson(event) {
     return;
   }
 
-  if (!window.confirm("Replace the local Lifetree data on this browser with the selected JSON backup? Google Drive will not change until you save manually.")) {
+  if (!window.confirm("Replace the local Lifetree data on this browser with the selected JSON backup or raw Drive export? Google Drive will not change until you save manually.")) {
     return;
   }
 
