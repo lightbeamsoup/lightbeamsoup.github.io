@@ -2713,7 +2713,7 @@ body.developer-open {
 }
 
 .travel-packing-add-form {
-  grid-template-columns: minmax(0, 1fr) 88px minmax(180px, 220px) auto;
+  grid-template-columns: 88px minmax(180px, 220px) auto;
 }
 
 .travel-packing-check {
