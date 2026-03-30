@@ -14,12 +14,12 @@
 
 ### Codebase Maintenance
 
+- Codebase: Continue extracting `app.js` orchestration into smaller feature modules.
 - Codebase: Continue splitting Travel Buddy into focused render, live-data, task-sync, and state modules.
 - Codebase: Split Workout Coach into focused render, chart, task-sync, and state modules.
 - Codebase: Add lightweight Lifetree store and widget schema docs.
 - Codebase: Add reusable fixture stores for travel, workout, and Drive-conflict scenarios.
 - Codebase: Add JSDoc typedefs for core store, task, and widget records.
-- Codebase: Continue extracting `app.js` orchestration into smaller feature modules.
 
 ## Recently completed
 
@@ -32,6 +32,7 @@
 
 ### Codebase Maintenance
 
+- 2026-03-29: Extract the notification preview/history rendering helpers out of `app.js` into `lifetree/modules/notificationUi.js`.
 - 2026-03-29: Extract the Travel Buddy render layer into a dedicated `lifetree/widgets/travel/render.js` module.
 
 ### Notifications
