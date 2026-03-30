@@ -1511,35 +1511,35 @@ body.developer-open {
 
 .tree-blossom {
   position: absolute;
-  width: 22px;
-  height: 22px;
+  width: var(--blossom-size, 22px);
+  height: var(--blossom-size, 22px);
   opacity: 0;
-  transform: scale(0.82);
+  transform: scale(0.82) rotate(var(--blossom-rotate, 0deg));
   transition:
     opacity 220ms ease,
     transform 220ms ease;
   background:
-    radial-gradient(circle at 50% 50%, #f8d277 0 16%, transparent 18%),
-    radial-gradient(circle at 50% 16%, rgba(255, 241, 248, 0.96) 0 28%, rgba(243, 177, 205, 0.92) 30% 58%, transparent 60%),
-    radial-gradient(circle at 84% 50%, rgba(255, 241, 248, 0.96) 0 28%, rgba(243, 177, 205, 0.92) 30% 58%, transparent 60%),
-    radial-gradient(circle at 50% 84%, rgba(255, 241, 248, 0.96) 0 28%, rgba(243, 177, 205, 0.92) 30% 58%, transparent 60%),
-    radial-gradient(circle at 16% 50%, rgba(255, 241, 248, 0.96) 0 28%, rgba(243, 177, 205, 0.92) 30% 58%, transparent 60%),
-    radial-gradient(circle at 22% 22%, rgba(255, 241, 248, 0.94) 0 24%, rgba(243, 177, 205, 0.92) 26% 54%, transparent 56%);
+    radial-gradient(circle at 50% 50%, rgba(242, 205, 96, 0.95) 0 10%, rgba(242, 205, 96, 0.45) 11% 15%, transparent 16%),
+    radial-gradient(ellipse 28% 34% at 50% 16%, rgba(248, 199, 218, 0.96) 0 62%, rgba(234, 155, 189, 0.86) 63% 78%, transparent 79%),
+    radial-gradient(ellipse 31% 33% at 82% 38%, rgba(247, 194, 215, 0.94) 0 60%, rgba(232, 149, 184, 0.84) 61% 77%, transparent 78%),
+    radial-gradient(ellipse 29% 34% at 72% 78%, rgba(249, 203, 221, 0.92) 0 60%, rgba(236, 158, 191, 0.84) 61% 77%, transparent 78%),
+    radial-gradient(ellipse 30% 35% at 28% 78%, rgba(248, 197, 216, 0.94) 0 60%, rgba(232, 151, 185, 0.84) 61% 77%, transparent 78%),
+    radial-gradient(ellipse 30% 34% at 18% 38%, rgba(247, 193, 214, 0.94) 0 60%, rgba(231, 148, 183, 0.84) 61% 77%, transparent 78%);
   filter:
-    drop-shadow(0 3px 6px rgba(145, 92, 121, 0.18))
-    drop-shadow(0 0 10px rgba(255, 232, 241, 0.32));
+    drop-shadow(0 3px 6px rgba(145, 92, 121, 0.14))
+    drop-shadow(0 0 8px rgba(255, 212, 230, 0.18));
 }
 
 .tree-frame[data-canopy-decoration="cherry-blossom-2026"] .tree-blossom {
   opacity: 0.94;
-  transform: scale(1);
+  transform: scale(1) rotate(var(--blossom-rotate, 0deg));
 }
 
-.tree-blossom.blossom-a { left: 27%; top: 18%; }
-.tree-blossom.blossom-b { left: 61%; top: 14%; }
-.tree-blossom.blossom-c { left: 74%; top: 33%; }
-.tree-blossom.blossom-d { left: 21%; top: 35%; }
-.tree-blossom.blossom-e { left: 50%; top: 27%; }
+.tree-blossom.blossom-a { left: 27%; top: 18%; --blossom-size: 18px; --blossom-rotate: -14deg; }
+.tree-blossom.blossom-b { left: 61%; top: 14%; --blossom-size: 25px; --blossom-rotate: 8deg; }
+.tree-blossom.blossom-c { left: 74%; top: 33%; --blossom-size: 20px; --blossom-rotate: 17deg; }
+.tree-blossom.blossom-d { left: 21%; top: 35%; --blossom-size: 23px; --blossom-rotate: -6deg; }
+.tree-blossom.blossom-e { left: 50%; top: 27%; --blossom-size: 16px; --blossom-rotate: 12deg; }
 
 .tree-fruit-layer {
   position: absolute;

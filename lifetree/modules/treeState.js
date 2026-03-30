@@ -62,6 +62,20 @@ export function buildFruitDisplayState({ pointLedger = [], treeState, categories
     }
   }
 
+  for (const categoryKey of Object.keys(treeState?.spentByCategory || {})) {
+    if (!mergedCategories.has(categoryKey)) {
+      const snapshot = resolveCategorySnapshot(categoryKey);
+      mergedCategories.set(categoryKey, {
+        key: categoryKey,
+        label: snapshot.label,
+        color: snapshot.color,
+        active: true,
+        builtin: false,
+        updatedAt: 0
+      });
+    }
+  }
+
   for (const categoryKey of Object.keys(treeState?.devFruitPoints || {})) {
     if (!mergedCategories.has(categoryKey)) {
       const snapshot = resolveCategorySnapshot(categoryKey);
@@ -79,8 +93,10 @@ export function buildFruitDisplayState({ pointLedger = [], treeState, categories
   const categoryList = Array.from(mergedCategories.values()).sort((left, right) => left.label.localeCompare(right.label)).map((category, index) => {
     const earned = earnedByCategory.get(category.key)?.points || 0;
     const adjustment = treeState?.devFruitPoints?.[category.key] || 0;
-    const banked = treeState?.harvestedByCategory?.[category.key] || 0;
-    const available = Math.max(0, earned + adjustment - banked);
+    const harvested = treeState?.harvestedByCategory?.[category.key] || 0;
+    const spent = treeState?.spentByCategory?.[category.key] || 0;
+    const banked = Math.max(0, harvested - spent);
+    const available = Math.max(0, earned + adjustment - harvested);
     const fruits = buildFruitSlots(available);
     const ripePoints = fruits.filter((fruit) => fruit.ripe).reduce((sum, fruit) => sum + fruit.points, 0);
     return {
@@ -89,6 +105,8 @@ export function buildFruitDisplayState({ pointLedger = [], treeState, categories
       earnedPoints: earned,
       availablePoints: available,
       bankedPoints: banked,
+      harvestedPoints: harvested,
+      spentPoints: spent,
       adjustmentPoints: adjustment,
       ripePoints,
       visibleFruitCount: fruits.length,

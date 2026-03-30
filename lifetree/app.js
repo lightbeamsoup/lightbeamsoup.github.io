@@ -3309,14 +3309,16 @@ function getRecentPointHistory() {
 function normalizeTreeState(value) {
   return normalizeTreeStateBase(value, {
     normalizeTreeStyleState,
-    slugifyCategoryKey
+    slugifyCategoryKey,
+    listPurchasableTreeSkins
   });
 }
 
 function choosePreferredTreeState(localTreeState, remoteTreeState) {
   return choosePreferredTreeStateBase(localTreeState, remoteTreeState, {
     normalizeTreeStyleState,
-    slugifyCategoryKey
+    slugifyCategoryKey,
+    listPurchasableTreeSkins
   });
 }
 

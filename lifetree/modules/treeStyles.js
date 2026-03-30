@@ -190,8 +190,15 @@ export function getTreeBankedPointsByCategory(treeState) {
   const harvested = treeState?.harvestedByCategory && typeof treeState.harvestedByCategory === "object"
     ? treeState.harvestedByCategory
     : {};
+  const spent = treeState?.spentByCategory && typeof treeState.spentByCategory === "object"
+    ? treeState.spentByCategory
+    : {};
   return Object.fromEntries(
-    Object.entries(harvested).map(([key, value]) => [key, Math.max(0, Math.round(Number(value) || 0))])
+    [...new Set([...Object.keys(harvested), ...Object.keys(spent)])]
+      .map((key) => [
+        key,
+        Math.max(0, Math.round(Number(harvested[key] || 0)) - Math.round(Number(spent[key] || 0)))
+      ])
   );
 }
 
@@ -225,8 +232,8 @@ export function purchaseTreeSkin(treeState, skinId) {
     };
   }
 
-  const harvestedByCategory = { ...(treeState?.harvestedByCategory || {}) };
-  harvestedByCategory[skin.cost.categoryKey] = Math.max(0, (harvestedByCategory[skin.cost.categoryKey] || 0) - skin.cost.points);
+  const spentByCategory = { ...(treeState?.spentByCategory || {}) };
+  spentByCategory[skin.cost.categoryKey] = Math.max(0, (spentByCategory[skin.cost.categoryKey] || 0) + skin.cost.points);
   nextStyleState.ownedSkinIds = [...nextStyleState.ownedSkinIds, skinId].sort();
   nextStyleState.equippedByPart[skin.part] = skinId;
 
@@ -234,7 +241,7 @@ export function purchaseTreeSkin(treeState, skinId) {
     changed: true,
     treeState: {
       ...(treeState || {}),
-      harvestedByCategory,
+      spentByCategory,
       styleState: nextStyleState
     },
     skin

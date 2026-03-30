@@ -133,11 +133,30 @@ export function mergePointLedger(localEntries = [], remoteEntries = [], options)
   return Array.from(mergedById.values()).sort((left, right) => left.at - right.at);
 }
 
-export function normalizeTreeState(value, { normalizeTreeStyleState, slugifyCategoryKey }) {
+export function normalizeTreeState(value, { normalizeTreeStyleState, slugifyCategoryKey, listPurchasableTreeSkins }) {
+  const styleState = normalizeTreeStyleState(value?.styleState);
+  const harvestedByCategory = normalizeTreePointMap(value?.harvestedByCategory, { slugifyCategoryKey });
+  const spentByCategory = normalizeTreePointMap(value?.spentByCategory, { slugifyCategoryKey });
+  const legacyStyleSpend = inferLegacyTreeSkinSpendByCategory({
+    styleState,
+    spentByCategory,
+    listPurchasableTreeSkins
+  });
+  const repairedHarvestedByCategory = Object.keys(legacyStyleSpend).length > 0
+    ? addTreePointMaps(harvestedByCategory, legacyStyleSpend)
+    : harvestedByCategory;
+  const repairedSpentByCategory = Object.keys(legacyStyleSpend).length > 0
+    ? addTreePointMaps(spentByCategory, legacyStyleSpend)
+    : spentByCategory;
+
   return {
-    harvestedByCategory: normalizeTreePointMap(value?.harvestedByCategory, { slugifyCategoryKey }),
+    harvestedByCategory: repairedHarvestedByCategory,
+    spentByCategory: repairedSpentByCategory,
     devFruitPoints: normalizeTreePointMap(value?.devFruitPoints, { allowNegative: true, slugifyCategoryKey }),
-    styleState: normalizeTreeStyleState(value?.styleState),
+    styleState,
+    styleSpendMigrationVersion: Object.keys(legacyStyleSpend).length > 0
+      ? 1
+      : (typeof value?.styleSpendMigrationVersion === "number" ? value.styleSpendMigrationVersion : 0),
     updatedAt: typeof value?.updatedAt === "number" ? value.updatedAt : 0
   };
 }
@@ -269,6 +288,41 @@ function normalizeTreePointMap(value, { allowNegative = false, slugifyCategoryKe
     }
   }
 
+  return result;
+}
+
+function addTreePointMaps(left = {}, right = {}) {
+  const keys = new Set([...Object.keys(left || {}), ...Object.keys(right || {})]);
+  const result = {};
+  for (const key of keys) {
+    const total = Math.max(0, Math.round(Number(left[key] || 0)) + Math.round(Number(right[key] || 0)));
+    if (total > 0) {
+      result[key] = total;
+    }
+  }
+  return result;
+}
+
+function inferLegacyTreeSkinSpendByCategory({ styleState, spentByCategory, listPurchasableTreeSkins }) {
+  if (Object.keys(spentByCategory || {}).length > 0 || typeof listPurchasableTreeSkins !== "function") {
+    return {};
+  }
+  const ownedSkinIds = Array.isArray(styleState?.ownedSkinIds) ? styleState.ownedSkinIds : [];
+  if (ownedSkinIds.length === 0) {
+    return {};
+  }
+  const result = {};
+  for (const skin of listPurchasableTreeSkins()) {
+    if (!skin?.cost || !ownedSkinIds.includes(skin.id)) {
+      continue;
+    }
+    const categoryKey = String(skin.cost.categoryKey || "");
+    const points = Math.max(0, Math.round(Number(skin.cost.points) || 0));
+    if (!categoryKey || points <= 0) {
+      continue;
+    }
+    result[categoryKey] = (result[categoryKey] || 0) + points;
+  }
   return result;
 }
 
