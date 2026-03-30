@@ -2447,6 +2447,23 @@ body.developer-open {
   gap: 14px;
 }
 
+.workout-chart-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.workout-chart-control {
+  display: grid;
+  gap: 6px;
+  min-width: 160px;
+}
+
+.workout-chart-control span {
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
 .workout-overview-weight-card {
   display: grid;
   gap: 14px;
@@ -4480,6 +4497,11 @@ textarea {
 
   .tree-point-exchange-summary {
     grid-column: auto;
+  }
+
+  .workout-chart-control {
+    min-width: 0;
+    width: 100%;
   }
 
   .travel-inline-form,

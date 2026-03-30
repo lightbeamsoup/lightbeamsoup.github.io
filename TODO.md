@@ -9,7 +9,6 @@
 - Integrations: Add Apple Fitness integration.
 - Notifications: Move auth/session storage into a shared backend before re-enabling the dedicated Railway worker.
 - Canopy: Decide how dailies should be marked complete directly from the shell view.
-- Workout Coach: Improve organization of the calories/weight graph in the workout modal.
 - Notifications: Consolidate repeated activities in email summaries and reminders.
 - Tasks: Add task snoozing.
 
@@ -37,6 +36,7 @@
 
 ### Workout Coach
 
+- 2026-03-29: Replace the workout history chart with bucketed calories bars and matching weight overlays across daily, weekly, monthly, and yearly views.
 - 2026-03-28: Clean up the workout modal by splitting it into Overview, Plans, and Weight tabs.
 - 2026-03-26: Scaffold the widget and register it in the widget menu.
 - 2026-03-26: Add workout plans with workout type, duration, intensity, and daily/weekly linked schedules.

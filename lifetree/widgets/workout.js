@@ -20,6 +20,13 @@ const WEEKDAY_OPTIONS = [
   { value: 5, label: "Fri" },
   { value: 6, label: "Sat" }
 ];
+const WORKOUT_CHART_PERIODS = ["daily", "weekly", "monthly", "yearly"];
+const WORKOUT_CHART_SPANS = {
+  daily: [7, 30],
+  weekly: [4, 26],
+  monthly: [12, 36],
+  yearly: ["all"]
+};
 const workoutShellUiState = new Map();
 
 export const workoutWidgetDefinition = {
@@ -145,7 +152,8 @@ export const workoutWidgetDefinition = {
   },
 
   renderDetail({ widget, tasks, escapeHtml, formatDateTime, getPendingActionForWidget }) {
-    const activeTab = getWorkoutDetailState(widget.id).detailTab;
+    const detailState = getWorkoutDetailState(widget.id);
+    const activeTab = detailState.detailTab;
     const latestWeight = widget.data.weightEntries[widget.data.weightEntries.length - 1] || null;
     const weightTracking = widget.settings.weightTracking;
     const planDraft = createPlanDraft();
@@ -160,6 +168,8 @@ export const workoutWidgetDefinition = {
     const weightScheduleDraft = weightTracking.schedule?.recurrence || createWeightScheduleDraft();
     const weeklyCalories = sumWorkoutCaloriesForCurrentWeek(widget.data.workoutEntries);
     const repairableWorkoutLogs = findRepairableWorkoutTasks(tasks, widget);
+    const chartModel = buildWorkoutHistoryChartModel(widget, detailState.chartPeriod, detailState.chartSpan);
+    const chartSpanOptions = getWorkoutChartSpanOptions(detailState.chartPeriod);
 
     return `
       <section class="energy-detail">
@@ -175,13 +185,35 @@ export const workoutWidgetDefinition = {
                 <div>
                   <p class="eyebrow">History</p>
                   <h3>Calories and weight trend</h3>
-                  <p class="sync-status">Workout calories burned and weight logs are tracked together here so you can see both signals over time.</p>
+                  <p class="sync-status">Calories are grouped into day, week, month, or year totals. Weight overlays the latest logged value in each visible period.</p>
                 </div>
+              </div>
+              <div class="workout-chart-controls">
+                <label class="workout-chart-control">
+                  <span>View</span>
+                  <select data-workout-chart-period>
+                    ${WORKOUT_CHART_PERIODS.map((period) => `
+                      <option value="${escapeHtml(period)}" ${detailState.chartPeriod === period ? "selected" : ""}>
+                        ${escapeHtml(humanizeWorkoutChartPeriod(period))}
+                      </option>
+                    `).join("")}
+                  </select>
+                </label>
+                <label class="workout-chart-control">
+                  <span>Length</span>
+                  <select data-workout-chart-span ${detailState.chartPeriod === "yearly" ? "disabled" : ""}>
+                    ${chartSpanOptions.map((option) => `
+                      <option value="${escapeHtml(String(option))}" ${String(chartModel.span) === String(option) ? "selected" : ""}>
+                        ${escapeHtml(formatWorkoutChartSpanLabel(detailState.chartPeriod, option))}
+                      </option>
+                    `).join("")}
+                  </select>
+                </label>
               </div>
               <div class="workout-chart-legend">
                 <span><i class="workout-chart-dot calories"></i>Calories burned</span>
                 <span><i class="workout-chart-dot weight"></i>Weight (${escapeHtml(weightTracking.unit)})</span>
-                <span class="workout-chart-summary">This week: <strong>${escapeHtml(formatCalories(weeklyCalories))}</strong></span>
+                <span class="workout-chart-summary">${escapeHtml(chartModel.summaryLabel)}: <strong>${escapeHtml(formatCalories(chartModel.totalCalories))}</strong></span>
               </div>
               <canvas class="workout-detail-chart" data-workout-chart></canvas>
               <p class="empty-state hidden" data-workout-chart-empty>No workout calories or weight logs yet.</p>
@@ -470,6 +502,8 @@ export const workoutWidgetDefinition = {
   mountDetail({ widget, container, helpers }) {
     const chartCanvas = container.querySelector("[data-workout-chart]");
     const chartEmptyState = container.querySelector("[data-workout-chart-empty]");
+    const chartPeriodInput = container.querySelector("[data-workout-chart-period]");
+    const chartSpanInput = container.querySelector("[data-workout-chart-span]");
     const form = container.querySelector("[data-workout-plan-form]");
     const patternInput = container.querySelector("[data-workout-plan-pattern]");
     const dailyPanel = container.querySelector("[data-workout-daily-panel]");
@@ -492,7 +526,13 @@ export const workoutWidgetDefinition = {
       if (!chartCanvas || !chartEmptyState) {
         return;
       }
-      drawWorkoutHistoryChart(chartCanvas, chartEmptyState, buildCombinedWorkoutHistory(widget), widget.settings.weightTracking.unit);
+      const chartState = getWorkoutDetailState(widget.id);
+      drawWorkoutHistoryChart(
+        chartCanvas,
+        chartEmptyState,
+        buildWorkoutHistoryChartModel(widget, chartState.chartPeriod, chartState.chartSpan),
+        widget.settings.weightTracking.unit
+      );
     };
 
     const syncPanels = () => {
@@ -846,9 +886,21 @@ export const workoutWidgetDefinition = {
       helpers.setSyncStatus(existing ? `Updated the ${workoutType} workout plan.` : `Added ${workoutType} as a workout plan.`, "success");
     };
 
+    const handleChartPeriodChange = () => {
+      setWorkoutChartPeriod(widget.id, chartPeriodInput?.value);
+      helpers.renderAll();
+    };
+
+    const handleChartSpanChange = () => {
+      setWorkoutChartSpan(widget.id, chartPeriodInput?.value, chartSpanInput?.value);
+      helpers.renderAll();
+    };
+
     patternInput.addEventListener("change", syncPanels);
     weightPatternInput?.addEventListener("change", syncWeightPanels);
     weightScheduleEnabledInput?.addEventListener("change", syncWeightPanels);
+    chartPeriodInput?.addEventListener("change", handleChartPeriodChange);
+    chartSpanInput?.addEventListener("change", handleChartSpanChange);
     container.addEventListener("click", clickHandler);
     container.addEventListener("submit", submitWeightLogHandler);
     container.addEventListener("submit", submitLogHandler);
@@ -863,6 +915,8 @@ export const workoutWidgetDefinition = {
       patternInput.removeEventListener("change", syncPanels);
       weightPatternInput?.removeEventListener("change", syncWeightPanels);
       weightScheduleEnabledInput?.removeEventListener("change", syncWeightPanels);
+      chartPeriodInput?.removeEventListener("change", handleChartPeriodChange);
+      chartSpanInput?.removeEventListener("change", handleChartSpanChange);
       container.removeEventListener("click", clickHandler);
       container.removeEventListener("submit", submitWeightLogHandler);
       container.removeEventListener("submit", submitLogHandler);
@@ -2317,9 +2371,31 @@ function normalizeWorkoutDetailTab(value) {
   return value === "plans" || value === "weight" ? value : "overview";
 }
 
+function normalizeWorkoutChartPeriod(value) {
+  return WORKOUT_CHART_PERIODS.includes(value) ? value : "daily";
+}
+
+function getWorkoutChartSpanOptions(period) {
+  return WORKOUT_CHART_SPANS[normalizeWorkoutChartPeriod(period)] || WORKOUT_CHART_SPANS.daily;
+}
+
+function normalizeWorkoutChartSpan(period, value) {
+  const normalizedPeriod = normalizeWorkoutChartPeriod(period);
+  if (normalizedPeriod === "yearly") {
+    return "all";
+  }
+  const options = getWorkoutChartSpanOptions(normalizedPeriod);
+  return options.includes(Number(value)) ? Number(value) : options[0];
+}
+
 function getWorkoutShellState(widgetId) {
   if (!workoutShellUiState.has(widgetId)) {
-    workoutShellUiState.set(widgetId, { quickAdHocOpen: false, detailTab: "overview" });
+    workoutShellUiState.set(widgetId, {
+      quickAdHocOpen: false,
+      detailTab: "overview",
+      chartPeriod: "daily",
+      chartSpan: 7
+    });
   }
   return workoutShellUiState.get(widgetId);
 }
@@ -2332,9 +2408,13 @@ function setWorkoutShellQuickFormOpen(widgetId, quickAdHocOpen) {
 }
 
 function getWorkoutDetailState(widgetId) {
+  const shellState = getWorkoutShellState(widgetId);
+  const chartPeriod = normalizeWorkoutChartPeriod(shellState.chartPeriod);
   return {
-    ...getWorkoutShellState(widgetId),
-    detailTab: normalizeWorkoutDetailTab(getWorkoutShellState(widgetId).detailTab)
+    ...shellState,
+    detailTab: normalizeWorkoutDetailTab(shellState.detailTab),
+    chartPeriod,
+    chartSpan: normalizeWorkoutChartSpan(chartPeriod, shellState.chartSpan)
   };
 }
 
@@ -2342,6 +2422,24 @@ function setWorkoutDetailTab(widgetId, detailTab) {
   workoutShellUiState.set(widgetId, {
     ...getWorkoutShellState(widgetId),
     detailTab: normalizeWorkoutDetailTab(detailTab)
+  });
+}
+
+function setWorkoutChartPeriod(widgetId, chartPeriod) {
+  const normalizedPeriod = normalizeWorkoutChartPeriod(chartPeriod);
+  workoutShellUiState.set(widgetId, {
+    ...getWorkoutShellState(widgetId),
+    chartPeriod: normalizedPeriod,
+    chartSpan: normalizeWorkoutChartSpan(normalizedPeriod, getWorkoutShellState(widgetId).chartSpan)
+  });
+}
+
+function setWorkoutChartSpan(widgetId, chartPeriod, chartSpan) {
+  const normalizedPeriod = normalizeWorkoutChartPeriod(chartPeriod);
+  workoutShellUiState.set(widgetId, {
+    ...getWorkoutShellState(widgetId),
+    chartPeriod: normalizedPeriod,
+    chartSpan: normalizeWorkoutChartSpan(normalizedPeriod, chartSpan)
   });
 }
 
@@ -2467,25 +2565,144 @@ function formatPendingAdHocWorkoutSummary(pendingAction) {
   return `${pendingAction.workoutType || "Workout"} · ${pendingAction.durationMinutes || 0} min · ${humanizeIntensity(pendingAction.intensity)} · ${formatCalories(pendingAction.caloriesBurned)}`;
 }
 
-function buildCombinedWorkoutHistory(widget) {
-  const workoutEntries = normalizeWorkoutEntries(widget?.data?.workoutEntries).map((entry) => ({
-    at: entry.at,
-    type: "calories",
-    value: normalizeCaloriesBurned(entry.caloriesBurned),
-    label: entry.workoutType || entry.taskName || "Workout"
-  }));
-  const weightEntries = normalizeWeightEntries(widget?.data?.weightEntries).map((entry) => ({
-    at: entry.at,
-    type: "weight",
-    value: normalizeWeightValue(entry.value),
-    label: entry.taskName || "Weight"
-  }));
-  return [...workoutEntries, ...weightEntries]
-    .filter((entry) => entry.value > 0)
-    .sort((left, right) => left.at - right.at);
+function humanizeWorkoutChartPeriod(period) {
+  switch (normalizeWorkoutChartPeriod(period)) {
+    case "weekly":
+      return "Weekly";
+    case "monthly":
+      return "Monthly";
+    case "yearly":
+      return "Yearly";
+    default:
+      return "Daily";
+  }
 }
 
-function drawWorkoutHistoryChart(canvas, emptyState, entries, weightUnit) {
+function formatWorkoutChartSpanLabel(period, span) {
+  const normalizedPeriod = normalizeWorkoutChartPeriod(period);
+  if (normalizedPeriod === "yearly") {
+    return "All time";
+  }
+  const numeric = Number(span);
+  if (!Number.isFinite(numeric) || numeric < 1) {
+    return "";
+  }
+  const noun = normalizedPeriod === "weekly"
+    ? "week"
+    : normalizedPeriod === "monthly"
+      ? "month"
+      : "day";
+  return `${numeric} ${noun}${numeric === 1 ? "" : "s"}`;
+}
+
+function buildWorkoutHistoryChartModel(widget, period, span, now = new Date()) {
+  const normalizedPeriod = normalizeWorkoutChartPeriod(period);
+  const normalizedSpan = normalizeWorkoutChartSpan(normalizedPeriod, span);
+  const workoutEntries = normalizeWorkoutEntries(widget?.data?.workoutEntries)
+    .map((entry) => ({
+      at: entry.at,
+      caloriesBurned: normalizeCaloriesBurned(entry.caloriesBurned)
+    }))
+    .filter((entry) => entry.caloriesBurned > 0)
+    .sort((left, right) => left.at - right.at);
+  const weightEntries = normalizeWeightEntries(widget?.data?.weightEntries)
+    .map((entry) => ({
+      at: entry.at,
+      value: normalizeWeightValue(entry.value)
+    }))
+    .filter((entry) => entry.value > 0)
+    .sort((left, right) => left.at - right.at);
+  const buckets = buildWorkoutHistoryBuckets(normalizedPeriod, normalizedSpan, workoutEntries, weightEntries, now).map((bucket) => {
+    const calorieEntries = workoutEntries.filter((entry) => entry.at >= bucket.startAt && entry.at < bucket.endAt);
+    const weightInBucket = weightEntries.filter((entry) => entry.at >= bucket.startAt && entry.at < bucket.endAt);
+    const latestWeight = weightInBucket.length ? weightInBucket[weightInBucket.length - 1] : null;
+    return {
+      ...bucket,
+      calories: calorieEntries.reduce((sum, entry) => sum + entry.caloriesBurned, 0),
+      weight: latestWeight?.value ?? null
+    };
+  });
+  const totalCalories = buckets.reduce((sum, bucket) => sum + bucket.calories, 0);
+
+  return {
+    period: normalizedPeriod,
+    span: normalizedSpan,
+    buckets,
+    totalCalories,
+    hasData: buckets.some((bucket) => bucket.calories > 0 || bucket.weight !== null),
+    summaryLabel: normalizedPeriod === "yearly"
+      ? "All-time calories"
+      : `${humanizeWorkoutChartPeriod(normalizedPeriod)} total (${formatWorkoutChartSpanLabel(normalizedPeriod, normalizedSpan)})`
+  };
+}
+
+function buildWorkoutHistoryBuckets(period, span, workoutEntries, weightEntries, now) {
+  const allEntries = [...workoutEntries, ...weightEntries].sort((left, right) => left.at - right.at);
+  if (period === "yearly") {
+    if (!allEntries.length) {
+      return [];
+    }
+    const firstYear = new Date(allEntries[0].at).getFullYear();
+    const currentYear = new Date(now).getFullYear();
+    const buckets = [];
+    for (let year = firstYear; year <= currentYear; year += 1) {
+      const start = chartStartOfYear(new Date(year, 0, 1));
+      const end = chartStartOfYear(new Date(year + 1, 0, 1));
+      buckets.push({
+        startAt: start.getTime(),
+        endAt: end.getTime(),
+        label: String(year),
+        shortLabel: String(year)
+      });
+    }
+    return buckets;
+  }
+
+  if (period === "monthly") {
+    const currentMonthStart = chartStartOfMonth(now);
+    const firstMonthStart = chartAddMonths(currentMonthStart, -(span - 1));
+    return Array.from({ length: span }, (_, index) => {
+      const start = chartAddMonths(firstMonthStart, index);
+      const end = chartAddMonths(start, 1);
+      return {
+        startAt: start.getTime(),
+        endAt: end.getTime(),
+        label: formatMonthBucketLabel(start),
+        shortLabel: formatMonthBucketLabel(start, { compact: span <= 12 })
+      };
+    });
+  }
+
+  if (period === "weekly") {
+    const currentWeekStart = chartStartOfWeek(now);
+    const firstWeekStart = chartAddDays(currentWeekStart, -((span - 1) * 7));
+    return Array.from({ length: span }, (_, index) => {
+      const start = chartAddDays(firstWeekStart, index * 7);
+      const end = chartAddDays(start, 7);
+      return {
+        startAt: start.getTime(),
+        endAt: end.getTime(),
+        label: `Week of ${formatShortDate(start)}`,
+        shortLabel: formatShortDate(start)
+      };
+    });
+  }
+
+  const currentDayStart = chartStartOfDay(now);
+  const firstDayStart = chartAddDays(currentDayStart, -(span - 1));
+  return Array.from({ length: span }, (_, index) => {
+    const start = chartAddDays(firstDayStart, index);
+    const end = chartAddDays(start, 1);
+    return {
+      startAt: start.getTime(),
+      endAt: end.getTime(),
+      label: formatDailyBucketLabel(start),
+      shortLabel: formatShortDate(start)
+    };
+  });
+}
+
+function drawWorkoutHistoryChart(canvas, emptyState, chartModel, weightUnit) {
   const ctx = canvas.getContext("2d");
   const bounds = canvas.getBoundingClientRect();
   const width = Math.max(280, Math.floor(bounds.width || canvas.clientWidth || 720));
@@ -2496,7 +2713,7 @@ function drawWorkoutHistoryChart(canvas, emptyState, entries, weightUnit) {
   ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
   ctx.clearRect(0, 0, width, height);
 
-  if (!entries.length) {
+  if (!chartModel?.hasData || !Array.isArray(chartModel?.buckets) || !chartModel.buckets.length) {
     canvas.classList.add("hidden");
     emptyState.classList.remove("hidden");
     return;
@@ -2508,15 +2725,21 @@ function drawWorkoutHistoryChart(canvas, emptyState, entries, weightUnit) {
   const padding = { top: 24, right: 56, bottom: 42, left: 56 };
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
-  const minTime = entries[0].at;
-  const maxTime = entries[entries.length - 1].at;
-  const timeSpan = Math.max(maxTime - minTime, 1);
-  const calorieValues = entries.filter((entry) => entry.type === "calories").map((entry) => entry.value);
-  const weightValues = entries.filter((entry) => entry.type === "weight").map((entry) => entry.value);
+  const calorieValues = chartModel.buckets.map((bucket) => bucket.calories);
+  const weightValues = chartModel.buckets
+    .map((bucket) => bucket.weight)
+    .filter((value) => Number.isFinite(value));
   const calorieMax = Math.max(...calorieValues, 100);
-  const weightMin = weightValues.length ? Math.min(...weightValues) : 0;
-  const weightMax = weightValues.length ? Math.max(...weightValues) : 10;
+  const singleWeightValue = weightValues.length === 1 ? weightValues[0] : null;
+  const weightMin = weightValues.length
+    ? (singleWeightValue !== null ? singleWeightValue - 1 : Math.min(...weightValues))
+    : 0;
+  const weightMax = weightValues.length
+    ? (singleWeightValue !== null ? singleWeightValue + 1 : Math.max(...weightValues))
+    : 10;
   const weightSpan = Math.max(weightMax - weightMin, 1);
+  const bucketWidth = chartWidth / Math.max(chartModel.buckets.length, 1);
+  const barWidth = Math.max(8, Math.min(34, bucketWidth * 0.58));
 
   ctx.strokeStyle = "rgba(124, 146, 173, 0.18)";
   ctx.lineWidth = 1;
@@ -2536,22 +2759,25 @@ function drawWorkoutHistoryChart(canvas, emptyState, entries, weightUnit) {
   ctx.lineTo(width - padding.right, height - padding.bottom);
   ctx.stroke();
 
-  const caloriePoints = entries
-    .filter((entry) => entry.type === "calories")
-    .map((entry) => ({
-      x: padding.left + ((entry.at - minTime) / timeSpan) * chartWidth,
-      y: padding.top + chartHeight - (entry.value / calorieMax) * chartHeight,
-      value: entry.value
-    }));
-  const weightPoints = entries
-    .filter((entry) => entry.type === "weight")
-    .map((entry) => ({
-      x: padding.left + ((entry.at - minTime) / timeSpan) * chartWidth,
-      y: padding.top + chartHeight - ((entry.value - weightMin) / weightSpan) * chartHeight,
-      value: entry.value
-    }));
-
-  drawWorkoutSeries(ctx, caloriePoints, "#ff8c42", "rgba(255, 140, 66, 0.18)");
+  drawWorkoutBars(ctx, chartModel.buckets, {
+    padding,
+    chartHeight,
+    barWidth,
+    calorieMax,
+    bucketWidth
+  });
+  const weightPoints = chartModel.buckets
+    .map((bucket, index) => {
+      if (!Number.isFinite(bucket.weight)) {
+        return null;
+      }
+      return {
+        x: padding.left + (bucketWidth * index) + (bucketWidth / 2),
+        y: padding.top + chartHeight - (((bucket.weight - weightMin) / weightSpan) * chartHeight),
+        value: bucket.weight
+      };
+    })
+    .filter(Boolean);
   drawWorkoutSeries(ctx, weightPoints, "#4ea8de", "rgba(78, 168, 222, 0.18)");
 
   ctx.fillStyle = "rgba(118, 138, 164, 0.92)";
@@ -2560,10 +2786,31 @@ function drawWorkoutHistoryChart(canvas, emptyState, entries, weightUnit) {
   ctx.fillText("0 cal", padding.left - 10, height - padding.bottom + 4);
   ctx.fillText(formatCalories(calorieMax), padding.left - 10, padding.top + 4);
   ctx.textAlign = "left";
-  ctx.fillText(`${trimTrailingZero(weightMin)} ${weightUnit}`, width - padding.right + 10, height - padding.bottom + 4);
-  ctx.fillText(`${trimTrailingZero(weightMax)} ${weightUnit}`, width - padding.right + 10, padding.top + 4);
+  if (weightValues.length) {
+    ctx.fillText(`${trimTrailingZero(weightMin)} ${weightUnit}`, width - padding.right + 10, height - padding.bottom + 4);
+    ctx.fillText(`${trimTrailingZero(weightMax)} ${weightUnit}`, width - padding.right + 10, padding.top + 4);
+  }
 
-  drawWorkoutChartLabels(ctx, entries, padding, chartWidth, height);
+  drawWorkoutChartLabels(ctx, chartModel, padding, chartWidth, height);
+}
+
+function drawWorkoutBars(ctx, buckets, {
+  padding,
+  chartHeight,
+  barWidth,
+  calorieMax,
+  bucketWidth
+}) {
+  ctx.fillStyle = "rgba(255, 140, 66, 0.78)";
+  buckets.forEach((bucket, index) => {
+    if (bucket.calories <= 0) {
+      return;
+    }
+    const barHeight = Math.max(3, (bucket.calories / calorieMax) * chartHeight);
+    const x = padding.left + (bucketWidth * index) + ((bucketWidth - barWidth) / 2);
+    const y = padding.top + chartHeight - barHeight;
+    ctx.fillRect(x, y, barWidth, barHeight);
+  });
 }
 
 function drawWorkoutSeries(ctx, points, strokeStyle, fillStyle) {
@@ -2594,37 +2841,90 @@ function drawWorkoutSeries(ctx, points, strokeStyle, fillStyle) {
   });
 }
 
-function drawWorkoutChartLabels(ctx, entries, padding, chartWidth, height) {
-  if (!entries.length) {
+function drawWorkoutChartLabels(ctx, chartModel, padding, chartWidth, height) {
+  if (!chartModel?.buckets?.length) {
     return;
   }
-  const sample = [entries[0]];
-  if (entries.length > 2) {
-    sample.push(entries[Math.floor(entries.length / 2)]);
+  const maxLabels = 6;
+  const buckets = chartModel.buckets;
+  const sample = [buckets[0]];
+  if (buckets.length > 2) {
+    sample.push(buckets[Math.floor(buckets.length / 2)]);
   }
-  if (entries.length > 1) {
-    sample.push(entries[entries.length - 1]);
+  if (buckets.length > 1) {
+    sample.push(buckets[buckets.length - 1]);
+  }
+  if (buckets.length > maxLabels) {
+    const step = Math.max(1, Math.floor((buckets.length - 1) / (maxLabels - 1)));
+    for (let index = step; index < buckets.length - 1; index += step) {
+      sample.push(buckets[index]);
+    }
   }
   const seen = new Set();
   ctx.fillStyle = "rgba(118, 138, 164, 0.92)";
   ctx.font = "12px Sora, sans-serif";
   ctx.textAlign = "center";
-  const minTime = entries[0].at;
-  const maxTime = entries[entries.length - 1].at;
-  const timeSpan = Math.max(maxTime - minTime, 1);
-  sample.forEach((entry) => {
-    if (seen.has(entry.at)) {
+  const bucketWidth = chartWidth / Math.max(buckets.length, 1);
+  sample.forEach((bucket) => {
+    if (seen.has(bucket.startAt)) {
       return;
     }
-    seen.add(entry.at);
-    const x = padding.left + ((entry.at - minTime) / timeSpan) * chartWidth;
-    ctx.fillText(formatChartDate(entry.at), x, height - 12);
+    seen.add(bucket.startAt);
+    const bucketIndex = buckets.findIndex((entry) => entry.startAt === bucket.startAt);
+    if (bucketIndex < 0) {
+      return;
+    }
+    const x = padding.left + (bucketWidth * bucketIndex) + (bucketWidth / 2);
+    ctx.fillText(bucket.shortLabel, x, height - 12);
   });
 }
 
-function formatChartDate(timestamp) {
-  const date = new Date(timestamp);
-  return `${WEEKDAY_OPTIONS[date.getDay()]?.label || ""} ${date.getMonth() + 1}/${date.getDate()}`;
+function chartStartOfDay(value) {
+  const date = new Date(value);
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function chartStartOfWeek(value) {
+  const dayStart = chartStartOfDay(value);
+  return chartAddDays(dayStart, -dayStart.getDay());
+}
+
+function chartStartOfMonth(value) {
+  const date = new Date(value);
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+function chartStartOfYear(value) {
+  const date = new Date(value);
+  return new Date(date.getFullYear(), 0, 1);
+}
+
+function chartAddDays(value, amount) {
+  const date = new Date(value);
+  date.setDate(date.getDate() + amount);
+  return chartStartOfDay(date);
+}
+
+function chartAddMonths(value, amount) {
+  const date = new Date(value);
+  return new Date(date.getFullYear(), date.getMonth() + amount, 1);
+}
+
+function formatShortDate(value) {
+  const date = new Date(value);
+  return `${date.getMonth() + 1}/${date.getDate()}`;
+}
+
+function formatDailyBucketLabel(value) {
+  const date = new Date(value);
+  return `${WEEKDAY_OPTIONS[date.getDay()]?.label || ""} ${formatShortDate(date)}`;
+}
+
+function formatMonthBucketLabel(value, { compact = false } = {}) {
+  const date = new Date(value);
+  return date.toLocaleDateString(undefined, compact
+    ? { month: "short" }
+    : { month: "short", year: "numeric" });
 }
 
 function compareWorkoutPlanDisplay(left, right) {
