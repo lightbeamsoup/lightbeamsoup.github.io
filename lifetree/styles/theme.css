@@ -1,0 +1,587 @@
+:root {
+  --paper: #f7efe3;
+  --paper-strong: #f2e4cf;
+  --ink: #253243;
+  --muted: #5f6f7d;
+  --line: rgba(37, 50, 67, 0.14);
+  --shadow: 0 22px 40px rgba(71, 49, 24, 0.12);
+  --accent: #e37c52;
+  --accent-soft: #ffd7c7;
+  --green: #7dbf74;
+  --yellow: #f3c96a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: "Trebuchet MS", "Avenir Next", sans-serif;
+  color: var(--ink);
+  color-scheme: light;
+  background:
+    radial-gradient(circle at top left, rgba(255, 201, 140, 0.5), transparent 30%),
+    radial-gradient(circle at bottom right, rgba(126, 185, 161, 0.34), transparent 28%),
+    linear-gradient(180deg, #fff8ef 0%, #f3e7da 100%);
+}
+
+body[data-theme="dark"] {
+  --paper: #182233;
+  --paper-strong: #101827;
+  --ink: #edf3fb;
+  --muted: #a6b4c6;
+  --line: rgba(214, 228, 246, 0.14);
+  --shadow: 0 22px 40px rgba(0, 0, 0, 0.36);
+  --accent: #ff9e73;
+  --accent-soft: rgba(255, 158, 115, 0.24);
+  --green: #92d98b;
+  --yellow: #f6d573;
+  color-scheme: dark;
+  background:
+    radial-gradient(circle at top left, rgba(104, 129, 205, 0.24), transparent 30%),
+    radial-gradient(circle at bottom right, rgba(42, 109, 92, 0.28), transparent 28%),
+    linear-gradient(180deg, #0f1725 0%, #152033 56%, #111927 100%);
+}
+
+body[data-theme="dark"] .dashboard-hero,
+body[data-theme="dark"] .widget-menu,
+body[data-theme="dark"] .lifetree-core,
+body[data-theme="dark"] .composer,
+body[data-theme="dark"] .board,
+body[data-theme="dark"] .history-column,
+body[data-theme="dark"] .summary-card,
+body[data-theme="dark"] .task-card,
+body[data-theme="dark"] .sync-panel,
+body[data-theme="dark"] .canopy-widget,
+body[data-theme="dark"] .widget-slot,
+body[data-theme="dark"] .task-desk-panel,
+body[data-theme="dark"] .widget-detail-panel,
+body[data-theme="dark"] .history-entry,
+body[data-theme="dark"] .tree-harvest-hint,
+body[data-theme="dark"] .canopy-column,
+body[data-theme="dark"] .energy-detail-card,
+body[data-theme="dark"] .energy-settings-card,
+body[data-theme="dark"] .workout-recurrence-panel,
+body[data-theme="dark"] .workout-plan-item,
+body[data-theme="dark"] .workout-progress-card,
+body[data-theme="dark"] .workout-log-card,
+body[data-theme="dark"] .workout-entry-card,
+body[data-theme="dark"] .edit-panel,
+body[data-theme="dark"] .recurrence-panel,
+body[data-theme="dark"] .skip-panel,
+body[data-theme="dark"] .category-panel,
+body[data-theme="dark"] .dependency-panel,
+body[data-theme="dark"] .category-item,
+body[data-theme="dark"] .sync-meta-card,
+body[data-theme="dark"] .notifications-section,
+body[data-theme="dark"] .notifications-preview-card,
+body[data-theme="dark"] .notifications-preview-meta,
+body[data-theme="dark"] .notifications-history-item,
+body[data-theme="dark"] .travel-custom-task-row {
+  background: rgba(15, 24, 38, 0.9);
+  border-color: var(--line);
+  box-shadow: var(--shadow);
+}
+
+body[data-theme="dark"] .workout-detail-chart {
+  background: rgba(8, 14, 24, 0.72);
+}
+
+body[data-theme="dark"] .travel-shell-card,
+body[data-theme="dark"] .travel-board-card,
+body[data-theme="dark"] .travel-template-card,
+body[data-theme="dark"] .travel-packing-item,
+body[data-theme="dark"] .travel-overview-stat,
+body[data-theme="dark"] .travel-packing-category,
+body[data-theme="dark"] .travel-trip-form,
+body[data-theme="dark"] .travel-template-form {
+  background: rgba(15, 24, 38, 0.9);
+  border-color: var(--line);
+  box-shadow: var(--shadow);
+}
+
+body[data-theme="dark"] .travel-shell-live-section,
+body[data-theme="dark"] .travel-shell-forecast-day,
+body[data-theme="dark"] .travel-packing-check {
+  background: rgba(24, 35, 52, 0.88);
+  border-color: rgba(214, 228, 246, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+}
+
+body[data-theme="dark"] .travel-shell-card-meta,
+body[data-theme="dark"] .travel-shell-card p,
+body[data-theme="dark"] .travel-board-card p,
+body[data-theme="dark"] .travel-template-card p,
+body[data-theme="dark"] .travel-packing-item p,
+body[data-theme="dark"] .travel-shell-live-note,
+body[data-theme="dark"] .travel-overview-stat span,
+body[data-theme="dark"] .travel-packing-category-header span {
+  color: var(--muted);
+}
+
+body[data-theme="dark"] .travel-shell-live-section strong,
+body[data-theme="dark"] .travel-shell-live-section span,
+body[data-theme="dark"] .travel-shell-forecast-day strong,
+body[data-theme="dark"] .travel-shell-forecast-day span,
+body[data-theme="dark"] .travel-overview-stat strong,
+body[data-theme="dark"] .travel-packing-check {
+  color: var(--ink);
+}
+
+body[data-theme="dark"] .travel-status-chip {
+  color: var(--ink);
+  border-color: rgba(214, 228, 246, 0.18);
+}
+
+body[data-theme="dark"] .travel-status-chip.is-complete {
+  background: rgba(214, 228, 246, 0.1);
+  border-color: rgba(214, 228, 246, 0.16);
+}
+
+body[data-theme="dark"] .travel-packing-item.is-packed {
+  opacity: 0.8;
+}
+
+body[data-theme="dark"] .widget-shell-remove {
+  background: rgba(15, 24, 38, 0.78);
+  border-color: rgba(118, 138, 164, 0.24);
+  color: rgba(235, 241, 247, 0.7);
+}
+
+body[data-theme="dark"] .widget-shell-remove:hover,
+body[data-theme="dark"] .widget-shell-remove:focus-visible {
+  background: rgba(229, 113, 76, 0.18);
+  border-color: rgba(229, 113, 76, 0.32);
+  color: #ffd9c9;
+}
+
+body[data-theme="dark"] .sync-meta-card[data-state="success"] {
+  background: linear-gradient(180deg, rgba(28, 62, 44, 0.94), rgba(21, 48, 35, 0.94));
+  border-color: rgba(120, 214, 148, 0.42);
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.24);
+}
+
+body[data-theme="dark"] .sync-meta-card[data-state="error"] {
+  background: linear-gradient(180deg, rgba(78, 37, 33, 0.94), rgba(62, 28, 26, 0.94));
+  border-color: rgba(244, 144, 112, 0.4);
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.24);
+}
+
+body[data-theme="dark"] .sync-meta-card[data-state="info"] {
+  background: linear-gradient(180deg, rgba(28, 46, 78, 0.94), rgba(22, 36, 62, 0.94));
+  border-color: rgba(122, 168, 240, 0.38);
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.24);
+}
+
+body[data-theme="dark"] .hero-status-panel,
+body[data-theme="dark"] .widget-slot.empty .plus,
+body[data-theme="dark"] .widget-slot-choice,
+body[data-theme="dark"] .workout-detail-tab,
+body[data-theme="dark"] .weekday-picker label,
+body[data-theme="dark"] .canopy-task-main,
+body[data-theme="dark"] .canopy-task-icon,
+body[data-theme="dark"] .canopy-task-undo,
+body[data-theme="dark"] .canopy-group-card,
+body[data-theme="dark"] .canopy-group-star,
+body[data-theme="dark"] .canopy-group-toggle,
+body[data-theme="dark"] .energy-widget-level,
+body[data-theme="dark"] .tree-point-pill,
+body[data-theme="dark"] .ghost-button,
+body[data-theme="dark"] input,
+body[data-theme="dark"] textarea,
+body[data-theme="dark"] select {
+  background: rgba(24, 35, 52, 0.92);
+  color: var(--ink);
+  border-color: var(--line);
+}
+
+body[data-theme="dark"] .widget-slot.filled,
+body[data-theme="dark"] .widget-slot-choice.available,
+body[data-theme="dark"] .energy-widget-level,
+body[data-theme="dark"] .canopy-task-main {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+body[data-theme="dark"] .energy-widget-current,
+body[data-theme="dark"] .energy-widget-next strong {
+  color: rgba(244, 247, 255, 0.98);
+}
+
+body[data-theme="dark"] .energy-widget-trend {
+  background: rgba(18, 27, 40, 0.88);
+  border-color: rgba(163, 187, 223, 0.12);
+}
+
+body[data-theme="dark"] .canopy-task,
+body[data-theme="dark"] .canopy-group-task {
+  background:
+    linear-gradient(180deg, rgba(24, 35, 52, 0.96), rgba(18, 28, 42, 0.96)),
+    linear-gradient(90deg, color-mix(in srgb, var(--canopy-category-color, #7dbf74) 18%, rgba(24, 35, 52, 0.96)), transparent 26%);
+  border-color: color-mix(in srgb, var(--canopy-category-color, #7dbf74) 36%, rgba(214, 228, 246, 0.18));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+body[data-theme="dark"] .task-card.deadline-grace,
+body[data-theme="dark"] .canopy-task.deadline-grace,
+body[data-theme="dark"] .canopy-group-task.deadline-grace {
+  border-color: rgba(246, 213, 115, 0.46);
+  box-shadow:
+    0 0 0 1px rgba(246, 213, 115, 0.2),
+    0 0 0 5px rgba(246, 213, 115, 0.12),
+    0 18px 36px rgba(0, 0, 0, 0.24);
+}
+
+body[data-theme="dark"] .task-card.deadline-overdue,
+body[data-theme="dark"] .canopy-task.deadline-overdue,
+body[data-theme="dark"] .canopy-group-task.deadline-overdue {
+  border-color: rgba(255, 132, 120, 0.56);
+  box-shadow:
+    0 0 0 1px rgba(255, 132, 120, 0.3),
+    0 0 0 6px rgba(255, 132, 120, 0.16),
+    0 18px 38px rgba(116, 34, 28, 0.34);
+}
+
+body[data-theme="dark"] .canopy-bonus-panel {
+  background:
+    linear-gradient(180deg, rgba(24, 35, 52, 0.96), rgba(18, 28, 42, 0.96)),
+    linear-gradient(90deg, color-mix(in srgb, var(--canopy-bonus-color, #f4c95d) 18%, rgba(24, 35, 52, 0.96)), transparent 26%);
+  border-color: color-mix(in srgb, var(--canopy-bonus-color, #f4c95d) 32%, rgba(214, 228, 246, 0.18));
+}
+
+body[data-theme="dark"] .canopy-group-card.ready {
+  background:
+    linear-gradient(180deg, rgba(24, 35, 52, 0.96), rgba(18, 28, 42, 0.96)),
+    linear-gradient(90deg, color-mix(in srgb, var(--canopy-bonus-color, #f4c95d) 18%, rgba(24, 35, 52, 0.96)), transparent 26%);
+  border-color: color-mix(in srgb, var(--canopy-bonus-color, #f4c95d) 32%, rgba(214, 228, 246, 0.18));
+}
+
+body[data-theme="dark"] .canopy-group-card.claimed {
+  background:
+    linear-gradient(180deg, rgba(24, 35, 52, 0.96), rgba(18, 28, 42, 0.96)),
+    linear-gradient(90deg, color-mix(in srgb, var(--canopy-bonus-color, #7dbf74) 16%, rgba(24, 35, 52, 0.96)), transparent 26%);
+  border-color: color-mix(in srgb, var(--canopy-bonus-color, #7dbf74) 28%, rgba(214, 228, 246, 0.18));
+}
+
+body[data-theme="dark"] .canopy-group-star {
+  color: color-mix(in srgb, var(--canopy-bonus-color, #f4c95d) 82%, #fff0b6);
+  background: rgba(24, 35, 52, 0.92);
+  border-color: color-mix(in srgb, var(--canopy-bonus-color, #f4c95d) 34%, rgba(214, 228, 246, 0.18));
+}
+
+body[data-theme="dark"] .canopy-group-star.claimed {
+  color: #def7dc;
+  background: rgba(34, 79, 51, 0.92);
+  border-color: rgba(120, 214, 148, 0.32);
+}
+
+body[data-theme="dark"] .drive-conflict-option {
+  background: rgba(24, 35, 52, 0.92);
+  border-color: var(--line);
+  color: var(--ink);
+}
+
+body[data-theme="dark"] .drive-conflict-option span,
+body[data-theme="dark"] .drive-conflict-copy {
+  color: var(--muted);
+}
+
+body[data-theme="dark"] .drive-conflict-option:hover,
+body[data-theme="dark"] .drive-conflict-option:focus-visible {
+  border-color: rgba(255, 158, 115, 0.38);
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.24);
+}
+
+body[data-theme="dark"] .drive-conflict-option.is-primary {
+  background:
+    linear-gradient(180deg, rgba(24, 35, 52, 0.96), rgba(18, 28, 42, 0.96)),
+    linear-gradient(90deg, rgba(255, 158, 115, 0.14), transparent 34%);
+  border-color: rgba(255, 158, 115, 0.34);
+}
+
+body[data-theme="dark"] .workout-detail-tab.is-active {
+  background: rgba(36, 53, 79, 0.96);
+  color: rgba(244, 247, 255, 0.98);
+  border-color: rgba(132, 165, 216, 0.3);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.24);
+}
+
+body[data-theme="dark"] .canopy-group-preview {
+  border-top-color: rgba(142, 166, 201, 0.14);
+}
+
+body[data-theme="dark"] .canopy-group-preview-item span,
+body[data-theme="dark"] .canopy-group-preview-more {
+  color: #93a9c7;
+}
+
+body[data-theme="dark"] .canopy-group-bonus-state.ready {
+  color: color-mix(in srgb, var(--canopy-bonus-color, #f4c95d) 82%, #fff0b6);
+}
+
+body[data-theme="dark"] .canopy-group-bonus-state.claimed {
+  color: color-mix(in srgb, var(--canopy-bonus-color, #7dbf74) 80%, #def7dc);
+}
+
+body[data-theme="dark"] .help-tooltip {
+  background: rgba(14, 23, 37, 0.96);
+  color: var(--ink);
+  border-color: rgba(214, 228, 246, 0.18);
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.3);
+}
+
+body[data-theme="dark"] .canopy-task-icon.complete,
+body[data-theme="dark"] .canopy-group-toggle.is-complete {
+  color: #92d98b;
+}
+
+body[data-theme="dark"] .canopy-task-icon.skip {
+  color: #ff9e73;
+}
+
+body[data-theme="dark"] .canopy-task-icon.complete.is-active {
+  background: rgba(34, 79, 51, 0.92);
+  border-color: rgba(120, 214, 148, 0.42);
+  color: #92d98b;
+}
+
+body[data-theme="dark"] .canopy-task-icon.skip.is-active {
+  background: rgba(78, 37, 33, 0.92);
+  border-color: rgba(244, 144, 112, 0.36);
+  color: #ff9e73;
+}
+
+body[data-theme="dark"] .widget-slot-choice.deployed {
+  background: rgba(237, 243, 251, 0.08);
+}
+
+body[data-theme="dark"] .widget-slot-choice.deployed strong,
+body[data-theme="dark"] .widget-slot-choice.deployed span {
+  color: var(--muted);
+}
+
+body[data-theme="dark"] .tree-bank strong,
+body[data-theme="dark"] .hero-welcome,
+body[data-theme="dark"] .task-card h3,
+body[data-theme="dark"] .history-entry strong {
+  color: var(--ink);
+}
+
+body[data-theme="dark"] .history-panel-board {
+  background: rgba(15, 24, 38, 0.9);
+  border-color: var(--line);
+  box-shadow: var(--shadow);
+}
+
+body[data-theme="dark"] .history-entry {
+  background: linear-gradient(180deg, rgba(24, 35, 52, 0.96), rgba(18, 28, 42, 0.96));
+  border-color: rgba(214, 228, 246, 0.14);
+}
+
+body[data-theme="dark"] .history-entry span {
+  color: var(--muted);
+}
+
+body[data-theme="dark"] .history-indicator {
+  background: rgba(24, 35, 52, 0.94);
+  border-color: rgba(214, 228, 246, 0.14);
+  color: var(--ink);
+}
+
+body[data-theme="dark"] .history-indicator.on-time {
+  background: rgba(34, 79, 51, 0.92);
+  border-color: rgba(120, 214, 148, 0.42);
+  color: #92d98b;
+}
+
+body[data-theme="dark"] .history-indicator.late {
+  background: rgba(78, 37, 33, 0.92);
+  border-color: rgba(244, 144, 112, 0.36);
+  color: #ffb396;
+}
+
+body[data-theme="dark"] .history-indicator.neutral {
+  background: rgba(28, 40, 58, 0.92);
+  border-color: rgba(214, 228, 246, 0.14);
+  color: #dbe7f6;
+}
+
+body[data-theme="dark"] .widget-badge {
+  background: rgba(146, 217, 139, 0.2);
+  color: #c8f0c0;
+}
+
+body[data-theme="dark"] .tree-harvest-hint,
+body[data-theme="dark"] .sync-status,
+body[data-theme="dark"] .canopy-note,
+body[data-theme="dark"] .category-copy span,
+body[data-theme="dark"] .task-action-note,
+body[data-theme="dark"] .edit-panel p,
+body[data-theme="dark"] .recurrence-panel legend,
+body[data-theme="dark"] .skip-panel legend,
+body[data-theme="dark"] .category-panel legend {
+  color: var(--muted);
+}
+
+body[data-theme="dark"] .shell-footer a {
+  color: var(--muted);
+}
+
+body[data-theme="dark"] .developer-panel,
+body[data-theme="dark"] .tree-style-summary,
+body[data-theme="dark"] .tree-style-section,
+body[data-theme="dark"] .tree-style-card,
+body[data-theme="dark"] .developer-point-item.source {
+  background: rgba(18, 28, 42, 0.94);
+  border-color: rgba(214, 228, 246, 0.14);
+  box-shadow: var(--shadow);
+}
+
+body[data-theme="dark"] .developer-panel label,
+body[data-theme="dark"] .developer-fruit-total span,
+body[data-theme="dark"] .developer-points-total span,
+body[data-theme="dark"] .tree-style-card p,
+body[data-theme="dark"] .tree-style-cost span {
+  color: var(--muted);
+}
+
+body[data-theme="dark"] .developer-points-total strong,
+body[data-theme="dark"] .developer-fruit-total strong,
+body[data-theme="dark"] .tree-style-part-header h3,
+body[data-theme="dark"] .developer-panel h2,
+body[data-theme="dark"] .developer-points-section h3 {
+  color: var(--ink);
+}
+
+body[data-theme="dark"] .canopy-task .canopy-chip,
+body[data-theme="dark"] .canopy-group-task .canopy-chip,
+body[data-theme="dark"] .task-chip.category-chip,
+body[data-theme="dark"] .task-chip.points-chip,
+body[data-theme="dark"] .tree-style-bank-pill,
+body[data-theme="dark"] .tree-point-pill {
+  background: color-mix(in srgb, var(--chip-color, var(--canopy-chip-color, #7dbf74)) 34%, rgba(10, 16, 26, 0.92));
+  border: 1px solid color-mix(in srgb, var(--chip-color, var(--canopy-chip-color, #7dbf74)) 58%, rgba(255, 255, 255, 0.12));
+  color: #f7fbff;
+}
+
+body[data-theme="dark"] .tree-detail-stat,
+body[data-theme="dark"] .tree-detail-card,
+body[data-theme="dark"] .tree-detail-section,
+body[data-theme="dark"] .tree-detail-source-item,
+body[data-theme="dark"] .notifications-section,
+body[data-theme="dark"] .notifications-preview-card,
+body[data-theme="dark"] .notifications-preview-meta,
+body[data-theme="dark"] .notifications-history-item {
+  background: rgba(18, 28, 42, 0.94);
+  border-color: rgba(214, 228, 246, 0.14);
+  box-shadow: var(--shadow);
+}
+
+body[data-theme="dark"] .tree-detail-stat strong,
+body[data-theme="dark"] .tree-detail-section-header h3,
+body[data-theme="dark"] .tree-detail-source-heading strong,
+body[data-theme="dark"] .notifications-section-header h3,
+body[data-theme="dark"] .notifications-preview-card h4,
+body[data-theme="dark"] .notifications-preview-meta strong,
+body[data-theme="dark"] .notifications-history-item strong {
+  color: var(--ink);
+}
+
+body[data-theme="dark"] .tree-detail-stat span,
+body[data-theme="dark"] .tree-detail-card p,
+body[data-theme="dark"] .tree-detail-source-meta,
+body[data-theme="dark"] .tree-detail-section .sync-status,
+body[data-theme="dark"] .tree-point-exchange-summary,
+body[data-theme="dark"] .notifications-preview-section ul,
+body[data-theme="dark"] .notifications-history-item .sync-status {
+  color: var(--muted);
+}
+
+body[data-theme="dark"] .canopy-task .canopy-complete-hint {
+  color: color-mix(in srgb, var(--canopy-category-color, #7dbf74) 50%, white);
+}
+
+body[data-theme="dark"] .task-priority-indicator,
+body[data-theme="dark"] .canopy-priority-indicator {
+  background: rgba(28, 40, 58, 0.92);
+  color: #f7fbff;
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+body[data-theme="dark"] .task-priority-indicator.priority-high,
+body[data-theme="dark"] .canopy-priority-indicator.priority-high {
+  background: rgba(92, 35, 44, 0.92);
+  border-color: rgba(244, 144, 112, 0.28);
+  color: #ffd9df;
+}
+
+body[data-theme="dark"] .task-priority-indicator.priority-low,
+body[data-theme="dark"] .canopy-priority-indicator.priority-low {
+  background: rgba(35, 57, 88, 0.92);
+  border-color: rgba(136, 172, 232, 0.28);
+  color: #d6e7ff;
+}
+
+body[data-theme="dark"] .task-chip.importance-low {
+  background: rgba(35, 57, 88, 0.92);
+  color: #d6e7ff;
+}
+
+body[data-theme="dark"] .task-chip.importance-medium {
+  background: rgba(91, 72, 34, 0.92);
+  color: #ffe9b3;
+}
+
+body[data-theme="dark"] .task-chip.importance-high {
+  background: rgba(92, 35, 44, 0.92);
+  color: #ffd9df;
+}
+
+body[data-theme="dark"] .task-chip.length-very-short,
+body[data-theme="dark"] .canopy-chip.length.very-short {
+  background: rgba(42, 79, 49, 0.94);
+  border: 1px solid rgba(146, 217, 139, 0.34);
+  color: #e5f8e3;
+}
+
+body[data-theme="dark"] .task-chip.length-short,
+body[data-theme="dark"] .canopy-chip.length.short {
+  background: rgba(70, 90, 42, 0.94);
+  border: 1px solid rgba(196, 220, 132, 0.32);
+  color: #eef7d8;
+}
+
+body[data-theme="dark"] .task-chip.length-medium,
+body[data-theme="dark"] .canopy-chip.length.medium {
+  background: rgba(92, 71, 35, 0.94);
+  border: 1px solid rgba(244, 197, 112, 0.34);
+  color: #fff0cf;
+}
+
+body[data-theme="dark"] .task-chip.length-long,
+body[data-theme="dark"] .canopy-chip.length.long {
+  background: rgba(98, 57, 39, 0.94);
+  border: 1px solid rgba(255, 171, 138, 0.34);
+  color: #ffe1d4;
+}
+
+body[data-theme="dark"] .task-chip.length-very-long,
+body[data-theme="dark"] .canopy-chip.length.very-long {
+  background: rgba(102, 47, 50, 0.94);
+  border: 1px solid rgba(255, 168, 176, 0.34);
+  color: #ffd9de;
+}
+
+body[data-theme="dark"] .canopy-chip.recurring.weekly {
+  background: rgba(58, 70, 108, 0.94);
+  border-color: rgba(148, 168, 255, 0.34);
+  color: #e2e8ff;
+}
+
+body[data-theme="dark"] .canopy-chip.recurring.monthly {
+  background: rgba(86, 57, 103, 0.94);
+  border-color: rgba(220, 170, 255, 0.32);
+  color: #f0dcff;
+}
+

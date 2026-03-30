@@ -77,6 +77,15 @@ import {
   normalizeProfile
 } from "./modules/profile.js";
 import { createTaskDeskController } from "./modules/taskDesk.js";
+import {
+  renderHistoryPanel as renderHistoryPanelShared,
+  renderHistorySourceOptions as renderHistorySourceOptionsShared,
+  renderPriorityIndicator as renderPriorityIndicatorShared,
+  renderTaskActions as renderTaskActionsShared,
+  renderTaskDependencies as renderTaskDependenciesShared,
+  renderTaskGrid as renderTaskGridShared,
+  renderTaskHistorySummary as renderTaskHistorySummaryShared
+} from "./modules/taskHistoryUi.js";
 import { buildPointSummary, buildFruitDisplayState } from "./modules/treeState.js";
 import {
   buildAppliedTreeAppearance,
@@ -687,6 +696,8 @@ searchQuery.addEventListener("input", renderTaskGrid);
 historySort.addEventListener("change", renderHistoryPanel);
 historyFilter.addEventListener("change", renderHistoryPanel);
 historyWidgetFilter.addEventListener("change", renderHistoryPanel);
+taskGrid.addEventListener("click", handleTaskGridClick);
+historyList.addEventListener("click", handleHistoryListClick);
 googleSignInButton.addEventListener("click", connectGoogle);
 googleSignOutButton.addEventListener("click", handleGoogleDisconnect);
 loadDriveButton.addEventListener("click", handleManualLoadFromDrive);
@@ -4784,97 +4795,66 @@ function renderSummary() {
 
 function renderTaskGrid() {
   const cards = sortCards(filterCards(getVisibleCards()));
-  taskGrid.innerHTML = "";
-
-  if (cards.length === 0) {
-    emptyState.classList.add("visible");
-    return;
-  }
-  emptyState.classList.remove("visible");
-
-  for (const cardData of cards) {
-    const blocked = isBlocked(cardData.task);
-    const deadlineState = getOpenTaskDeadlineState(cardData.task);
-    const article = document.createElement("article");
-    article.className = `task-card${cardData.status === "done" ? " done" : ""}${cardData.status === "skipped" ? " skipped" : ""}${cardData.task.archived ? " archived" : ""}${blocked ? " blocked" : ""}${deadlineState ? ` deadline-${deadlineState}` : ""}`;
-    article.style.setProperty("--task-category-color", cardData.task.categoryColor || DEFAULT_CATEGORY_COLOR);
-    article.innerHTML = `
-      <h3>${escapeHtml(cardData.displayName)}</h3>
-      <div class="chip-row">
-        <span class="task-chip length-${cardData.task.length}">${humanizeLength(cardData.task.length)}</span>
-        <span class="task-chip">${escapeHtml(statusLabel(cardData.task.archived ? "archived" : cardData.status))}</span>
-        <span class="task-chip category-chip" style="--chip-color: ${escapeHtml(cardData.task.categoryColor || DEFAULT_CATEGORY_COLOR)}">${escapeHtml(cardData.task.categoryLabel || "Uncategorized")}</span>
-        <span class="task-chip points-chip" style="--chip-color: ${escapeHtml(cardData.task.categoryColor || DEFAULT_CATEGORY_COLOR)}">${escapeHtml(formatPointsLabel(cardData.task.pointsValue))}</span>
-        ${renderPriorityIndicator(cardData.task.importance || DEFAULT_IMPORTANCE, "task")}
-        ${cardData.task.ownerWidgetType ? `<span class="task-chip">${escapeHtml(ownerWidgetLabel(cardData.task))}</span>` : ""}
-        ${cardData.kind === "series" ? `<span class="task-chip">${escapeHtml(describeRecurrence(cardData.template.recurrence))}</span>` : ""}
-      </div>
-      <div class="task-meta">
-        <span>Start: ${cardData.task.startDate || "unset"}${cardData.task.timeOfDay ? ` at ${cardData.task.timeOfDay}` : ""}</span>
-        <span>Due: ${cardData.task.dueDate || "unset"}${cardData.task.timeOfDay ? ` at ${cardData.task.timeOfDay}` : ""}</span>
-        <span>Created: ${formatDate(cardData.task.createdAt)}</span>
-      </div>
-      <p class="task-details">${escapeHtml(cardData.task.details || "No details yet.")}</p>
-      <div class="dependency-list">${renderDependencies(cardData.task)}</div>
-      <div class="recurrence-copy">${escapeHtml(cardSummary(cardData))}</div>
-      <div class="history-copy">${escapeHtml(renderHistory(cardData.task))}</div>
-      <div class="task-actions">${renderActions(cardData)}</div>
-    `;
-    taskGrid.appendChild(article);
-  }
-
-  taskGrid.querySelectorAll("[data-action]").forEach((button) => {
-    button.addEventListener("click", handleTaskAction);
+  const tasksById = new Map(store.tasks.map((task) => [task.id, task]));
+  renderTaskGridShared(taskGrid, cards, {
+    emptyState,
+    escapeHtml,
+    defaultCategoryColor: DEFAULT_CATEGORY_COLOR,
+    defaultImportance: DEFAULT_IMPORTANCE,
+    formatDate,
+    formatPointsLabel,
+    humanizeLength,
+    ownerWidgetLabel,
+    describeRecurrence,
+    cardSummary,
+    normalizeImportance,
+    importanceDefinitions: IMPORTANCE_DEFINITIONS,
+    getOpenTaskDeadlineState,
+    isBlocked,
+    renderTaskDependencies: (task) => renderTaskDependenciesShared(task, {
+      tasksById,
+      formatTaskAvailability,
+      getTaskDependencyIds,
+      formatTaskDisplayName,
+      escapeHtml
+    }),
+    renderTaskHistorySummary: (task) => renderTaskHistorySummaryShared(task, { formatDate }),
+    renderTaskActions: (cardData) => renderTaskActionsShared(cardData, {
+      escapeHtml,
+      getPendingActionForTask,
+      isWidgetProtectedTask,
+      isDeletePending
+    })
   });
 }
 
 function renderPriorityIndicator(importance, variant = "task") {
-  const normalized = normalizeImportance(importance || DEFAULT_IMPORTANCE);
-  const definition = IMPORTANCE_DEFINITIONS[normalized];
-  if (!definition?.icon) {
-    return "";
+  return renderPriorityIndicatorShared(importance, variant, {
+    defaultImportance: DEFAULT_IMPORTANCE,
+    normalizeImportance,
+    importanceDefinitions: IMPORTANCE_DEFINITIONS,
+    escapeHtml
+  });
+}
+
+function handleTaskGridClick(event) {
+  const button = event.target.closest("[data-action]");
+  if (!button || !taskGrid.contains(button)) {
+    return;
   }
-  const className = variant === "canopy"
-    ? `canopy-priority-indicator priority-${normalized}`
-    : `task-chip task-priority-indicator priority-${normalized}`;
-  return `<span class="${className}" title="${escapeHtml(definition.label)}" aria-label="${escapeHtml(definition.label)}">${escapeHtml(definition.icon)}</span>`;
+  handleTaskAction({ currentTarget: button });
 }
 
 function renderHistoryPanel() {
   const feed = getVisibleHistoryFeed();
-  historyList.innerHTML = "";
-
-  if (feed.length === 0) {
-    historyEmpty.classList.add("visible");
-    return;
-  }
-
-  historyEmpty.classList.remove("visible");
-
-  for (const item of feed) {
-    const task = store.tasks.find((candidate) => candidate.id === item.taskId) || null;
-    const canRestore = item.type === "skipped" && canRestoreHistoryTask(task, item.historyId);
-    const entry = document.createElement("article");
-    entry.className = "history-entry";
-    entry.innerHTML = `
-      <div class="history-entry-copy">
-        <strong>${escapeHtml(item.taskName)}</strong>
-        <span>${escapeHtml(historyTypeLabel(item.type))}${item.ownerWidgetType ? ` · ${escapeHtml(ownerWidgetLabel(item))}` : ""}</span>
-        <span>${escapeHtml(item.scheduledLabel || "No scheduled due time")}</span>
-      </div>
-      <div class="history-entry-actions">
-        <span>${formatDateTime(item.at)}</span>
-        ${item.timingLabel ? `<span class="history-indicator ${escapeHtml(historyIndicatorClass(item.timingStatus))}">${escapeHtml(item.timingLabel)}</span>` : ""}
-        ${canRestore ? `<button type="button" class="ghost-button" data-history-action="restore" data-task-id="${item.taskId}" data-history-id="${item.historyId}">Restore</button>` : ""}
-        <button type="button" class="ghost-button" data-history-action="reuse" data-task-id="${item.taskId}">Reuse task</button>
-        <button type="button" class="ghost-button" data-history-action="delete" data-task-id="${item.taskId}" data-history-id="${item.historyId}">Delete</button>
-      </div>
-    `;
-    historyList.appendChild(entry);
-  }
-
-  historyList.querySelectorAll("[data-history-action]").forEach((button) => {
-    button.addEventListener("click", handleHistoryAction);
+  const tasksById = new Map(store.tasks.map((task) => [task.id, task]));
+  renderHistoryPanelShared(historyList, feed, {
+    historyEmpty,
+    tasksById,
+    canRestoreHistoryTask,
+    escapeHtml,
+    formatDateTime,
+    ownerWidgetLabel
   });
 }
 
@@ -4894,14 +4874,19 @@ function getVisibleHistoryFeed() {
 function renderHistorySourceOptions() {
   const currentValue = historyWidgetFilter.value || "all";
   const widgetTypes = Array.from(new Set(store.tasks.map((task) => task.ownerWidgetType).filter(Boolean))).sort();
-  historyWidgetFilter.innerHTML = `
-    <option value="all">All sources</option>
-    <option value="manual">Manual tasks</option>
-    ${widgetTypes.map((type) => `<option value="${type}">${escapeHtml(ownerWidgetLabel({ ownerWidgetType: type }))}</option>`).join("")}
-  `;
-  historyWidgetFilter.value = widgetTypes.includes(currentValue) || currentValue === "all" || currentValue === "manual"
-    ? currentValue
-    : "all";
+  renderHistorySourceOptionsShared(historyWidgetFilter, widgetTypes, {
+    currentValue,
+    escapeHtml,
+    ownerWidgetLabel
+  });
+}
+
+function handleHistoryListClick(event) {
+  const button = event.target.closest("[data-history-action]");
+  if (!button || !historyList.contains(button)) {
+    return;
+  }
+  handleHistoryAction({ currentTarget: button });
 }
 
 function handleHistoryAction(event) {
@@ -5756,19 +5741,6 @@ function getLinkedSeriesTemplates(task) {
     .sort((left, right) => (left.linkedSeries?.slotIndex || 0) - (right.linkedSeries?.slotIndex || 0));
 }
 
-function statusLabel(status) {
-  if (status === "archived") {
-    return "Archived";
-  }
-  if (status === "done") {
-    return "Completed";
-  }
-  if (status === "skipped") {
-    return "Skipped";
-  }
-  return "Open";
-}
-
 function cardSummary(cardData) {
   if (cardData.kind !== "series") {
     return describeCompletionGate(cardData.task);
@@ -5789,63 +5761,6 @@ function cardSummary(cardData) {
     ? `${remaining} scheduled ahead in the rolling queue.`
     : `${remaining} instances left.`;
   return `${describeCompletionGate(current)} Next repeat after this: ${next.dueDate || next.startDate || "unscheduled"}. ${remainderCopy}`;
-}
-
-function renderHistory(task) {
-  if (!task.history || task.history.length === 0) {
-    return task.timeOfDay ? `Time: ${task.timeOfDay}` : "No history yet.";
-  }
-  const latest = task.history[task.history.length - 1];
-  return `Latest activity: ${latest.type} on ${formatDate(latest.at)}${task.timeOfDay ? ` at ${task.timeOfDay}` : ""}`;
-}
-
-function renderActions(cardData) {
-  const buttons = [];
-  const task = cardData.task;
-  const protectedTask = isWidgetProtectedTask(task);
-  const deleteScope = cardData.kind === "series" ? "series" : "single";
-  const deletePending = !protectedTask && isDeletePending(task.id, deleteScope);
-  const pendingAction = getPendingActionForTask(task.id);
-  if (pendingAction) {
-    return `
-      <span class="task-action-note danger">${escapeHtml(pendingAction.description || "Pending action.")}</span>
-      <button type="button" class="task-action" data-action="undo" data-id="${task.id}" data-pending-key="${pendingAction.key}">Undo</button>
-    `;
-  }
-  if (!task.archived) {
-    buttons.push(`<button type="button" class="task-action" data-action="toggle" data-id="${task.id}">${task.status === "done" ? "Mark open" : "Mark done"}</button>`);
-  }
-  if (!task.archived && task.status === "open") {
-    buttons.push(`<button type="button" class="task-action" data-action="skip" data-id="${task.id}">Skip</button>`);
-  }
-  if (!task.archived) {
-    buttons.push(`<button type="button" class="task-action" data-action="edit" data-id="${task.id}" data-scope="single">Edit task</button>`);
-  }
-  if (task.archived) {
-    buttons.push(`<button type="button" class="task-action" data-action="restore" data-id="${task.id}">Restore</button>`);
-  } else if (task.status !== "open") {
-    buttons.push(`<button type="button" class="task-action" data-action="archive" data-id="${task.id}">Archive</button>`);
-  }
-  if (cardData.kind === "series") {
-    if (!task.archived) {
-      buttons.push(`<button type="button" class="task-action" data-action="edit" data-id="${task.id}" data-scope="series">Edit series</button>`);
-    }
-    if (!protectedTask) {
-      buttons.push(`<button type="button" class="task-action" data-action="delete" data-id="${task.id}" data-scope="series">${deletePending ? "Confirm delete series" : "Delete series"}</button>`);
-    }
-  } else {
-    if (!protectedTask) {
-      buttons.push(`<button type="button" class="task-action" data-action="delete" data-id="${task.id}">${deletePending ? "Confirm delete" : "Delete"}</button>`);
-    }
-  }
-  const notes = [];
-  if (protectedTask) {
-    notes.push('<span class="task-action-note">Protected by its active widget. Remove the widget to remove this task.</span>');
-  }
-  if (deletePending) {
-    notes.push('<span class="task-action-note danger">Delete is armed. Click the delete button again to confirm.</span>');
-  }
-  return `${notes.join("")}${buttons.join("")}`;
 }
 
 function pushHistory(task, type, at = Date.now(), metadata = null) {
@@ -5914,24 +5829,6 @@ function latestHistoryAt(task) {
   return history.reduce((latest, item) => Math.max(latest, item.at || 0), 0);
 }
 
-function historyTypeLabel(type) {
-  if (type === "completed") return "Marked completed";
-  if (type === "skipped") return "Skipped";
-  if (type === "edited") return "Edited";
-  if (type === "reopened") return "Reopened";
-  return type;
-}
-
-function historyIndicatorClass(status) {
-  if (status === "on-time") {
-    return "on-time";
-  }
-  if (status === "late" || status === "missed") {
-    return "late";
-  }
-  return "neutral";
-}
-
 function isBlocked(task) {
   if (isTaskNotYetAvailable(task)) {
     return true;
@@ -5952,24 +5849,6 @@ function isBlocked(task) {
     }
     return dependency.status !== "done";
   });
-}
-
-function renderDependencies(task) {
-  const availabilityLabel = formatTaskAvailability(task);
-  const dependencyIds = getTaskDependencyIds(task);
-  if (dependencyIds.length === 0 && !availabilityLabel) {
-    return "No prerequisite tasks.";
-  }
-  if (dependencyIds.length === 0 && availabilityLabel) {
-    return `Not before ${availabilityLabel}.`;
-  }
-  const names = dependencyIds.map((dependencyId) => {
-    const dependency = store.tasks.find((item) => item.id === dependencyId);
-    return dependency ? formatTaskDisplayName(dependency) : "missing task";
-  });
-  return availabilityLabel
-    ? `Depends on: ${escapeHtml(names.join(", "))}. Not before ${availabilityLabel}.`
-    : `Depends on: ${escapeHtml(names.join(", "))}`;
 }
 
 function describeCompletionGate(task) {

@@ -15,8 +15,13 @@
 ### Codebase Maintenance
 
 - Codebase: Continue extracting `app.js` orchestration into smaller feature modules.
+- Codebase: Extract tree action/state orchestration out of `app.js` into a dedicated tree controller module.
+- Codebase: Extract task composer, recurrence, skip-rule, and reminder form logic out of `app.js`.
+- Codebase: Extract store normalization, merge, and comparable-signature logic out of `app.js`.
 - Codebase: Continue splitting Travel Buddy into focused render, live-data, task-sync, and state modules.
 - Codebase: Split Workout Coach into focused render, chart, task-sync, and state modules.
+- Codebase: Split `lifetree/style.css` further from imported chunks into feature-owned stylesheets and shared utility layers.
+- Codebase: Consolidate repeated dark-mode card/chip/form styling into shared CSS utilities after the stylesheet split.
 - Codebase: Add lightweight Lifetree store and widget schema docs.
 - Codebase: Add reusable fixture stores for travel, workout, and Drive-conflict scenarios.
 - Codebase: Add JSDoc typedefs for core store, task, and widget records.
@@ -32,6 +37,8 @@
 
 ### Codebase Maintenance
 
+- 2026-03-29: Split `lifetree/style.css` into imported stylesheet chunks so the top-level file stops carrying the whole UI.
+- 2026-03-29: Extract Task Desk task/history rendering and delegated click wiring out of `app.js` into `lifetree/modules/taskHistoryUi.js`.
 - 2026-03-29: Extract the tree style modal rendering helpers out of `app.js` into `lifetree/modules/treeUi.js`.
 - 2026-03-29: Extract the tree fruit/detail rendering helpers out of `app.js` into `lifetree/modules/treeUi.js`.
 - 2026-03-29: Extract the notification preview/history rendering helpers out of `app.js` into `lifetree/modules/notificationUi.js`.
