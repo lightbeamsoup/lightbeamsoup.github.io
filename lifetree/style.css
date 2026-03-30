@@ -1548,6 +1548,12 @@ body.developer-open {
   pointer-events: none;
 }
 
+.tree-fruit-anchor,
+.tree-fruit,
+.tree-fruit-sparkle {
+  z-index: 1;
+}
+
 .tree-fruit-anchor {
   position: absolute;
   width: 0;

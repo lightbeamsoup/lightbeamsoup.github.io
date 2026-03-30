@@ -7,7 +7,6 @@
 - Widgets: Create a Hydration widget that tracks ounces consumed and grows a plant as you water it.
 - Integrations: Add Google Calendar integration.
 - Integrations: Add Apple Fitness integration.
-- Tree styles: Create a spring canopy skin.
 - Notifications: Move auth/session storage into a shared backend before re-enabling the dedicated Railway worker.
 - Canopy: Decide how dailies should be marked complete directly from the shell view.
 - Workout Coach: Improve organization of the calories/weight graph in the workout modal.
@@ -85,6 +84,7 @@
 
 ### UI, Tree, And Backend
 
+- 2026-03-29: Add the Cherry Blossom 2026 spring canopy skin for 50 Health points.
 - 2026-03-26: Fix tree modal dark mode styling and history presentation.
 - 2026-03-25: Add dark mode, including automatic dark mode by time window.
 - 2026-03-25: Add clearer Google Drive sync hints and sync status details.
