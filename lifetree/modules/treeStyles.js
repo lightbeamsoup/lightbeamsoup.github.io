@@ -120,6 +120,18 @@ export const TREE_STYLE_SKINS = [
       points: 25
     },
     treeImageSrc: SPRING_TREE_IMAGE
+  },
+  {
+    id: "cherry-blossom-2026",
+    part: "canopy",
+    label: "Cherry Blossom 2026",
+    description: "A soft cherry blossom accent set for the canopy, unlocked with Health points.",
+    default: false,
+    cost: {
+      categoryKey: "health",
+      points: 50
+    },
+    canopyDecoration: "cherry-blossom-2026"
   }
 ];
 
@@ -300,7 +312,8 @@ export function buildAppliedTreeAppearance(styleState, phase) {
   const appearance = {
     treeImageSrc: DEFAULT_TREE_IMAGE,
     background: { ...(DEFAULT_BACKGROUND_PHASES[phase] || DEFAULT_BACKGROUND_PHASES.morning) },
-    sunMoon: { ...(DEFAULT_SUN_MOON_PHASES[phase] || DEFAULT_SUN_MOON_PHASES.morning) }
+    sunMoon: { ...(DEFAULT_SUN_MOON_PHASES[phase] || DEFAULT_SUN_MOON_PHASES.morning) },
+    canopyDecoration: ""
   };
 
   for (const part of TREE_STYLE_PARTS) {
@@ -310,6 +323,9 @@ export function buildAppliedTreeAppearance(styleState, phase) {
     }
     if (skin.treeImageSrc) {
       appearance.treeImageSrc = skin.treeImageSrc;
+    }
+    if (part.key === "canopy" && typeof skin.canopyDecoration === "string") {
+      appearance.canopyDecoration = skin.canopyDecoration;
     }
     if (part.key === "background" && skin.phases?.[phase]) {
       appearance.background = { ...appearance.background, ...skin.phases[phase] };

@@ -3681,6 +3681,11 @@ function renderTreeSky(now = new Date()) {
   treeSkyLayer.style.setProperty("--sky-top", background.skyTop || temporal.skyTop);
   treeSkyLayer.style.setProperty("--sky-bottom", background.skyBottom || temporal.skyBottom);
   treeSkyLayer.style.setProperty("--horizon-glow", background.horizonGlow || temporal.horizonGlow);
+  if (appearance.canopyDecoration) {
+    treeHarvestButton.dataset.canopyDecoration = appearance.canopyDecoration;
+  } else {
+    delete treeHarvestButton.dataset.canopyDecoration;
+  }
   treeSun.style.left = `${temporal.sunLeft}%`;
   treeSun.style.top = `${temporal.sunTop}%`;
   treeSun.style.opacity = String(sunMoon.sunOpacity ?? temporal.sunOpacity);

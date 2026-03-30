@@ -1500,6 +1500,47 @@ body.developer-open {
   transform-origin: center center;
 }
 
+.tree-canopy-decoration-layer {
+  position: absolute;
+  inset: 10px;
+  z-index: 2;
+  border-radius: 50%;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.tree-blossom {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  opacity: 0;
+  transform: scale(0.82);
+  transition:
+    opacity 220ms ease,
+    transform 220ms ease;
+  background:
+    radial-gradient(circle at 50% 50%, #f8d277 0 16%, transparent 18%),
+    radial-gradient(circle at 50% 16%, rgba(255, 241, 248, 0.96) 0 28%, rgba(243, 177, 205, 0.92) 30% 58%, transparent 60%),
+    radial-gradient(circle at 84% 50%, rgba(255, 241, 248, 0.96) 0 28%, rgba(243, 177, 205, 0.92) 30% 58%, transparent 60%),
+    radial-gradient(circle at 50% 84%, rgba(255, 241, 248, 0.96) 0 28%, rgba(243, 177, 205, 0.92) 30% 58%, transparent 60%),
+    radial-gradient(circle at 16% 50%, rgba(255, 241, 248, 0.96) 0 28%, rgba(243, 177, 205, 0.92) 30% 58%, transparent 60%),
+    radial-gradient(circle at 22% 22%, rgba(255, 241, 248, 0.94) 0 24%, rgba(243, 177, 205, 0.92) 26% 54%, transparent 56%);
+  filter:
+    drop-shadow(0 3px 6px rgba(145, 92, 121, 0.18))
+    drop-shadow(0 0 10px rgba(255, 232, 241, 0.32));
+}
+
+.tree-frame[data-canopy-decoration="cherry-blossom-2026"] .tree-blossom {
+  opacity: 0.94;
+  transform: scale(1);
+}
+
+.tree-blossom.blossom-a { left: 27%; top: 18%; }
+.tree-blossom.blossom-b { left: 61%; top: 14%; }
+.tree-blossom.blossom-c { left: 74%; top: 33%; }
+.tree-blossom.blossom-d { left: 21%; top: 35%; }
+.tree-blossom.blossom-e { left: 50%; top: 27%; }
+
 .tree-fruit-layer {
   position: absolute;
   inset: 10px;
