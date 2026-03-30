@@ -32,6 +32,7 @@
 
 ### Codebase Maintenance
 
+- 2026-03-29: Extract the tree fruit/detail rendering helpers out of `app.js` into `lifetree/modules/treeUi.js`.
 - 2026-03-29: Extract the notification preview/history rendering helpers out of `app.js` into `lifetree/modules/notificationUi.js`.
 - 2026-03-29: Extract the Travel Buddy render layer into a dedicated `lifetree/widgets/travel/render.js` module.
 
