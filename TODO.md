@@ -12,6 +12,15 @@
 - Notifications: Consolidate repeated activities in email summaries and reminders.
 - Tasks: Add task snoozing.
 
+### Codebase Maintenance
+
+- Codebase: Continue splitting Travel Buddy into focused render, live-data, task-sync, and state modules.
+- Codebase: Split Workout Coach into focused render, chart, task-sync, and state modules.
+- Codebase: Add lightweight Lifetree store and widget schema docs.
+- Codebase: Add reusable fixture stores for travel, workout, and Drive-conflict scenarios.
+- Codebase: Add JSDoc typedefs for core store, task, and widget records.
+- Codebase: Continue extracting `app.js` orchestration into smaller feature modules.
+
 ## Recently completed
 
 ### Drive Sync
@@ -20,6 +29,10 @@
 - 2026-03-29: Make Drive merge/conflict popups clearer about overwrite versus merge behavior and show exact local/Drive timestamps.
 - 2026-03-29: Move task conflict precedence from whole-store timestamps to task-level `updatedAt` values.
 - 2026-03-29: Coordinate multiple open browser sessions/tabs before silent saves using `BroadcastChannel` remote-state notices.
+
+### Codebase Maintenance
+
+- 2026-03-29: Extract the Travel Buddy render layer into a dedicated `lifetree/widgets/travel/render.js` module.
 
 ### Notifications
 
