@@ -18,6 +18,8 @@ import {
   shouldAutoSkipTask
 } from "./logic.js";
 import { buildEmailSummaryPreview } from "./modules/notificationSummary.js";
+import { buildFruitDisplayState } from "./modules/treeState.js";
+import { exchangeTreeBankedPoints } from "./modules/treeStyles.js";
 import { computeInitialReminderDate, findActiveEnergyCompletionTask, syncEnergyTaskChain } from "./widgets/energy.js";
 import { workoutWidgetDefinition } from "./widgets/workout.js";
 
@@ -409,6 +411,44 @@ test("non-auto-skip tasks surface grace and overdue deadline states", () => {
   assert.equal(getOpenTaskDeadlineState(task, new Date("2026-03-21T08:59:59")), "");
   assert.equal(getOpenTaskDeadlineState(task, new Date("2026-03-21T09:10:00")), "grace");
   assert.equal(getOpenTaskDeadlineState(task, new Date("2026-03-21T09:31:00")), "overdue");
+});
+
+test("tree point exchanges create banked output without regrowing fruit", () => {
+  const exchanged = exchangeTreeBankedPoints(
+    {
+      harvestedByCategory: { health: 10 },
+      creditedByCategory: {},
+      spentByCategory: {}
+    },
+    {
+      inputCategoryKey: "health",
+      outputCategoryKey: "travel",
+      inputPoints: 4
+    }
+  );
+
+  assert.equal(exchanged.changed, true);
+
+  const treeState = buildFruitDisplayState({
+    pointLedger: [],
+    treeState: exchanged.treeState,
+    categories: [
+      { key: "health", label: "Health", color: "#4aa36e" },
+      { key: "travel", label: "Travel", color: "#4a7fd6" }
+    ],
+    resolveCategorySnapshot: (key) => ({
+      key,
+      label: key === "travel" ? "Travel" : "Health",
+      color: key === "travel" ? "#4a7fd6" : "#4aa36e"
+    })
+  });
+  const health = treeState.categories.find((category) => category.key === "health");
+  const travel = treeState.categories.find((category) => category.key === "travel");
+
+  assert.equal(health?.bankedPoints, 6);
+  assert.equal(health?.visibleFruitCount, 0);
+  assert.equal(travel?.bankedPoints, 2);
+  assert.equal(travel?.visibleFruitCount, 0);
 });
 
 test("auto-skip can trigger at end of scheduled day", () => {

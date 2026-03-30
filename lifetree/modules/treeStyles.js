@@ -136,6 +136,7 @@ export const TREE_STYLE_SKINS = [
 ];
 
 const SKIN_BY_ID = new Map(TREE_STYLE_SKINS.map((skin) => [skin.id, skin]));
+export const TREE_POINT_EXCHANGE_RATIO = 2;
 
 export function normalizeTreeStyleState(value) {
   const ownedSet = new Set(
@@ -190,14 +191,22 @@ export function getTreeBankedPointsByCategory(treeState) {
   const harvested = treeState?.harvestedByCategory && typeof treeState.harvestedByCategory === "object"
     ? treeState.harvestedByCategory
     : {};
+  const credited = treeState?.creditedByCategory && typeof treeState.creditedByCategory === "object"
+    ? treeState.creditedByCategory
+    : {};
   const spent = treeState?.spentByCategory && typeof treeState.spentByCategory === "object"
     ? treeState.spentByCategory
     : {};
   return Object.fromEntries(
-    [...new Set([...Object.keys(harvested), ...Object.keys(spent)])]
+    [...new Set([...Object.keys(harvested), ...Object.keys(credited), ...Object.keys(spent)])]
       .map((key) => [
         key,
-        Math.max(0, Math.round(Number(harvested[key] || 0)) - Math.round(Number(spent[key] || 0)))
+        Math.max(
+          0,
+          Math.round(Number(harvested[key] || 0))
+            + Math.round(Number(credited[key] || 0))
+            - Math.round(Number(spent[key] || 0))
+        )
       ])
   );
 }
@@ -245,6 +254,60 @@ export function purchaseTreeSkin(treeState, skinId) {
       styleState: nextStyleState
     },
     skin
+  };
+}
+
+export function exchangeTreeBankedPoints(treeState, {
+  inputCategoryKey = "",
+  outputCategoryKey = "",
+  inputPoints = 0
+} = {}) {
+  const sourceKey = String(inputCategoryKey || "").trim();
+  const targetKey = String(outputCategoryKey || "").trim();
+  const spendPoints = Math.max(0, Math.round(Number(inputPoints) || 0));
+
+  if (!sourceKey || !targetKey || sourceKey === targetKey) {
+    return {
+      changed: false,
+      treeState,
+      reason: "invalid-category"
+    };
+  }
+  if (spendPoints < TREE_POINT_EXCHANGE_RATIO || spendPoints % TREE_POINT_EXCHANGE_RATIO !== 0) {
+    return {
+      changed: false,
+      treeState,
+      reason: "invalid-amount"
+    };
+  }
+
+  const banked = getTreeBankedPointsByCategory(treeState);
+  if ((banked[sourceKey] || 0) < spendPoints) {
+    return {
+      changed: false,
+      treeState,
+      reason: "insufficient-points"
+    };
+  }
+
+  const outputPoints = spendPoints / TREE_POINT_EXCHANGE_RATIO;
+  const spentByCategory = { ...(treeState?.spentByCategory || {}) };
+  const creditedByCategory = { ...(treeState?.creditedByCategory || {}) };
+
+  spentByCategory[sourceKey] = Math.max(0, Math.round(Number(spentByCategory[sourceKey] || 0)) + spendPoints);
+  creditedByCategory[targetKey] = Math.max(0, Math.round(Number(creditedByCategory[targetKey] || 0)) + outputPoints);
+
+  return {
+    changed: true,
+    treeState: {
+      ...(treeState || {}),
+      spentByCategory,
+      creditedByCategory
+    },
+    inputCategoryKey: sourceKey,
+    outputCategoryKey: targetKey,
+    inputPoints: spendPoints,
+    outputPoints
   };
 }
 

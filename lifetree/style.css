@@ -437,6 +437,7 @@ body[data-theme="dark"] .tree-detail-stat span,
 body[data-theme="dark"] .tree-detail-card p,
 body[data-theme="dark"] .tree-detail-source-meta,
 body[data-theme="dark"] .tree-detail-section .sync-status,
+body[data-theme="dark"] .tree-point-exchange-summary,
 body[data-theme="dark"] .notifications-preview-section ul,
 body[data-theme="dark"] .notifications-history-item .sync-status {
   color: var(--muted);
@@ -4071,6 +4072,16 @@ textarea {
   gap: 14px;
 }
 
+.tree-detail-bank-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.tree-detail-bank-pill {
+  padding-inline: 12px;
+}
+
 .tree-detail-card {
   display: grid;
   gap: 10px;
@@ -4131,6 +4142,29 @@ textarea {
   align-items: center;
   color: var(--muted);
   font-size: 0.95rem;
+}
+
+.tree-point-exchange-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.tree-point-exchange-field {
+  display: grid;
+  gap: 6px;
+}
+
+.tree-point-exchange-field span {
+  font-size: 0.92rem;
+  color: var(--muted);
+}
+
+.tree-point-exchange-summary {
+  grid-column: 1 / -2;
+  font-size: 0.95rem;
+  color: var(--muted);
 }
 
 @keyframes fruitPulse {
@@ -4438,6 +4472,14 @@ textarea {
 
   .tree-detail-overview {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .tree-point-exchange-form {
+    grid-template-columns: 1fr;
+  }
+
+  .tree-point-exchange-summary {
+    grid-column: auto;
   }
 
   .travel-inline-form,

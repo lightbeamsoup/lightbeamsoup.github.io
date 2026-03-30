@@ -77,12 +77,14 @@ import { buildPointSummary, buildFruitDisplayState } from "./modules/treeState.j
 import {
   buildAppliedTreeAppearance,
   buildTreeStyleCatalog,
+  exchangeTreeBankedPoints,
   getTreeBankedPointsByCategory,
   getTreeSkin,
   getTreeStylePartLabel,
   listPurchasableTreeSkins,
   normalizeTreeStyleState,
   purchaseTreeSkin,
+  TREE_POINT_EXCHANGE_RATIO,
   removeOwnedTreeSkin,
   equipTreeSkin
 } from "./modules/treeStyles.js";
@@ -476,6 +478,11 @@ const syncChannelState = {
 };
 const driveConflictState = {
   resolver: null
+};
+const treePointExchangeDraft = {
+  inputCategoryKey: "",
+  outputCategoryKey: "",
+  inputPoints: TREE_POINT_EXCHANGE_RATIO
 };
 const localFingerprintCache = {
   storeRef: null,
@@ -4412,6 +4419,57 @@ function formatLifetreeTitle(displayName) {
   return `${safeName}${suffix} Lifetree`;
 }
 
+function normalizeTreePointExchangeInput(value, maxValue) {
+  const numeric = Math.round(Number(value) || 0);
+  if (!Number.isFinite(numeric) || numeric < TREE_POINT_EXCHANGE_RATIO || maxValue < TREE_POINT_EXCHANGE_RATIO) {
+    return 0;
+  }
+  const evenValue = numeric - (numeric % TREE_POINT_EXCHANGE_RATIO);
+  const cappedValue = Math.min(maxValue, evenValue);
+  return cappedValue >= TREE_POINT_EXCHANGE_RATIO ? cappedValue : TREE_POINT_EXCHANGE_RATIO;
+}
+
+function getTreePointExchangeState(treeState) {
+  const allCategories = getVisibleCategoryDefinitions();
+  const inputCategories = treeState.categories
+    .filter((category) => category.bankedPoints >= TREE_POINT_EXCHANGE_RATIO)
+    .sort((left, right) => right.bankedPoints - left.bankedPoints || left.label.localeCompare(right.label));
+  const fallbackInputKey = inputCategories[0]?.key || "";
+  const inputCategoryKey = inputCategories.some((category) => category.key === treePointExchangeDraft.inputCategoryKey)
+    ? treePointExchangeDraft.inputCategoryKey
+    : fallbackInputKey;
+  const outputCategories = allCategories.filter((category) => category.key !== inputCategoryKey);
+  const fallbackOutputKey = outputCategories[0]?.key || "";
+  const outputCategoryKey = outputCategories.some((category) => category.key === treePointExchangeDraft.outputCategoryKey)
+    ? treePointExchangeDraft.outputCategoryKey
+    : fallbackOutputKey;
+  const inputCategory = inputCategories.find((category) => category.key === inputCategoryKey) || null;
+  const outputCategory = outputCategories.find((category) => category.key === outputCategoryKey) || null;
+  const maxInputPoints = inputCategory
+    ? inputCategory.bankedPoints - (inputCategory.bankedPoints % TREE_POINT_EXCHANGE_RATIO)
+    : 0;
+  const inputPoints = normalizeTreePointExchangeInput(treePointExchangeDraft.inputPoints, maxInputPoints);
+  const outputPoints = inputPoints >= TREE_POINT_EXCHANGE_RATIO ? (inputPoints / TREE_POINT_EXCHANGE_RATIO) : 0;
+
+  treePointExchangeDraft.inputCategoryKey = inputCategoryKey;
+  treePointExchangeDraft.outputCategoryKey = outputCategoryKey;
+  treePointExchangeDraft.inputPoints = inputPoints || TREE_POINT_EXCHANGE_RATIO;
+
+  return {
+    bankedCategories: treeState.categories.filter((category) => category.bankedPoints > 0),
+    inputCategories,
+    outputCategories,
+    inputCategory,
+    outputCategory,
+    inputCategoryKey,
+    outputCategoryKey,
+    inputPoints,
+    outputPoints,
+    maxInputPoints,
+    canExchange: Boolean(inputCategory && outputCategory && inputPoints >= TREE_POINT_EXCHANGE_RATIO)
+  };
+}
+
 function renderTreeDetailIfOpen() {
   if (!isTreeDetailOpen()) {
     return;
@@ -4421,6 +4479,7 @@ function renderTreeDetailIfOpen() {
   const pointHistory = getRecentPointHistory();
   const devSettings = normalizeDevSettings(store.devSettings);
   const visibleCategories = treeState.categories.filter((category) => category.availablePoints > 0 || category.bankedPoints > 0 || category.earnedPoints > 0 || category.adjustmentPoints !== 0);
+  const exchangeState = getTreePointExchangeState(treeState);
 
   treeDetailBody.innerHTML = `
     <section class="tree-detail-layout">
@@ -4478,6 +4537,68 @@ function renderTreeDetailIfOpen() {
         <div class="tree-detail-section-header">
           <div>
             <p class="eyebrow">Points</p>
+            <h3>Current points by category</h3>
+            <p class="sync-status">Exchange banked points at a 2:1 rate without regrowing fruit on the tree.</p>
+          </div>
+        </div>
+        <div class="tree-detail-bank-grid">
+          ${exchangeState.bankedCategories.length > 0 ? exchangeState.bankedCategories.map((category) => `
+            <span class="task-chip category-chip tree-detail-bank-pill" style="--chip-color: ${escapeHtml(category.color)}">
+              ${escapeHtml(category.label)} · ${escapeHtml(formatPointsLabel(category.bankedPoints))}
+            </span>
+          `).join("") : '<span class="tree-point-empty">No banked reward points are available yet.</span>'}
+        </div>
+        ${exchangeState.inputCategories.length > 0 && exchangeState.outputCategories.length > 0 ? `
+          <form class="tree-point-exchange-form" data-tree-detail-form="exchange">
+            <label class="tree-point-exchange-field">
+              <span>Input category</span>
+              <select name="inputCategoryKey">
+                ${exchangeState.inputCategories.map((category) => `
+                  <option value="${escapeHtml(category.key)}"${category.key === exchangeState.inputCategoryKey ? " selected" : ""}>
+                    ${escapeHtml(`${category.label} · ${formatPointsLabel(category.bankedPoints)} banked`)}
+                  </option>
+                `).join("")}
+              </select>
+            </label>
+            <label class="tree-point-exchange-field">
+              <span>Output category</span>
+              <select name="outputCategoryKey">
+                ${exchangeState.outputCategories.map((category) => `
+                  <option value="${escapeHtml(category.key)}"${category.key === exchangeState.outputCategoryKey ? " selected" : ""}>
+                    ${escapeHtml(category.label)}
+                  </option>
+                `).join("")}
+              </select>
+            </label>
+            <label class="tree-point-exchange-field">
+              <span>Input points</span>
+              <input
+                type="number"
+                name="inputPoints"
+                min="${TREE_POINT_EXCHANGE_RATIO}"
+                max="${escapeHtml(String(Math.max(TREE_POINT_EXCHANGE_RATIO, exchangeState.maxInputPoints || TREE_POINT_EXCHANGE_RATIO)))}"
+                step="${TREE_POINT_EXCHANGE_RATIO}"
+                value="${escapeHtml(String(Math.max(TREE_POINT_EXCHANGE_RATIO, exchangeState.inputPoints || TREE_POINT_EXCHANGE_RATIO)))}"
+              />
+            </label>
+            <div class="tree-point-exchange-summary">
+              ${exchangeState.canExchange
+                ? escapeHtml(`Spend ${formatPointsLabel(exchangeState.inputPoints)} of ${exchangeState.inputCategory?.label || "this category"} to receive ${formatPointsLabel(exchangeState.outputPoints)} in ${exchangeState.outputCategory?.label || "the target category"}.`)
+                : "You need at least 2 banked points in one category to exchange them."}
+            </div>
+            <button type="submit" class="secondary-button" ${exchangeState.canExchange ? "" : "disabled"}>
+              Exchange points
+            </button>
+          </form>
+        ` : `
+          <p class="tree-point-empty">You need at least 2 banked points in one category and a second category to exchange into.</p>
+        `}
+      </section>
+
+      <section class="tree-detail-section">
+        <div class="tree-detail-section-header">
+          <div>
+            <p class="eyebrow">Points</p>
             <h3>Recent point history</h3>
             <p class="sync-status">Showing the last 7 days of point awards, up to ${escapeHtml(String(devSettings.maxPointHistoryEntries))} entries.</p>
           </div>
@@ -4504,6 +4625,8 @@ function renderTreeDetailIfOpen() {
   treeDetailBody.querySelector("[data-tree-detail-action='harvest']")?.addEventListener("click", () => {
     harvestRipeFruit();
   });
+  treeDetailBody.querySelector("[data-tree-detail-form='exchange']")?.addEventListener("change", handleTreePointExchangeDraftChange);
+  treeDetailBody.querySelector("[data-tree-detail-form='exchange']")?.addEventListener("submit", handleTreePointExchangeSubmit);
 }
 
 function formatPointHistoryDueLabel(entry) {
@@ -4512,6 +4635,64 @@ function formatPointHistoryDueLabel(entry) {
   }
   const time = entry.timeOfDay || "23:59";
   return formatDateTime(`${entry.dueDate}T${time}:00`);
+}
+
+function handleTreePointExchangeDraftChange(event) {
+  const form = event.currentTarget;
+  treePointExchangeDraft.inputCategoryKey = String(form.elements.inputCategoryKey?.value || "");
+  treePointExchangeDraft.outputCategoryKey = String(form.elements.outputCategoryKey?.value || "");
+  treePointExchangeDraft.inputPoints = Math.max(
+    TREE_POINT_EXCHANGE_RATIO,
+    Math.round(Number(form.elements.inputPoints?.value) || TREE_POINT_EXCHANGE_RATIO)
+  );
+  renderTreeDetailIfOpen();
+}
+
+function handleTreePointExchangeSubmit(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const inputCategoryKey = String(form.elements.inputCategoryKey?.value || "");
+  const outputCategoryKey = String(form.elements.outputCategoryKey?.value || "");
+  const inputPoints = Math.round(Number(form.elements.inputPoints?.value) || 0);
+
+  if (!inputCategoryKey || !outputCategoryKey || inputCategoryKey === outputCategoryKey) {
+    setSyncStatus("Choose different input and output categories for the exchange.", "error");
+    return;
+  }
+  if (inputPoints < TREE_POINT_EXCHANGE_RATIO || inputPoints % TREE_POINT_EXCHANGE_RATIO !== 0) {
+    setSyncStatus(`Exchange amounts must be at least ${TREE_POINT_EXCHANGE_RATIO} points and in ${TREE_POINT_EXCHANGE_RATIO}-point steps.`, "error");
+    return;
+  }
+
+  const result = exchangeTreeBankedPoints(normalizeTreeState(store.treeState), {
+    inputCategoryKey,
+    outputCategoryKey,
+    inputPoints
+  });
+  if (!result.changed) {
+    const message = result.reason === "insufficient-points"
+      ? "Not enough banked points are available in that category."
+      : `Exchange amounts must be at least ${TREE_POINT_EXCHANGE_RATIO} points and in ${TREE_POINT_EXCHANGE_RATIO}-point steps.`;
+    setSyncStatus(message, "error");
+    return;
+  }
+
+  const inputCategory = resolveCategorySnapshot(result.inputCategoryKey);
+  const outputCategory = resolveCategorySnapshot(result.outputCategoryKey);
+  treePointExchangeDraft.inputCategoryKey = result.inputCategoryKey;
+  treePointExchangeDraft.outputCategoryKey = result.outputCategoryKey;
+  treePointExchangeDraft.inputPoints = TREE_POINT_EXCHANGE_RATIO;
+
+  store.treeState = normalizeTreeState({
+    ...result.treeState,
+    updatedAt: Date.now()
+  });
+  persistStore();
+  renderAll();
+  setSyncStatus(
+    `Exchanged ${formatPointsLabel(result.inputPoints)} of ${inputCategory.label} into ${formatPointsLabel(result.outputPoints)} of ${outputCategory.label}.`,
+    "success"
+  );
 }
 
 function renderTreeFruitMarkup({ color, stage, size, ripe, title = "", detail = false }) {

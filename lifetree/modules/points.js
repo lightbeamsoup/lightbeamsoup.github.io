@@ -136,6 +136,7 @@ export function mergePointLedger(localEntries = [], remoteEntries = [], options)
 export function normalizeTreeState(value, { normalizeTreeStyleState, slugifyCategoryKey, listPurchasableTreeSkins }) {
   const styleState = normalizeTreeStyleState(value?.styleState);
   const harvestedByCategory = normalizeTreePointMap(value?.harvestedByCategory, { slugifyCategoryKey });
+  const creditedByCategory = normalizeTreePointMap(value?.creditedByCategory, { slugifyCategoryKey });
   const spentByCategory = normalizeTreePointMap(value?.spentByCategory, { slugifyCategoryKey });
   const legacyStyleSpend = inferLegacyTreeSkinSpendByCategory({
     styleState,
@@ -151,6 +152,7 @@ export function normalizeTreeState(value, { normalizeTreeStyleState, slugifyCate
 
   return {
     harvestedByCategory: repairedHarvestedByCategory,
+    creditedByCategory,
     spentByCategory: repairedSpentByCategory,
     devFruitPoints: normalizeTreePointMap(value?.devFruitPoints, { allowNegative: true, slugifyCategoryKey }),
     styleState,

@@ -12,7 +12,6 @@
 - Workout Coach: Improve organization of the calories/weight graph in the workout modal.
 - Notifications: Consolidate repeated activities in email summaries and reminders.
 - Tasks: Add task snoozing.
-- Points: Add category point exchanges.
 
 ## Recently completed
 
@@ -84,6 +83,7 @@
 
 ### UI, Tree, And Backend
 
+- 2026-03-29: Add 2:1 banked point exchanges between categories in the tree detail modal.
 - 2026-03-29: Add the Cherry Blossom 2026 spring canopy skin for 50 Health points.
 - 2026-03-26: Fix tree modal dark mode styling and history presentation.
 - 2026-03-25: Add dark mode, including automatic dark mode by time window.
