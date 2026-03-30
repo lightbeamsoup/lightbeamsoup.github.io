@@ -263,7 +263,7 @@ function renderTravelShellCard(trip, escapeHtml, liveSnapshot = null, settings =
         </div>
         <span class="travel-status-chip is-${trip.status}">${escapeHtml(deps.humanizeTripStatus(trip.status))}</span>
       </div>
-      <p class="travel-shell-card-meta">${escapeHtml(describeTripRange(trip))}</p>
+      <p class="travel-shell-card-meta">${escapeHtml(describeTripRange(trip, null, deps))}</p>
       <p class="travel-shell-card-meta">${escapeHtml(describeTripMilestone(trip, deps))}</p>
       ${trip.status === "active"
         ? `<p class="travel-shell-card-meta">${packingStatus}</p>`
