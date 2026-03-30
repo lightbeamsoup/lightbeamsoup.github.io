@@ -8466,6 +8466,14 @@ function resolveGeneratedLinkedSeries(existingLinkedSeries, templateLinkedSeries
   return normalizeLinkedSeries(templateLinkedSeries);
 }
 
+function resolveGeneratedSkipRule(existingSkipRule, templateSkipRule) {
+  const normalizedTemplate = normalizeSkipRule(templateSkipRule);
+  if (normalizedTemplate?.type === "widget-lockout") {
+    return normalizedTemplate;
+  }
+  return normalizeSkipRule(existingSkipRule || templateSkipRule);
+}
+
 function buildGeneratedInstance(template, occurrenceIndex, startDate, dueDate, existingTask = null) {
   return {
     id: existingTask?.id || createId(),
@@ -8498,7 +8506,7 @@ function buildGeneratedInstance(template, occurrenceIndex, startDate, dueDate, e
     linkedSeries: resolveGeneratedLinkedSeries(existingTask?.linkedSeries, template.linkedSeries),
     sequenceDependencyId: existingTask?.sequenceDependencyId || "",
     widgetCompletion: normalizeWidgetCompletion(existingTask?.widgetCompletion || template.widgetCompletion),
-    skipRule: normalizeSkipRule(existingTask?.skipRule || template.skipRule),
+    skipRule: resolveGeneratedSkipRule(existingTask?.skipRule, template.skipRule),
     dependencies: [],
     recurrence: { type: "generated", sourceType: template.recurrence.type },
     history: Array.isArray(existingTask?.history) ? existingTask.history : []

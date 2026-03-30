@@ -19,6 +19,7 @@ import {
 } from "./logic.js";
 import { buildEmailSummaryPreview } from "./modules/notificationSummary.js";
 import { computeInitialReminderDate, findActiveEnergyCompletionTask, syncEnergyTaskChain } from "./widgets/energy.js";
+import { workoutWidgetDefinition } from "./widgets/workout.js";
 
 test("computes weekly recurrence dates", () => {
   const result = computeOccurrenceDate("2026-03-23", { type: "weekly", interval: 1, weekday: 2 }, 1);
@@ -420,6 +421,64 @@ test("auto-skip can trigger at end of scheduled day", () => {
 
   assert.equal(shouldAutoSkipTask(task, new Date("2026-03-21T22:00:00")), false);
   assert.equal(shouldAutoSkipTask(task, new Date("2026-03-22T00:01:00")), true);
+});
+
+test("workout auto-skip waits until end of day when there is no later same-day slot", () => {
+  const task = {
+    id: "walk-1",
+    ownerWidgetId: "workout-widget",
+    ownerWidgetType: "workout",
+    widgetTaskKind: "workout-session",
+    skipRule: { type: "widget-lockout", policy: "workout-next-window" },
+    linkedSeries: { groupId: "walk-series", kind: "daily-window", slotIndex: 0, slotCount: 1 },
+    dueDate: "2026-03-29",
+    timeOfDay: "18:30"
+  };
+  const tomorrowTask = {
+    ...task,
+    id: "walk-2",
+    dueDate: "2026-03-30"
+  };
+  const store = { tasks: [task, tomorrowTask] };
+
+  assert.equal(
+    workoutWidgetDefinition.shouldAutoSkipOwnedTask({ task, now: new Date("2026-03-29T20:00:00"), store }),
+    false
+  );
+  assert.equal(
+    workoutWidgetDefinition.shouldAutoSkipOwnedTask({ task, now: new Date("2026-03-30T00:01:00"), store }),
+    true
+  );
+});
+
+test("workout auto-skip uses the next same-day slot as the cutoff", () => {
+  const currentTask = {
+    id: "walk-1",
+    ownerWidgetId: "workout-widget",
+    ownerWidgetType: "workout",
+    widgetTaskKind: "workout-session",
+    skipRule: { type: "widget-lockout", policy: "workout-next-window" },
+    linkedSeries: { groupId: "walk-series", kind: "daily-window", slotIndex: 0, slotCount: 2 },
+    dueDate: "2026-03-29",
+    timeOfDay: "06:30"
+  };
+  const nextTask = {
+    ...currentTask,
+    id: "walk-2",
+    linkedSeries: { groupId: "walk-series", kind: "daily-window", slotIndex: 1, slotCount: 2 },
+    dueDate: "2026-03-29",
+    timeOfDay: "08:00"
+  };
+  const store = { tasks: [currentTask, nextTask] };
+
+  assert.equal(
+    workoutWidgetDefinition.shouldAutoSkipOwnedTask({ task: currentTask, now: new Date("2026-03-29T07:59:00"), store }),
+    false
+  );
+  assert.equal(
+    workoutWidgetDefinition.shouldAutoSkipOwnedTask({ task: currentTask, now: new Date("2026-03-29T08:00:00"), store }),
+    true
+  );
 });
 
 test("end-of-day auto-skip ignores earlier visible due times", () => {

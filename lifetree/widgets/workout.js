@@ -96,6 +96,10 @@ export const workoutWidgetDefinition = {
     syncWorkoutOwnedTaskTemplates(widget, store, helpers);
   },
 
+  syncOwnedTasks({ widget, store }) {
+    repairWorkoutOwnedSkipRules(widget, store);
+  },
+
   render({ widget, tasks, escapeHtml, formatDateTime, getPendingActionForWidget }) {
     const planCount = widget.settings.workoutPlans.length;
     const latestWorkout = widget.data.workoutEntries[widget.data.workoutEntries.length - 1] || null;
@@ -916,6 +920,20 @@ export const workoutWidgetDefinition = {
     }
     submitAdHocWorkoutForm(widget, form, helpers);
     return true;
+  },
+
+  shouldAutoSkipOwnedTask({ task, now, store }) {
+    if (task?.widgetTaskKind !== "workout-session" || task.skipRule?.policy !== "workout-next-window") {
+      return false;
+    }
+    const sequence = listWorkoutSeriesTasks(store?.tasks, task);
+    const currentIndex = sequence.findIndex((entry) => entry.id === task.id);
+    if (currentIndex === -1) {
+      return false;
+    }
+    const nextTask = sequence[currentIndex + 1] || null;
+    const cutoff = resolveWorkoutAutoSkipCutoff(task, nextTask);
+    return cutoff > 0 ? now.getTime() >= cutoff : false;
   }
 };
 
@@ -1138,9 +1156,7 @@ function buildWorkoutSessionTemplates(widget, plan, helpers, store) {
         mechanism: WORKOUT_COMPLETION_MECHANISM,
         lockout: "current-day"
       },
-      skipRule: recurrence.type === "weekly"
-        ? { type: "end-of-day" }
-        : { type: "after-due-minutes", graceMinutes: 0 },
+      skipRule: buildWorkoutSessionSkipRule(),
       dependencies: [],
       recurrence: buildTaskRecurrenceFromWorkoutSlot(recurrence, slot),
       history: []
@@ -1211,6 +1227,13 @@ function buildWeightCheckTemplates(widget, weightTracking, helpers) {
       history: []
     };
   });
+}
+
+function buildWorkoutSessionSkipRule() {
+  return {
+    type: "widget-lockout",
+    policy: "workout-next-window"
+  };
 }
 
 function buildWorkoutSlots(recurrence) {
@@ -1313,6 +1336,33 @@ function isWorkoutOwnedTemplate(task, widgetId = "") {
     (!widgetId || task.ownerWidgetId === widgetId) &&
     (task.widgetTaskKind === "workout-session" || task.widgetTaskKind === "weight-checkin")
   );
+}
+
+function repairWorkoutOwnedSkipRules(widget, store) {
+  if (!widget?.id || !Array.isArray(store?.tasks)) {
+    return;
+  }
+
+  for (const task of store.tasks) {
+    if (task?.ownerWidgetId !== widget.id || task?.ownerWidgetType !== WORKOUT_WIDGET_TYPE || task.archived) {
+      continue;
+    }
+
+    if (task.widgetTaskKind === "workout-session") {
+      const desired = buildWorkoutSessionSkipRule();
+      if (JSON.stringify(task.skipRule || {}) !== JSON.stringify(desired)) {
+        task.skipRule = desired;
+      }
+      continue;
+    }
+
+    if (task.widgetTaskKind === "weight-checkin") {
+      const desired = { type: "end-of-day" };
+      if (JSON.stringify(task.skipRule || {}) !== JSON.stringify(desired)) {
+        task.skipRule = desired;
+      }
+    }
+  }
 }
 
 function findMatchingWorkoutTemplate(existingTemplates, desired, matchedExistingIds = new Set()) {
@@ -2045,6 +2095,32 @@ function taskScheduleDate(task) {
   return task?.dueDate || task?.startDate || "";
 }
 
+function listWorkoutSeriesTasks(tasks, task) {
+  const allTasks = Array.isArray(tasks) ? tasks : [];
+  const groupId = task?.linkedSeries?.groupId || "";
+  return allTasks
+    .filter((entry) => entry && !entry.archived && entry.widgetTaskKind === task?.widgetTaskKind)
+    .filter((entry) => entry.ownerWidgetId === task?.ownerWidgetId)
+    .filter((entry) => {
+      if (groupId) {
+        return entry.linkedSeries?.groupId === groupId;
+      }
+      return (entry.ownerTaskKey || "") === (task?.ownerTaskKey || "");
+    })
+    .sort(compareWorkoutTaskSchedule);
+}
+
+function resolveWorkoutAutoSkipCutoff(task, nextTask) {
+  const scheduledDate = taskScheduleDate(task);
+  if (!scheduledDate) {
+    return 0;
+  }
+  if (nextTask && taskScheduleDate(nextTask) === scheduledDate) {
+    return taskDueTimestamp(nextTask);
+  }
+  return taskDayEndTimestamp(task);
+}
+
 function compareWorkoutTaskSchedule(left, right) {
   const leftDate = `${left.dueDate || left.startDate || ""}T${left.timeOfDay || "23:59"}`;
   const rightDate = `${right.dueDate || right.startDate || ""}T${right.timeOfDay || "23:59"}`;
@@ -2052,6 +2128,25 @@ function compareWorkoutTaskSchedule(left, right) {
     return leftDate.localeCompare(rightDate);
   }
   return (left.createdAt || 0) - (right.createdAt || 0);
+}
+
+function taskDueTimestamp(task) {
+  const date = taskScheduleDate(task);
+  const time = task?.timeOfDay || "23:59";
+  if (!date) {
+    return 0;
+  }
+  const timestamp = new Date(`${date}T${time}:00`).getTime();
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
+function taskDayEndTimestamp(task) {
+  const date = taskScheduleDate(task);
+  if (!date) {
+    return 0;
+  }
+  const timestamp = new Date(`${date}T23:59:59.999`).getTime();
+  return Number.isNaN(timestamp) ? 0 : timestamp;
 }
 
 function isWorkoutTaskReady(task, tasks, at = Date.now()) {
