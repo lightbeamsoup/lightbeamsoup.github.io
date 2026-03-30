@@ -83,7 +83,9 @@ export function buildCanopyColumnsData({ standardCards, recurringEntries, today 
           seriesCards,
           completedCount: group.tasks.filter((entry) => entry.task.status === "done").length,
           totalCount: group.tasks.length,
-          resolvedSeriesCount: seriesCards.filter((series) => !series.nextOpenTaskId).length
+          resolvedSeriesCount: seriesCards.filter((series) => !series.nextOpenTaskId).length,
+          completedSeriesCount: seriesCards.filter((series) => series.completedCount === series.totalCount).length,
+          skippedSeriesCount: seriesCards.filter((series) => !series.nextOpenTaskId && series.skippedCount > 0 && series.completedCount < series.totalCount).length
         };
       })
       .sort((left, right) => RECURRING_GROUP_ORDER.indexOf(left.key) - RECURRING_GROUP_ORDER.indexOf(right.key));
@@ -234,7 +236,7 @@ function renderRecurringGroupRow(column, escapeHtml, formatPointsLabel) {
             ${group.bonus ? `style="--canopy-bonus-color: ${escapeHtml(group.bonus.selectedCategory?.color || "#f4c95d")}"` : ""}
           >
             <strong>${escapeHtml(group.label)}</strong>
-            <span>${group.resolvedSeriesCount}/${group.seriesCards.length} finished</span>
+            <span>${escapeHtml(buildRecurringGroupSummaryLabel(group))}</span>
             ${group.bonus?.claimed ? `
               <span class="canopy-group-bonus-state claimed">Bonus claimed in ${escapeHtml(group.bonus.claimedCategoryLabel || group.bonus.selectedCategory?.label || "selected type")}</span>
             ` : group.bonus?.collectible ? `
@@ -303,6 +305,16 @@ function renderRecurringGroupPreview(group, escapeHtml) {
       ` : ""}
     </div>
   `;
+}
+
+function buildRecurringGroupSummaryLabel(group) {
+  const total = Array.isArray(group?.seriesCards) ? group.seriesCards.length : 0;
+  if (!total) {
+    return "0/0 complete";
+  }
+  const completed = Number(group?.completedSeriesCount) || 0;
+  const skipped = Number(group?.skippedSeriesCount) || 0;
+  return skipped > 0 ? `${completed}/${total} complete · ${skipped} skipped` : `${completed}/${total} complete`;
 }
 
 function buildRecurringPreviewMeta(series, groupKey = "") {
@@ -570,10 +582,14 @@ function finalizeRecurringSeriesCard(entries) {
   const skippedEntries = tasks.filter((entry) => entry.task.status === "skipped");
   const latestCompleted = completedEntries[completedEntries.length - 1] || null;
   const latestSkipped = skippedEntries[skippedEntries.length - 1] || null;
+  const latestSkippedLifecycle = latestSkipped ? getLatestRecurringLifecycleEntry(latestSkipped.task, "skipped") : null;
   const completedCount = completedEntries.length;
   const skippedCount = skippedEntries.length;
   const totalCount = tasks.length;
   const isWidgetManaged = Boolean(representativeTask?.ownerWidgetType);
+  const autoSkipped = latestSkippedLifecycle?.reason === "auto-skip"
+    || isLikelyLegacyWorkoutAutoSkip(latestSkipped?.task || null);
+  const autoSkipLabel = autoSkipped ? buildRecurringAutoSkipLabel(latestSkipped?.task || representativeTask) : "";
   const statusLabel = buildRecurringSeriesStatusLabel({
     representativeTask,
     nextOpen,
@@ -581,7 +597,8 @@ function finalizeRecurringSeriesCard(entries) {
     completedCount,
     skippedCount,
     totalCount,
-    isWidgetManaged
+    isWidgetManaged,
+    autoSkipped
   });
 
   return {
@@ -596,7 +613,7 @@ function finalizeRecurringSeriesCard(entries) {
     statusLabel,
     footerLabel: nextOpen
       ? (nextActionable ? `Next due ${describeTaskDate(nextOpen.task, (value) => value)}` : (nextOpen.blockedNote || "Waiting for this period to unlock."))
-      : "This period is fully resolved.",
+      : (autoSkipLabel || "This period is fully resolved."),
     nextDueLabel: nextOpen ? describeTaskDate(nextOpen.task, (value) => value) : "",
     nextActionDueLabel: nextActionable ? describeTaskDate(nextActionable.task, (value) => value) : "",
     blocked: Boolean(nextOpen && !nextActionable),
@@ -606,6 +623,8 @@ function finalizeRecurringSeriesCard(entries) {
     lockedNote: representativeTask?.ownerWidgetType
       ? `Managed in the ${representativeTask.ownerWidgetType} widget.`
       : "",
+    autoSkipped,
+    autoSkipLabel,
     nextOpenTaskId: nextOpen?.task.id || "",
     nextActionTaskId: nextActionable?.task.id || "",
     latestCompletedTaskId: latestCompleted?.task.id || "",
@@ -636,7 +655,8 @@ function buildRecurringSeriesStatusLabel({
   completedCount,
   skippedCount,
   totalCount,
-  isWidgetManaged
+  isWidgetManaged,
+  autoSkipped
 }) {
   if (isWidgetManaged) {
     return completedCount >= totalCount
@@ -646,6 +666,9 @@ function buildRecurringSeriesStatusLabel({
   if (!nextOpen) {
     if (completedCount === totalCount) {
       return "Completed for this period.";
+    }
+    if (autoSkipped) {
+      return "Auto-skipped for this period.";
     }
     if (skippedCount === totalCount) {
       return "Skipped for this period.";
@@ -734,6 +757,48 @@ function getTaskColumnKey(task, today, thisWeekCutoff, thisMonthCutoff = addDays
     return "later";
   }
   return "";
+}
+
+function getLatestRecurringLifecycleEntry(task, type = "") {
+  const history = Array.isArray(task?.history) ? task.history : [];
+  let latest = null;
+  for (const item of history) {
+    if (!item || (type && item.type !== type)) {
+      continue;
+    }
+    if (!latest || (item.at || 0) > (latest.at || 0)) {
+      latest = item;
+    }
+  }
+  return latest;
+}
+
+function buildRecurringAutoSkipLabel(task) {
+  if (isLikelyLegacyWorkoutAutoSkip(task)) {
+    return "Auto-skipped before day end. Restore it to complete it today.";
+  }
+  if (task?.widgetTaskKind === "workout-session") {
+    return "Auto-skipped when this workout window closed.";
+  }
+  if (task?.skipRule?.type === "end-of-day") {
+    return "Auto-skipped after the day ended.";
+  }
+  if (task?.skipRule?.type === "after-due-minutes") {
+    return "Auto-skipped after its due window closed.";
+  }
+  return "Auto-skipped by schedule.";
+}
+
+function isLikelyLegacyWorkoutAutoSkip(task) {
+  if (task?.widgetTaskKind !== "workout-session" || task?.skipRule?.policy !== "workout-next-window") {
+    return false;
+  }
+  const date = task?.dueDate || task?.startDate || "";
+  if (!date) {
+    return false;
+  }
+  const cutoff = new Date(`${date}T23:59:59.999`).getTime();
+  return Number.isFinite(cutoff) && Date.now() < cutoff && task.status === "skipped";
 }
 
 function getRecurringColumnKey(groupKey, task, today, thisWeekCutoff) {

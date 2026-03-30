@@ -5069,8 +5069,7 @@ function applyAutoSkipRules(now = new Date()) {
 
   for (const task of store.tasks) {
     if (shouldSkipTask(task, now)) {
-      task.status = "skipped";
-      pushHistory(task, "skipped");
+      markTaskSkipped(task, now.getTime(), { reason: "auto-skip" });
       changed = true;
     }
   }
@@ -5792,11 +5791,11 @@ function markTaskCompleted(task, at = Date.now()) {
   touchTask(task, at);
 }
 
-function markTaskSkipped(task, at = Date.now()) {
+function markTaskSkipped(task, at = Date.now(), metadata = null) {
   task.status = "skipped";
   task.historyOnly = false;
   task.hideAfterAt = 0;
-  pushHistory(task, "skipped", at);
+  pushHistory(task, "skipped", at, metadata);
   touchTask(task, at);
 }
 
@@ -6192,19 +6191,30 @@ function renderActions(cardData) {
   return `${notes.join("")}${buttons.join("")}`;
 }
 
-function pushHistory(task, type, at = Date.now()) {
+function pushHistory(task, type, at = Date.now(), metadata = null) {
   if (!Array.isArray(task.history)) {
     task.history = [];
   }
+  const normalizedMetadata = normalizeTaskHistoryMetadata(metadata);
   const latest = task.history[task.history.length - 1] || null;
   if (latest?.type === type) {
     task.history[task.history.length - 1] = {
       ...latest,
+      ...normalizedMetadata,
       at
     };
     return;
   }
-  task.history.push({ id: createId(), type, at });
+  task.history.push({ id: createId(), type, at, ...normalizedMetadata });
+}
+
+function normalizeTaskHistoryMetadata(value) {
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+  return {
+    reason: typeof value.reason === "string" ? value.reason : ""
+  };
 }
 
 function touchTask(task, at = Date.now()) {
@@ -6548,7 +6558,8 @@ function normalizeTask(task) {
         .map((item, index) => ({
           id: typeof item.id === "string" && item.id ? item.id : `${typeof task.id === "string" ? task.id : "task"}-history-${index}-${item.at}`,
           type: item.type,
-          at: item.at
+          at: item.at,
+          reason: typeof item.reason === "string" ? item.reason : ""
         })))
       : []
   };
@@ -7277,7 +7288,8 @@ function buildComparableStore(normalized) {
           .map((item) => ({
             id: item.id,
             type: item.type,
-            at: item.at
+            at: item.at,
+            reason: typeof item.reason === "string" ? item.reason : ""
           }))
           .sort((left, right) => {
             if (left.at !== right.at) {
@@ -7429,7 +7441,8 @@ function buildTaskMergeSignature(task) {
     history: compactTaskHistory(task.history || []).map((item) => ({
       id: item.id,
       type: item.type,
-      at: item.at
+      at: item.at,
+      reason: typeof item.reason === "string" ? item.reason : ""
     }))
   });
 }
