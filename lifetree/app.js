@@ -8025,6 +8025,8 @@ function resolveGeneratedSkipRule(existingSkipRule, templateSkipRule) {
 }
 
 function buildGeneratedInstance(template, occurrenceIndex, startDate, dueDate, existingTask = null) {
+  const existingWidgetTaskMeta = normalizeWidgetTaskMeta(existingTask?.widgetTaskMeta);
+  const templateWidgetTaskMeta = normalizeWidgetTaskMeta(template.widgetTaskMeta);
   return {
     id: existingTask?.id || createId(),
     templateId: template.id,
@@ -8052,7 +8054,10 @@ function buildGeneratedInstance(template, occurrenceIndex, startDate, dueDate, e
     ownerWidgetType: existingTask?.ownerWidgetType || template.ownerWidgetType || "",
     ownerTaskKey: existingTask?.ownerTaskKey || template.ownerTaskKey || "",
     widgetTaskKind: existingTask?.widgetTaskKind || template.widgetTaskKind || "",
-    widgetTaskMeta: normalizeWidgetTaskMeta(existingTask?.widgetTaskMeta || template.widgetTaskMeta),
+    widgetTaskMeta: normalizeWidgetTaskMeta({
+      ...existingWidgetTaskMeta,
+      ...templateWidgetTaskMeta
+    }),
     linkedSeries: resolveGeneratedLinkedSeries(existingTask?.linkedSeries, template.linkedSeries),
     sequenceDependencyId: existingTask?.sequenceDependencyId || "",
     widgetCompletion: normalizeWidgetCompletion(existingTask?.widgetCompletion || template.widgetCompletion),
