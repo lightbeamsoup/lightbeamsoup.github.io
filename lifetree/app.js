@@ -1845,43 +1845,55 @@ function renderWidgetDetailIfOpen() {
 
   widgetDetailTitle.textContent = definition.detailTitle || definition.title || "Widget detail";
   widgetDetailSubtitle.textContent = definition.detailSubtitle || "Expanded controls for this Lifetree widget.";
-  widgetDetailBody.innerHTML = definition.renderDetail({
-    widget,
-    tasks: store.tasks,
-    escapeHtml,
-    formatDate,
-    formatDateTime,
-    isDeveloperUser: isDeveloperUser(),
-    getPendingActionForWidget
-  });
-  widgetDetailState.cleanup = definition.mountDetail?.({
-    widget,
-    container: widgetDetailBody,
-    isDeveloperUser: isDeveloperUser(),
-    helpers: {
-      getStore: () => store,
-      createId,
-      todayString,
-      applyAutoSkipRules,
-      resolveCategorySnapshot,
-      openTaskDesk: handleOpenTaskDesk,
-      openWidgetDetail,
-      closeWidgetDetail,
-      setSyncStatus,
-      renderAll,
-      persistStore,
-      reconcileRecurringSeries,
-      regenerateSeries,
-      stageWidgetAction,
-      getPendingActionForWidget,
-      completeNextTaskFromWidget,
-      completeWidgetTaskById,
-      reopenWidgetTaskById,
-      skipWidgetTaskById,
-      undoPendingAction,
-      retireWidgetOwnedSeries
-    }
-  }) || null;
+  try {
+    widgetDetailBody.innerHTML = definition.renderDetail({
+      widget,
+      tasks: store.tasks,
+      escapeHtml,
+      formatDate,
+      formatDateTime,
+      isDeveloperUser: isDeveloperUser(),
+      getPendingActionForWidget
+    });
+    widgetDetailState.cleanup = definition.mountDetail?.({
+      widget,
+      container: widgetDetailBody,
+      isDeveloperUser: isDeveloperUser(),
+      helpers: {
+        getStore: () => store,
+        createId,
+        todayString,
+        applyAutoSkipRules,
+        resolveCategorySnapshot,
+        openTaskDesk: handleOpenTaskDesk,
+        openWidgetDetail,
+        closeWidgetDetail,
+        setSyncStatus,
+        renderAll,
+        persistStore,
+        reconcileRecurringSeries,
+        regenerateSeries,
+        stageWidgetAction,
+        getPendingActionForWidget,
+        completeNextTaskFromWidget,
+        completeWidgetTaskById,
+        reopenWidgetTaskById,
+        skipWidgetTaskById,
+        undoPendingAction,
+        retireWidgetOwnedSeries
+      }
+    }) || null;
+  } catch (error) {
+    console.error(`Widget detail render failed for ${widget.type}:`, error);
+    widgetDetailBody.innerHTML = `
+      <article class="widget-detail-error">
+        <h3>${escapeHtml(definition.title || "Widget")}</h3>
+        <p>This widget detail failed to render from the current saved data.</p>
+        <p class="sync-status">Open DevTools for the exact error, then save or repair the widget data before trying again.</p>
+      </article>
+    `;
+    widgetDetailState.cleanup = null;
+  }
 }
 
 function handleCanopyAction(event) {
@@ -3290,36 +3302,55 @@ function renderWidgetOrbit() {
     const definition = getWidgetDefinition(widget.type);
     if (definition?.render) {
       slot.classList.add("filled");
-      slot.innerHTML = `
-        <button
-          type="button"
-          class="widget-shell-remove"
-          data-widget-action="remove-widget"
-          aria-label="Remove widget"
-          data-help="Remove this widget from the shell. Its owned tasks and history will retire."
-        >
-          <span aria-hidden="true">×</span>
-        </button>
-        ${definition.render({
-        widget,
-        tasks: store.tasks,
-        escapeHtml,
-        formatDateTime,
-        getPendingActionForWidget
-      })}
-      `;
-      if (definition.hydrateShell) {
-        Promise.resolve(definition.hydrateShell({
-          widget,
-          tasks: store.tasks,
-          root: slot,
-          apiBase: API_BASE,
-          fetchCredentials: FETCH_CREDENTIALS,
-          persistStore,
-          setSyncStatus
-        })).catch((error) => {
-          console.error(`Widget shell hydration failed for ${widget.type}:`, error);
-        });
+      try {
+        slot.innerHTML = `
+          <button
+            type="button"
+            class="widget-shell-remove"
+            data-widget-action="remove-widget"
+            aria-label="Remove widget"
+            data-help="Remove this widget from the shell. Its owned tasks and history will retire."
+          >
+            <span aria-hidden="true">×</span>
+          </button>
+          ${definition.render({
+            widget,
+            tasks: store.tasks,
+            escapeHtml,
+            formatDateTime,
+            getPendingActionForWidget
+          })}
+        `;
+        if (definition.hydrateShell) {
+          Promise.resolve(definition.hydrateShell({
+            widget,
+            tasks: store.tasks,
+            root: slot,
+            apiBase: API_BASE,
+            fetchCredentials: FETCH_CREDENTIALS,
+            persistStore,
+            setSyncStatus
+          })).catch((error) => {
+            console.error(`Widget shell hydration failed for ${widget.type}:`, error);
+          });
+        }
+      } catch (error) {
+        console.error(`Widget shell render failed for ${widget.type}:`, error);
+        slot.innerHTML = `
+          <button
+            type="button"
+            class="widget-shell-remove"
+            data-widget-action="remove-widget"
+            aria-label="Remove widget"
+          >
+            <span aria-hidden="true">×</span>
+          </button>
+          <div class="widget-slot-header">
+            <h3>${escapeHtml(definition.title || "Widget")}</h3>
+            <span class="widget-badge">Error</span>
+          </div>
+          <p>This widget shell could not render from the current saved data.</p>
+        `;
       }
       continue;
     }
