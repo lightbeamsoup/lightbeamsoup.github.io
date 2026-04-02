@@ -446,24 +446,25 @@ export function createStoreDataBindings(config = {}) {
   }
 
   function normalizeStore(input) {
-    const tasks = Array.isArray(input.tasks) ? input.tasks.map(normalizeTask).slice(0, maxTasks) : [];
-    const categories = normalizeCategoryDefinitions(input.categories);
-    const widgets = normalizeWidgets(input.widgets);
-    const retiredWidgets = normalizeWidgets(input.retiredWidgets);
+    const source = input && typeof input === "object" ? input : {};
+    const tasks = Array.isArray(source.tasks) ? source.tasks.map(normalizeTask).slice(0, maxTasks) : [];
+    const categories = normalizeCategoryDefinitions(source.categories);
+    const widgets = normalizeWidgets(source.widgets);
+    const retiredWidgets = normalizeWidgets(source.retiredWidgets);
     const resolveStoredCategorySnapshot = createCategorySnapshotResolver(categories, widgets);
-    const devSettings = normalizeDevSettings(input.devSettings);
-    const normalizedPointLedger = normalizePointLedgerBase(input.pointLedger, {
+    const devSettings = normalizeDevSettings(source.devSettings);
+    const normalizedPointLedger = normalizePointLedgerBase(source.pointLedger, {
       defaultCategoryKey,
       normalizeCategoryColor,
       resolveCategorySnapshot: resolveStoredCategorySnapshot
     });
-    const pointHistorySource = Array.isArray(input.pointHistory) ? input.pointHistory : normalizedPointLedger;
+    const pointHistorySource = Array.isArray(source.pointHistory) ? source.pointHistory : normalizedPointLedger;
     const normalized = {
       version: 18,
-      updatedAt: typeof input.updatedAt === "number" ? input.updatedAt : Date.now(),
-      driveFileId: typeof input.driveFileId === "string" ? input.driveFileId : "",
-      profile: normalizeProfile(input.profile),
-      notifications: normalizeNotifications(input.notifications),
+      updatedAt: typeof source.updatedAt === "number" ? source.updatedAt : Date.now(),
+      driveFileId: typeof source.driveFileId === "string" ? source.driveFileId : "",
+      profile: normalizeProfile(source.profile),
+      notifications: normalizeNotifications(source.notifications),
       tasks,
       pointLedger: normalizedPointLedger,
       pointHistory: normalizePointHistoryBase(pointHistorySource, {
@@ -472,16 +473,16 @@ export function createStoreDataBindings(config = {}) {
         resolveCategorySnapshot: resolveStoredCategorySnapshot,
         maxEntries: devSettings.maxPointHistoryEntries
       }),
-      treeState: normalizeTreeState(input.treeState),
+      treeState: normalizeTreeState(source.treeState),
       devSettings,
       categories,
       widgets,
       retiredWidgets,
-      recurringBonusSelections: normalizeRecurringBonusSelections(input.recurringBonusSelections),
-      deletionMarkers: normalizeDeletionMarkers(input.deletionMarkers)
+      recurringBonusSelections: normalizeRecurringBonusSelections(source.recurringBonusSelections),
+      deletionMarkers: normalizeDeletionMarkers(source.deletionMarkers)
     };
-    normalized.userUpdatedAt = typeof input.userUpdatedAt === "number"
-      ? input.userUpdatedAt
+    normalized.userUpdatedAt = typeof source.userUpdatedAt === "number"
+      ? source.userUpdatedAt
       : normalized.updatedAt;
     normalized.userFingerprint = computeUserContentFingerprintFromNormalized(normalized);
     return normalized;
