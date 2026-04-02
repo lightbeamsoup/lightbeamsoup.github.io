@@ -495,6 +495,27 @@ function normalizeImportanceInput(value) {
   return value === "low" || value === "high" ? value : DEFAULT_IMPORTANCE;
 }
 
+function normalizeLinkedSeriesInput(linkedSeries) {
+  if (!linkedSeries || typeof linkedSeries !== "object") {
+    return { groupId: "", kind: "", slotIndex: 0, slotCount: 1 };
+  }
+  const groupId = typeof linkedSeries.groupId === "string" ? linkedSeries.groupId : "";
+  const kind = linkedSeries.kind === LINKED_SERIES_KIND_DAILY || linkedSeries.kind === LINKED_SERIES_KIND_WEEKLY
+    ? linkedSeries.kind
+    : "";
+  const slotIndex = Number.isInteger(linkedSeries.slotIndex) ? linkedSeries.slotIndex : 0;
+  const slotCount = Number.isInteger(linkedSeries.slotCount) ? linkedSeries.slotCount : 1;
+  if (!groupId || !kind || slotCount <= 1 || slotIndex < 0 || slotIndex >= slotCount) {
+    return { groupId: "", kind: "", slotIndex: 0, slotCount: 1 };
+  }
+  return {
+    groupId,
+    kind,
+    slotIndex,
+    slotCount
+  };
+}
+
 const {
   appendDailyInstanceTimeRow,
   applyRecurrenceToForm,
@@ -526,7 +547,7 @@ const {
   normalizeTaskPoints,
   normalizeWidgetTaskMeta,
   normalizeWidgetCompletion,
-  normalizeLinkedSeries,
+  normalizeLinkedSeries: normalizeLinkedSeriesInput,
   deriveTaskNotBeforeAt,
   defaultImportance: DEFAULT_IMPORTANCE,
   defaultLateGraceMinutes: DEFAULT_LATE_GRACE_MINUTES,
