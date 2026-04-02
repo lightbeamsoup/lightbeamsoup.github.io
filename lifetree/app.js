@@ -107,6 +107,7 @@ import {
   renderTreeFruitMarkup as renderTreeFruitMarkupShared,
   renderTreeStyleContent as renderTreeStyleContentShared
 } from "./modules/treeUi.js";
+import { createTreeController } from "./modules/treeController.js";
 import { createWidgetDetailController } from "./modules/widgetDetail.js";
 import {
   getWidgetDefinition,
@@ -536,6 +537,55 @@ const {
   defaultTaskDueSoonReminderMinutes: DEFAULT_TASK_DUE_SOON_REMINDER_MINUTES
 });
 
+const {
+  buySelectedTreeSkin,
+  closeTreeDetail,
+  closeTreeStyle,
+  handleTreeStyleAction,
+  harvestRipeFruit,
+  isTreeDetailOpen,
+  isTreeStyleOpen,
+  openTreeDetail,
+  openTreeStyle,
+  removeSelectedTreeSkin,
+  renderTreeDetailIfOpen,
+  renderTreeStyleIfOpen
+} = createTreeController({
+  refs: {
+    treeStyleModal,
+    treeStyleBody,
+    treeDetailModal,
+    treeDetailBody,
+    developerTreeSkin
+  },
+  getStore: () => store,
+  getTreeDisplayState,
+  getRecentPointHistory,
+  getVisibleCategoryDefinitions,
+  normalizeTreeState,
+  normalizeDevSettings,
+  resolveCategorySnapshot,
+  renderTreeDetailContent: renderTreeDetailContentShared,
+  renderTreeStyleContent: renderTreeStyleContentShared,
+  buildTreeStyleCatalog,
+  getTreeBankedPointsByCategory,
+  getTreeStylePartLabel,
+  getTreeSkin,
+  exchangeTreeBankedPoints,
+  purchaseTreeSkin,
+  equipTreeSkin,
+  removeOwnedTreeSkin,
+  treePointExchangeRatio: TREE_POINT_EXCHANGE_RATIO,
+  defaultCategoryColor: DEFAULT_CATEGORY_COLOR,
+  escapeHtml,
+  formatPointsLabel,
+  formatDateTime,
+  persistStore,
+  renderAll,
+  setSyncStatus,
+  isDeveloperUser
+});
+
 let store = loadStore();
 const mobileTaskDeskQuery = window.matchMedia(MOBILE_TASK_DESK_MEDIA);
 let activeTaskDeskPane = "tasks";
@@ -567,11 +617,6 @@ const syncChannelState = {
 };
 const driveConflictState = {
   resolver: null
-};
-const treePointExchangeDraft = {
-  inputCategoryKey: "",
-  outputCategoryKey: "",
-  inputPoints: TREE_POINT_EXCHANGE_RATIO
 };
 const localFingerprintCache = {
   storeRef: null,
@@ -1076,20 +1121,6 @@ function handleGlobalKeydown(event) {
   }
 }
 
-function openTreeStyle() {
-  treeStyleModal.classList.remove("hidden");
-  treeStyleModal.setAttribute("aria-hidden", "false");
-  document.body.classList.add("tree-style-open");
-  renderTreeStyleIfOpen();
-}
-
-function openTreeDetail() {
-  treeDetailModal.classList.remove("hidden");
-  treeDetailModal.setAttribute("aria-hidden", "false");
-  document.body.classList.add("tree-detail-open");
-  renderTreeDetailIfOpen();
-}
-
 function openDeveloper() {
   if (!isDeveloperUser()) {
     return;
@@ -1283,26 +1314,6 @@ function closeNotifications() {
 
 function isNotificationsOpen() {
   return !notificationsModal.classList.contains("hidden");
-}
-
-function closeTreeDetail() {
-  treeDetailModal.classList.add("hidden");
-  treeDetailModal.setAttribute("aria-hidden", "true");
-  document.body.classList.remove("tree-detail-open");
-}
-
-function isTreeDetailOpen() {
-  return !treeDetailModal.classList.contains("hidden");
-}
-
-function closeTreeStyle() {
-  treeStyleModal.classList.add("hidden");
-  treeStyleModal.setAttribute("aria-hidden", "true");
-  document.body.classList.remove("tree-style-open");
-}
-
-function isTreeStyleOpen() {
-  return !treeStyleModal.classList.contains("hidden");
 }
 
 function closeDeveloper() {
@@ -3820,256 +3831,6 @@ function formatLifetreeTitle(displayName) {
   }
   const suffix = /s$/i.test(safeName) ? "'" : "'s";
   return `${safeName}${suffix} Lifetree`;
-}
-
-function normalizeTreePointExchangeInput(value, maxValue) {
-  const numeric = Math.round(Number(value) || 0);
-  if (!Number.isFinite(numeric) || numeric < TREE_POINT_EXCHANGE_RATIO || maxValue < TREE_POINT_EXCHANGE_RATIO) {
-    return 0;
-  }
-  const evenValue = numeric - (numeric % TREE_POINT_EXCHANGE_RATIO);
-  const cappedValue = Math.min(maxValue, evenValue);
-  return cappedValue >= TREE_POINT_EXCHANGE_RATIO ? cappedValue : TREE_POINT_EXCHANGE_RATIO;
-}
-
-function getTreePointExchangeState(treeState) {
-  const allCategories = getVisibleCategoryDefinitions();
-  const inputCategories = treeState.categories
-    .filter((category) => category.bankedPoints >= TREE_POINT_EXCHANGE_RATIO)
-    .sort((left, right) => right.bankedPoints - left.bankedPoints || left.label.localeCompare(right.label));
-  const fallbackInputKey = inputCategories[0]?.key || "";
-  const inputCategoryKey = inputCategories.some((category) => category.key === treePointExchangeDraft.inputCategoryKey)
-    ? treePointExchangeDraft.inputCategoryKey
-    : fallbackInputKey;
-  const outputCategories = allCategories.filter((category) => category.key !== inputCategoryKey);
-  const fallbackOutputKey = outputCategories[0]?.key || "";
-  const outputCategoryKey = outputCategories.some((category) => category.key === treePointExchangeDraft.outputCategoryKey)
-    ? treePointExchangeDraft.outputCategoryKey
-    : fallbackOutputKey;
-  const inputCategory = inputCategories.find((category) => category.key === inputCategoryKey) || null;
-  const outputCategory = outputCategories.find((category) => category.key === outputCategoryKey) || null;
-  const maxInputPoints = inputCategory
-    ? inputCategory.bankedPoints - (inputCategory.bankedPoints % TREE_POINT_EXCHANGE_RATIO)
-    : 0;
-  const inputPoints = normalizeTreePointExchangeInput(treePointExchangeDraft.inputPoints, maxInputPoints);
-  const outputPoints = inputPoints >= TREE_POINT_EXCHANGE_RATIO ? (inputPoints / TREE_POINT_EXCHANGE_RATIO) : 0;
-
-  treePointExchangeDraft.inputCategoryKey = inputCategoryKey;
-  treePointExchangeDraft.outputCategoryKey = outputCategoryKey;
-  treePointExchangeDraft.inputPoints = inputPoints || TREE_POINT_EXCHANGE_RATIO;
-
-  return {
-    bankedCategories: treeState.categories.filter((category) => category.bankedPoints > 0),
-    inputCategories,
-    outputCategories,
-    inputCategory,
-    outputCategory,
-    inputCategoryKey,
-    outputCategoryKey,
-    inputPoints,
-    outputPoints,
-    maxInputPoints,
-    canExchange: Boolean(inputCategory && outputCategory && inputPoints >= TREE_POINT_EXCHANGE_RATIO)
-  };
-}
-
-function renderTreeDetailIfOpen() {
-  if (!isTreeDetailOpen()) {
-    return;
-  }
-
-  const treeState = getTreeDisplayState();
-  const pointHistory = getRecentPointHistory();
-  const devSettings = normalizeDevSettings(store.devSettings);
-  const visibleCategories = treeState.categories.filter((category) => category.availablePoints > 0 || category.bankedPoints > 0 || category.earnedPoints > 0 || category.adjustmentPoints !== 0);
-  const exchangeState = getTreePointExchangeState(treeState);
-
-  treeDetailBody.innerHTML = renderTreeDetailContentShared(
-    {
-      treeState,
-      pointHistory,
-      devSettings,
-      visibleCategories,
-      exchangeState,
-      treePointExchangeRatio: TREE_POINT_EXCHANGE_RATIO
-    },
-    {
-      escapeHtml,
-      formatPointsLabel,
-      formatDateTime
-    }
-  );
-
-  treeDetailBody.querySelector("[data-tree-detail-action='harvest']")?.addEventListener("click", () => {
-    harvestRipeFruit();
-  });
-  treeDetailBody.querySelector("[data-tree-detail-form='exchange']")?.addEventListener("change", handleTreePointExchangeDraftChange);
-  treeDetailBody.querySelector("[data-tree-detail-form='exchange']")?.addEventListener("submit", handleTreePointExchangeSubmit);
-}
-
-function handleTreePointExchangeDraftChange(event) {
-  const form = event.currentTarget;
-  treePointExchangeDraft.inputCategoryKey = String(form.elements.inputCategoryKey?.value || "");
-  treePointExchangeDraft.outputCategoryKey = String(form.elements.outputCategoryKey?.value || "");
-  treePointExchangeDraft.inputPoints = Math.max(
-    TREE_POINT_EXCHANGE_RATIO,
-    Math.round(Number(form.elements.inputPoints?.value) || TREE_POINT_EXCHANGE_RATIO)
-  );
-  renderTreeDetailIfOpen();
-}
-
-function handleTreePointExchangeSubmit(event) {
-  event.preventDefault();
-  const form = event.currentTarget;
-  const inputCategoryKey = String(form.elements.inputCategoryKey?.value || "");
-  const outputCategoryKey = String(form.elements.outputCategoryKey?.value || "");
-  const inputPoints = Math.round(Number(form.elements.inputPoints?.value) || 0);
-
-  if (!inputCategoryKey || !outputCategoryKey || inputCategoryKey === outputCategoryKey) {
-    setSyncStatus("Choose different input and output categories for the exchange.", "error");
-    return;
-  }
-  if (inputPoints < TREE_POINT_EXCHANGE_RATIO || inputPoints % TREE_POINT_EXCHANGE_RATIO !== 0) {
-    setSyncStatus(`Exchange amounts must be at least ${TREE_POINT_EXCHANGE_RATIO} points and in ${TREE_POINT_EXCHANGE_RATIO}-point steps.`, "error");
-    return;
-  }
-
-  const result = exchangeTreeBankedPoints(normalizeTreeState(store.treeState), {
-    inputCategoryKey,
-    outputCategoryKey,
-    inputPoints
-  });
-  if (!result.changed) {
-    const message = result.reason === "insufficient-points"
-      ? "Not enough banked points are available in that category."
-      : `Exchange amounts must be at least ${TREE_POINT_EXCHANGE_RATIO} points and in ${TREE_POINT_EXCHANGE_RATIO}-point steps.`;
-    setSyncStatus(message, "error");
-    return;
-  }
-
-  const inputCategory = resolveCategorySnapshot(result.inputCategoryKey);
-  const outputCategory = resolveCategorySnapshot(result.outputCategoryKey);
-  treePointExchangeDraft.inputCategoryKey = result.inputCategoryKey;
-  treePointExchangeDraft.outputCategoryKey = result.outputCategoryKey;
-  treePointExchangeDraft.inputPoints = TREE_POINT_EXCHANGE_RATIO;
-
-  store.treeState = normalizeTreeState({
-    ...result.treeState,
-    updatedAt: Date.now()
-  });
-  persistStore();
-  renderAll();
-  setSyncStatus(
-    `Exchanged ${formatPointsLabel(result.inputPoints)} of ${inputCategory.label} into ${formatPointsLabel(result.outputPoints)} of ${outputCategory.label}.`,
-    "success"
-  );
-}
-
-function renderTreeStyleIfOpen() {
-  if (!isTreeStyleOpen()) {
-    return;
-  }
-
-  const treeState = normalizeTreeState(store.treeState);
-  const catalog = buildTreeStyleCatalog(treeState);
-  const bankedPoints = getTreeBankedPointsByCategory(treeState);
-  const bankedCategories = Object.entries(bankedPoints)
-    .map(([key, points]) => {
-      const category = resolveCategorySnapshot(key);
-      return {
-        key,
-        points,
-        label: category.label,
-        color: category.color
-      };
-    })
-    .filter((entry) => entry.points > 0)
-    .sort((left, right) => right.points - left.points || left.label.localeCompare(right.label));
-
-  treeStyleBody.innerHTML = renderTreeStyleContentShared(
-    {
-      catalog,
-      bankedCategories,
-      defaultCategoryColor: DEFAULT_CATEGORY_COLOR
-    },
-    {
-      escapeHtml,
-      formatPointsLabel,
-      getTreeStylePartLabel,
-      getTreeSkin,
-      resolveCategorySnapshot
-    }
-  );
-}
-
-function handleTreeStyleAction(event) {
-  const button = event.target.closest("[data-tree-style-action]");
-  if (!button) {
-    return;
-  }
-
-  const action = button.getAttribute("data-tree-style-action");
-  const part = button.getAttribute("data-tree-style-part") || "";
-  const skinId = button.getAttribute("data-tree-style-skin") || "";
-  if (!skinId) {
-    return;
-  }
-
-  if (action === "buy") {
-    const result = purchaseTreeSkin(normalizeTreeState(store.treeState), skinId);
-    if (!result.changed) {
-      setSyncStatus(result.reason === "insufficient-points" ? "Not enough harvested fruit points for that skin yet." : "That skin is already available.", "error");
-      return;
-    }
-    store.treeState = normalizeTreeState({
-      ...result.treeState,
-      updatedAt: Date.now()
-    });
-    persistStore();
-    renderAll();
-    setSyncStatus(`Unlocked ${result.skin.label}.`, "success");
-    return;
-  }
-
-  if (action === "equip") {
-    const result = equipTreeSkin(normalizeTreeState(store.treeState), part, skinId);
-    if (!result.changed) {
-      setSyncStatus("That skin is not available to equip.", "error");
-      return;
-    }
-    store.treeState = normalizeTreeState({
-      ...result.treeState,
-      updatedAt: Date.now()
-    });
-    persistStore();
-    renderAll();
-    setSyncStatus(`Equipped ${result.skin.label}.`, "info");
-  }
-}
-
-function harvestRipeFruit() {
-  const treeState = getTreeDisplayState();
-  if (treeState.ripePoints <= 0) {
-    setSyncStatus("There is no ripe fruit to harvest yet.", "info");
-    return;
-  }
-
-  const harvestedByCategory = { ...normalizeTreeState(store.treeState).harvestedByCategory };
-  for (const category of treeState.categories) {
-    if (category.ripePoints <= 0) {
-      continue;
-    }
-    harvestedByCategory[category.key] = (harvestedByCategory[category.key] || 0) + category.ripePoints;
-  }
-
-  store.treeState = normalizeTreeState({
-    ...store.treeState,
-    harvestedByCategory,
-    updatedAt: Date.now()
-  });
-  persistStore();
-  renderAll();
-  setSyncStatus(`Harvested ${formatPointsLabel(treeState.ripePoints)} from ${treeState.ripeFruitCount} ripe ${treeState.ripeFruitCount === 1 ? "fruit" : "fruits"}.`, "info");
 }
 
 function renderCategoryOptions() {
@@ -6952,50 +6713,6 @@ function resetDeveloperFruitGrowth() {
   persistStore();
   renderAll();
   setSyncStatus("Cleared developer fruit-growth adjustments.", "info");
-}
-
-function buySelectedTreeSkin() {
-  if (!isDeveloperUser()) {
-    return;
-  }
-  const skinId = developerTreeSkin.value || "";
-  if (!skinId) {
-    return;
-  }
-  const result = purchaseTreeSkin(normalizeTreeState(store.treeState), skinId);
-  if (!result.changed) {
-    setSyncStatus(result.reason === "insufficient-points" ? "Not enough banked points to buy that skin yet." : "That skin is already owned.", "error");
-    return;
-  }
-  store.treeState = normalizeTreeState({
-    ...result.treeState,
-    updatedAt: Date.now()
-  });
-  persistStore();
-  renderAll();
-  setSyncStatus(`Bought ${result.skin.label}.`, "success");
-}
-
-function removeSelectedTreeSkin() {
-  if (!isDeveloperUser()) {
-    return;
-  }
-  const skinId = developerTreeSkin.value || "";
-  if (!skinId) {
-    return;
-  }
-  const result = removeOwnedTreeSkin(normalizeTreeState(store.treeState), skinId);
-  if (!result.changed) {
-    setSyncStatus("That skin is not currently owned.", "error");
-    return;
-  }
-  store.treeState = normalizeTreeState({
-    ...result.treeState,
-    updatedAt: Date.now()
-  });
-  persistStore();
-  renderAll();
-  setSyncStatus(`Removed ${result.skin.label} from the available skins.`, "info");
 }
 
 async function sendDeveloperDailySummary() {
