@@ -63,7 +63,6 @@ import {
   normalizeEmailSummaryConfig,
   normalizeNotifications,
   normalizeNotificationTimezone,
-  normalizeReminderMinutes,
   normalizeRecipientEmail,
   normalizeWeekday,
   normalizeNotificationTime
@@ -86,6 +85,7 @@ import {
   renderTaskGrid as renderTaskGridShared,
   renderTaskHistorySummary as renderTaskHistorySummaryShared
 } from "./modules/taskHistoryUi.js";
+import { createTaskComposerBindings } from "./modules/taskComposer.js";
 import { buildPointSummary, buildFruitDisplayState } from "./modules/treeState.js";
 import {
   buildAppliedTreeAppearance,
@@ -465,6 +465,76 @@ const helpTooltipState = {
   pressStartX: 0,
   pressStartY: 0
 };
+
+const taskComposerRefs = {
+  lateGraceMinutesInput,
+  skipRuleTypeInput,
+  skipGraceMinutesInput,
+  taskRemindersEnabledInput,
+  taskReminderDueSoonMinutesInput,
+  taskReminderOverdueMinutesInput,
+  taskReminderDefaultsCopy,
+  recurrenceTypeInput: recurrenceType,
+  recurrenceForeverInput,
+  weeklyDayPicker,
+  weeklyIntervalInput: document.getElementById("weeklyInterval"),
+  weeklyWeekdayInput: document.getElementById("weeklyWeekday"),
+  monthlyDayInput: document.getElementById("monthlyDay"),
+  monthlyIntervalInput: document.getElementById("monthlyInterval"),
+  monthlyOrdinalInput: document.getElementById("monthlyOrdinal"),
+  monthlyWeekdayInput: document.getElementById("monthlyWeekday"),
+  recurrenceEndDateInput: document.getElementById("recurrenceEndDate"),
+  recurrenceCountInput: document.getElementById("recurrenceCount"),
+  dailyInstanceTimes
+};
+
+const {
+  appendDailyInstanceTimeRow,
+  applyRecurrenceToForm,
+  applySkipRuleToForm,
+  buildLinkedSeriesSlotConfig,
+  buildLinkedSeriesTemplatesFromDraft,
+  buildRecurrence,
+  buildSkipRule,
+  buildTaskDraftFromForm,
+  buildTaskFromForm,
+  buildTaskFromValues,
+  getWeeklyDaySelection,
+  handleDailyInstanceTimesClick,
+  normalizeRecurrence,
+  normalizeSkipRule,
+  normalizeTaskReminders,
+  parsePositiveNumber,
+  parsePositiveOrZeroNumber,
+  renderDailyInstanceTimes,
+  setTaskReminderFormValues,
+  setWeeklyDaySelection,
+  syncTaskReminderInputs,
+  syncWeeklyWeekdayHiddenValue
+} = createTaskComposerBindings({
+  createId,
+  getMaxTaskPoints,
+  resolveCategorySnapshot,
+  normalizeImportance,
+  normalizeTaskPoints,
+  normalizeWidgetTaskMeta,
+  normalizeWidgetCompletion,
+  normalizeLinkedSeries,
+  deriveTaskNotBeforeAt,
+  defaultImportance: DEFAULT_IMPORTANCE,
+  defaultLateGraceMinutes: DEFAULT_LATE_GRACE_MINUTES,
+  defaultLength: "medium",
+  lengthOrder: LENGTH_ORDER,
+  dependenciesSelect,
+  todayString,
+  linkedSeriesKindDaily: LINKED_SERIES_KIND_DAILY,
+  linkedSeriesKindWeekly: LINKED_SERIES_KIND_WEEKLY,
+  refs: taskComposerRefs,
+  composerPanelState,
+  composerReminderState,
+  escapeHtml,
+  defaultTaskDueSoonReminderMinutes: DEFAULT_TASK_DUE_SOON_REMINDER_MINUTES
+});
 
 let store = loadStore();
 const mobileTaskDeskQuery = window.matchMedia(MOBILE_TASK_DESK_MEDIA);
@@ -2761,358 +2831,6 @@ function handleQuickAddSubmit(event) {
   closeQuickAdd();
   renderAll();
   setSyncStatus("Quick-added locally. Open Task Desk if you want to add more detail.", "info");
-}
-
-function buildTaskFromForm(formData, originalTask = null) {
-  const skipRule = originalTask?.skipRule?.type === "widget-lockout"
-    ? normalizeSkipRule(originalTask.skipRule)
-    : buildSkipRule(formData, originalTask?.skipRule);
-  const categorySnapshot = resolveCategorySnapshot(String(formData.get("category") || ""), originalTask);
-  const recurrence = buildRecurrence(formData, originalTask?.recurrence);
-  return buildTaskFromValues(buildTaskDraftFromForm(formData, {
-    originalTask,
-    skipRule,
-    categorySnapshot,
-    recurrence
-  }), originalTask, categorySnapshot);
-}
-
-function buildTaskDraftFromForm(formData, { originalTask = null, skipRule, categorySnapshot, recurrence } = {}) {
-  const resolvedSkipRule = skipRule || (originalTask?.skipRule?.type === "widget-lockout"
-    ? normalizeSkipRule(originalTask.skipRule)
-    : buildSkipRule(formData, originalTask?.skipRule));
-  const resolvedCategory = categorySnapshot || resolveCategorySnapshot(String(formData.get("category") || ""), originalTask);
-  const resolvedRecurrence = recurrence || buildRecurrence(formData, originalTask?.recurrence);
-  const resolvedImportance = String(formData.get("importance") || originalTask?.importance || DEFAULT_IMPORTANCE);
-  const resolvedLateGraceMinutes = parsePositiveOrZeroNumber(formData.get("lateGraceMinutes")) ?? originalTask?.lateGraceMinutes ?? DEFAULT_LATE_GRACE_MINUTES;
-  return {
-    name: String(formData.get("name") || "").trim(),
-    details: String(formData.get("details") || "").trim(),
-    startDate: String(formData.get("startDate") || ""),
-    dueDate: String(formData.get("dueDate") || ""),
-    timeOfDay: String(formData.get("timeOfDay") || ""),
-    lateGraceMinutes: resolvedLateGraceMinutes,
-    points: formData.get("points"),
-    length: String(formData.get("length") || "medium"),
-    category: resolvedCategory.key,
-    importance: resolvedImportance,
-    reminders: buildTaskReminderDraftFromForm(formData, {
-      originalTask,
-      importance: resolvedImportance,
-      lateGraceMinutes: resolvedLateGraceMinutes,
-      widgetTaskMeta: originalTask?.widgetTaskMeta
-    }),
-    skipRule: resolvedSkipRule,
-    dependencies: Array.from(dependenciesSelect.selectedOptions).map((option) => option.value),
-    recurrence: resolvedRecurrence
-  };
-}
-
-function buildTaskFromValues(values, originalTask = null, categorySnapshot = null) {
-  const normalizedName = String(values?.name || "").trim();
-  const normalizedDetails = String(values?.details || "").trim();
-  const rawStartDate = String(values?.startDate || "").trim();
-  const startDateWasImplicit = !rawStartDate;
-  const normalizedStartDate = rawStartDate || originalTask?.startDate || todayString();
-  const normalizedDueDate = String(values?.dueDate || "").trim();
-  const rawTimeOfDay = String(values?.timeOfDay || "").trim();
-  const normalizedTimeOfDay = rawTimeOfDay || (normalizedDueDate ? "23:59" : "");
-  const normalizedLength = LENGTH_ORDER[String(values?.length || "")] ? String(values.length) : "medium";
-  const resolvedCategory = categorySnapshot || resolveCategorySnapshot(String(values?.category || ""), originalTask);
-  const normalizedRecurrence = normalizeRecurrence(values?.recurrence);
-  const normalizedDependencies = Array.isArray(values?.dependencies)
-    ? values.dependencies.filter((dependencyId) => typeof dependencyId === "string" && dependencyId)
-    : [];
-  const lateGraceMinutes = parsePositiveOrZeroNumber(values?.lateGraceMinutes) ?? originalTask?.lateGraceMinutes ?? DEFAULT_LATE_GRACE_MINUTES;
-  const normalizedImportance = normalizeImportance(String(values?.importance || originalTask?.importance || DEFAULT_IMPORTANCE));
-  const normalizedWidgetTaskMeta = normalizeWidgetTaskMeta(values?.widgetTaskMeta || originalTask?.widgetTaskMeta);
-  const normalizedReminders = normalizeTaskReminders(values?.reminders, {
-    originalReminders: originalTask?.reminders,
-    importance: normalizedImportance,
-    lateGraceMinutes,
-    widgetTaskMeta: normalizedWidgetTaskMeta
-  });
-
-  return {
-    id: originalTask?.id || createId(),
-    templateId: originalTask?.templateId || "",
-    occurrenceIndex: originalTask?.occurrenceIndex || 0,
-    name: normalizedName,
-    details: normalizedDetails,
-    startDate: normalizedStartDate,
-    dueDate: normalizedDueDate,
-    timeOfDay: normalizedTimeOfDay,
-    lateGraceMinutes,
-    notBeforeAt: deriveTaskNotBeforeAt({
-      recurrence: normalizedRecurrence,
-      startDate: normalizedStartDate,
-      dueDate: normalizedDueDate,
-      originalTask,
-      startDateWasImplicit
-    }),
-    pointsValue: normalizeTaskPoints(values?.points, originalTask?.pointsValue, getMaxTaskPoints()),
-    pointsEntryId: originalTask?.pointsEntryId || "",
-    length: normalizedLength,
-    categoryKey: resolvedCategory.key,
-    categoryLabel: resolvedCategory.label,
-    categoryColor: resolvedCategory.color,
-    importance: normalizedImportance,
-    status: originalTask?.status || "open",
-    createdAt: originalTask?.createdAt || Date.now(),
-    updatedAt: Date.now(),
-    ownerWidgetId: originalTask?.ownerWidgetId || "",
-    ownerWidgetType: originalTask?.ownerWidgetType || "",
-    ownerTaskKey: originalTask?.ownerTaskKey || "",
-    widgetTaskKind: typeof values?.widgetTaskKind === "string"
-      ? values.widgetTaskKind
-      : (typeof originalTask?.widgetTaskKind === "string" ? originalTask.widgetTaskKind : ""),
-    widgetTaskMeta: normalizedWidgetTaskMeta,
-    reminders: normalizedReminders,
-    linkedSeries: normalizeLinkedSeries(values?.linkedSeries || originalTask?.linkedSeries),
-    sequenceDependencyId: typeof values?.sequenceDependencyId === "string"
-      ? values.sequenceDependencyId
-      : (typeof originalTask?.sequenceDependencyId === "string" ? originalTask.sequenceDependencyId : ""),
-    widgetCompletion: normalizeWidgetCompletion(originalTask?.widgetCompletion),
-    skipRule: normalizeSkipRule(values?.skipRule),
-    dependencies: normalizedDependencies,
-    recurrence: normalizedRecurrence,
-    history: Array.isArray(originalTask?.history) ? originalTask.history : []
-  };
-}
-
-function renderDailyInstanceTimes(times = []) {
-  if (!dailyInstanceTimes) {
-    return;
-  }
-  dailyInstanceTimes.innerHTML = "";
-  times.forEach((time) => appendDailyInstanceTimeRow(time));
-}
-
-function appendDailyInstanceTimeRow(value = "") {
-  if (!dailyInstanceTimes) {
-    return;
-  }
-  const row = document.createElement("div");
-  row.className = "recurrence-slot-row";
-  row.innerHTML = `
-    <input type="time" value="${escapeHtml(value)}" data-daily-instance-time />
-    <button type="button" class="ghost-button" data-remove-daily-instance-time>Remove</button>
-  `;
-  dailyInstanceTimes.appendChild(row);
-}
-
-function handleDailyInstanceTimesClick(event) {
-  const removeButton = event.target.closest("[data-remove-daily-instance-time]");
-  if (!removeButton) {
-    return;
-  }
-  removeButton.closest(".recurrence-slot-row")?.remove();
-}
-
-function collectDailyInstanceTimes(primaryTime) {
-  const times = [String(primaryTime || "").trim()]
-    .concat(Array.from(dailyInstanceTimes.querySelectorAll("[data-daily-instance-time]")).map((input) => String(input.value || "").trim()))
-    .filter(Boolean);
-  return [...new Set(times)].sort();
-}
-
-function setWeeklyDaySelection(days) {
-  const selected = new Set((Array.isArray(days) ? days : []).map((value) => Number(value)));
-  Array.from(weeklyDayPicker.querySelectorAll('input[name="weeklyDays"]')).forEach((input) => {
-    input.checked = selected.has(Number(input.value));
-  });
-  syncWeeklyWeekdayHiddenValue();
-}
-
-function getWeeklyDaySelection(defaultWeekday = 0) {
-  const selected = Array.from(weeklyDayPicker.querySelectorAll('input[name="weeklyDays"]:checked'))
-    .map((input) => Number(input.value))
-    .filter((value) => Number.isInteger(value))
-    .sort((left, right) => left - right);
-  if (selected.length > 0) {
-    return selected;
-  }
-  return [Number.isInteger(defaultWeekday) ? defaultWeekday : 0];
-}
-
-function syncWeeklyWeekdayHiddenValue() {
-  const selected = getWeeklyDaySelection(Number(document.getElementById("weeklyWeekday").value || 0));
-  document.getElementById("weeklyWeekday").value = String(selected[0] ?? 0);
-}
-
-function buildSkipRule(formData, originalSkipRule = null) {
-  const type = String(formData.get("skipRuleType") || originalSkipRule?.type || "none");
-  if (type === "none") {
-    return { type: "none" };
-  }
-
-  if (type === "after-due-minutes") {
-    return {
-      type,
-      graceMinutes: parsePositiveOrZeroNumber(formData.get("skipGraceMinutes")) ?? originalSkipRule?.graceMinutes ?? 0
-    };
-  }
-
-  if (type === "end-of-day") {
-    return { type };
-  }
-
-  return normalizeSkipRule(originalSkipRule);
-}
-
-function buildRecurrence(formData, originalRecurrence = null) {
-  const type = String(formData.get("recurrenceType") || "none");
-  if (type === "none") {
-    return { type: "none" };
-  }
-
-  const recurrence = {
-    type,
-    endDate: String(formData.get("recurrenceEndDate") || ""),
-    count: parsePositiveNumber(formData.get("recurrenceCount")),
-    forever: Boolean(formData.get("recurrenceForever")),
-    interval: originalRecurrence?.interval || 1,
-    weekday: originalRecurrence?.weekday ?? 0,
-    day: originalRecurrence?.day || 1,
-    ordinal: originalRecurrence?.ordinal || "first"
-  };
-
-  if (recurrence.forever) {
-    recurrence.endDate = "";
-    recurrence.count = null;
-  }
-
-  if (type === "daily") {
-    recurrence.interval = 1;
-  }
-
-  if (type === "weekly") {
-    recurrence.interval = parsePositiveNumber(formData.get("weeklyInterval")) || 1;
-    recurrence.weekday = Number(formData.get("weeklyWeekday") || 0);
-  }
-
-  if (type === "monthly-date") {
-    recurrence.interval = parsePositiveNumber(formData.get("monthlyInterval")) || 1;
-    recurrence.day = parsePositiveNumber(formData.get("monthlyDay")) || 1;
-  }
-
-  if (type === "monthly-weekday") {
-    recurrence.ordinal = String(formData.get("monthlyOrdinal") || "first");
-    recurrence.weekday = Number(formData.get("monthlyWeekday") || 0);
-    recurrence.interval = 1;
-  }
-
-  return recurrence;
-}
-
-function buildLinkedSeriesSlotConfig(formData, draft, recurrence) {
-  if (recurrence.type === "daily") {
-    const times = collectDailyInstanceTimes(draft.timeOfDay || "23:59");
-    if (times.length > 1) {
-      return {
-        kind: LINKED_SERIES_KIND_DAILY,
-        slots: times.map((time) => ({ timeOfDay: time }))
-      };
-    }
-    return null;
-  }
-
-  if (recurrence.type === "weekly") {
-    const weekdays = getWeeklyDaySelection(Number(formData.get("weeklyWeekday") || recurrence.weekday || 0));
-    if (weekdays.length > 1) {
-      return {
-        kind: LINKED_SERIES_KIND_WEEKLY,
-        slots: weekdays.map((weekday) => ({ weekday }))
-      };
-    }
-  }
-
-  return null;
-}
-
-function buildLinkedSeriesTemplatesFromDraft({
-  draft,
-  recurrence,
-  categorySnapshot,
-  slotConfig,
-  existingTemplates = []
-}) {
-  if (!slotConfig || !Array.isArray(slotConfig.slots) || slotConfig.slots.length <= 1) {
-    return [];
-  }
-
-  const groupId = existingTemplates[0]?.linkedSeries?.groupId || createId();
-  const assignments = matchLinkedSeriesTemplates(existingTemplates, slotConfig);
-
-  return slotConfig.slots.map((slot, slotIndex) => {
-    const existingTask = assignments.get(slotIndex) || null;
-    const slotRecurrence = slotConfig.kind === LINKED_SERIES_KIND_WEEKLY
-      ? { ...recurrence, weekday: slot.weekday }
-      : { ...recurrence };
-
-    const baseStartDate = draft.startDate || draft.dueDate || todayString();
-    const baseDueDate = draft.dueDate || draft.startDate || todayString();
-    const slotStartDate = slotConfig.kind === LINKED_SERIES_KIND_WEEKLY
-      ? alignDateToWeekdayOnOrAfter(baseStartDate, slot.weekday)
-      : (draft.startDate || "");
-    const slotDueDate = slotConfig.kind === LINKED_SERIES_KIND_WEEKLY
-      ? alignDateToWeekdayOnOrAfter(baseDueDate, slot.weekday)
-      : draft.dueDate;
-
-    return buildTaskFromValues({
-      ...draft,
-      startDate: slotStartDate,
-      dueDate: slotDueDate,
-      timeOfDay: slot.timeOfDay || draft.timeOfDay,
-      recurrence: slotRecurrence,
-      linkedSeries: {
-        groupId,
-        kind: slotConfig.kind,
-        slotIndex,
-        slotCount: slotConfig.slots.length
-      },
-      sequenceDependencyId: ""
-    }, existingTask, categorySnapshot);
-  });
-}
-
-function matchLinkedSeriesTemplates(existingTemplates, slotConfig) {
-  const assignments = new Map();
-  const unusedTemplates = [...existingTemplates];
-
-  slotConfig.slots.forEach((slot, slotIndex) => {
-    const matchIndex = unusedTemplates.findIndex((template) => {
-      if (slotConfig.kind === LINKED_SERIES_KIND_DAILY) {
-        return template.timeOfDay === slot.timeOfDay;
-      }
-      return Number(template.recurrence?.weekday) === Number(slot.weekday);
-    });
-    if (matchIndex !== -1) {
-      assignments.set(slotIndex, unusedTemplates.splice(matchIndex, 1)[0]);
-    }
-  });
-
-  slotConfig.slots.forEach((_, slotIndex) => {
-    if (assignments.has(slotIndex)) {
-      return;
-    }
-    if (unusedTemplates.length > 0) {
-      assignments.set(slotIndex, unusedTemplates.shift());
-    }
-  });
-
-  return assignments;
-}
-
-function alignDateToWeekdayOnOrAfter(baseDate, weekday) {
-  const date = new Date(`${baseDate}T12:00:00`);
-  if (Number.isNaN(date.getTime())) {
-    return baseDate;
-  }
-  const normalizedWeekday = Number.isInteger(weekday) ? weekday : 0;
-  const diff = (normalizedWeekday - date.getDay() + 7) % 7;
-  date.setDate(date.getDate() + diff);
-  return toDateString(date);
 }
 
 function applyLinkedSeriesTemplateUpdate(nextTemplates, existingTemplates) {
@@ -5637,27 +5355,6 @@ function beginEdit(task, scope) {
   syncEditPanel();
 }
 
-function applySkipRuleToForm(skipRule) {
-  skipRuleTypeInput.value = skipRule?.type === "widget-lockout" ? "none" : (skipRule?.type || "none");
-  skipGraceMinutesInput.value = skipRule?.graceMinutes ?? 15;
-}
-
-function applyRecurrenceToForm(recurrence) {
-  recurrenceType.value = recurrence?.type || "none";
-  document.getElementById("weeklyInterval").value = recurrence?.interval || 1;
-  document.getElementById("weeklyWeekday").value = String(recurrence?.weekday ?? 0);
-  setWeeklyDaySelection([recurrence?.weekday ?? 0]);
-  document.getElementById("monthlyDay").value = recurrence?.day || 1;
-  document.getElementById("monthlyInterval").value = recurrence?.interval || 1;
-  document.getElementById("monthlyOrdinal").value = recurrence?.ordinal || "first";
-  document.getElementById("monthlyWeekday").value = String(recurrence?.weekday ?? 0);
-  document.getElementById("recurrenceEndDate").value = recurrence?.endDate || "";
-  document.getElementById("recurrenceCount").value = recurrence?.count || "";
-  recurrenceForeverInput.checked = Boolean(recurrence?.forever);
-  renderDailyInstanceTimes([]);
-  composerPanelState.recurrenceOpen = recurrenceType.value !== "none";
-}
-
 function syncEditPanel() {
   const editing = Boolean(editState.taskId);
   editPanel.classList.toggle("hidden", !editing);
@@ -6109,23 +5806,6 @@ function normalizeStatus(task) {
     return "skipped";
   }
   return "open";
-}
-
-function normalizeRecurrence(recurrence) {
-  if (!recurrence || typeof recurrence !== "object") {
-    return { type: "none" };
-  }
-  return {
-    type: typeof recurrence.type === "string" ? recurrence.type : "none",
-    interval: typeof recurrence.interval === "number" ? recurrence.interval : 1,
-    weekday: typeof recurrence.weekday === "number" ? recurrence.weekday : 0,
-    day: typeof recurrence.day === "number" ? recurrence.day : 1,
-    ordinal: typeof recurrence.ordinal === "string" ? recurrence.ordinal : "first",
-    sourceType: typeof recurrence.sourceType === "string" ? recurrence.sourceType : "",
-    endDate: typeof recurrence.endDate === "string" ? recurrence.endDate : "",
-    count: typeof recurrence.count === "number" ? recurrence.count : null,
-    forever: recurrence.forever === true
-  };
 }
 
 function normalizeLinkedSeries(linkedSeries) {
@@ -7501,23 +7181,6 @@ function handleTaskReminderInputChange() {
   syncTaskReminderInputs();
 }
 
-function syncTaskReminderInputs() {
-  const remindersEnabled = taskRemindersEnabledInput.checked;
-  taskReminderDueSoonMinutesInput.disabled = !remindersEnabled;
-  taskReminderOverdueMinutesInput.disabled = !remindersEnabled;
-  taskReminderDueSoonMinutesInput.placeholder = String(DEFAULT_TASK_DUE_SOON_REMINDER_MINUTES);
-  taskReminderOverdueMinutesInput.placeholder = String(parsePositiveOrZeroNumber(lateGraceMinutesInput.value) ?? DEFAULT_LATE_GRACE_MINUTES);
-  taskReminderDefaultsCopy.textContent = `Leave either field blank to use the default: ${DEFAULT_TASK_DUE_SOON_REMINDER_MINUTES} minutes before due, and ${taskReminderOverdueMinutesInput.placeholder} minute${taskReminderOverdueMinutesInput.placeholder === "1" ? "" : "s"} after due.`;
-}
-
-function setTaskReminderFormValues(reminders, { importance = DEFAULT_IMPORTANCE, lateGraceMinutes = DEFAULT_LATE_GRACE_MINUTES, treatAsUserTouched = false } = {}) {
-  const normalized = normalizeTaskReminders(reminders, { importance, lateGraceMinutes });
-  taskRemindersEnabledInput.checked = normalized.enabled;
-  taskReminderDueSoonMinutesInput.value = normalized.dueSoonMinutes == null ? "" : String(normalized.dueSoonMinutes);
-  taskReminderOverdueMinutesInput.value = normalized.overdueMinutes == null ? "" : String(normalized.overdueMinutes);
-  composerReminderState.userTouched = treatAsUserTouched;
-}
-
 function syncComposerPanelState() {
   syncComposerPanel(toggleCategoryOptionsButton, categoryPanelBody, composerPanelState.categoryOptionsOpen, {
     collapsedLabel: "Category options",
@@ -7636,16 +7299,6 @@ function deriveRecurringInstanceNotBeforeAt(recurrence, scheduledDate) {
   return computeRecurringNotBeforeAt(recurrenceType, scheduledDate);
 }
 
-function parsePositiveNumber(value) {
-  const number = Number(value);
-  return Number.isFinite(number) && number > 0 ? number : null;
-}
-
-function parsePositiveOrZeroNumber(value) {
-  const number = Number(value);
-  return Number.isFinite(number) && number >= 0 ? number : null;
-}
-
 function todayString() {
   return toDateString(new Date());
 }
@@ -7705,93 +7358,6 @@ function normalizeWidgetTaskMetaValue(value) {
     return normalizeWidgetTaskMeta(value);
   }
   return undefined;
-}
-
-function normalizeTaskReminders(value, {
-  originalReminders = null,
-  importance = DEFAULT_IMPORTANCE,
-  lateGraceMinutes = DEFAULT_LATE_GRACE_MINUTES,
-  widgetTaskMeta = null
-} = {}) {
-  const widgetDefaults = normalizeWidgetReminderDefaults(widgetTaskMeta?.reminderDefaults);
-  const explicitEnabled = typeof value?.enabled === "boolean"
-    ? value.enabled
-    : (typeof originalReminders?.enabled === "boolean" ? originalReminders.enabled : undefined);
-  const enabled = typeof explicitEnabled === "boolean"
-    ? explicitEnabled
-    : (typeof widgetDefaults?.enabled === "boolean"
-      ? widgetDefaults.enabled
-      : normalizeImportance(importance) === "high");
-  const dueSoonMinutes = value && Object.prototype.hasOwnProperty.call(value, "dueSoonMinutes")
-    ? normalizeReminderMinutes(value.dueSoonMinutes, null)
-    : (originalReminders && Object.prototype.hasOwnProperty.call(originalReminders, "dueSoonMinutes")
-      ? normalizeReminderMinutes(originalReminders.dueSoonMinutes, null)
-      : normalizeReminderMinutes(widgetDefaults?.dueSoonMinutes, null));
-  const overdueMinutes = value && Object.prototype.hasOwnProperty.call(value, "overdueMinutes")
-    ? normalizeReminderMinutes(value.overdueMinutes, null)
-    : (originalReminders && Object.prototype.hasOwnProperty.call(originalReminders, "overdueMinutes")
-      ? normalizeReminderMinutes(originalReminders.overdueMinutes, null)
-      : normalizeReminderMinutes(widgetDefaults?.overdueMinutes, null));
-
-  return {
-    enabled,
-    dueSoonMinutes,
-    overdueMinutes
-  };
-}
-
-function normalizeWidgetReminderDefaults(value) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return null;
-  }
-  const enabled = typeof value.enabled === "boolean" ? value.enabled : undefined;
-  const dueSoonMinutes = normalizeReminderMinutes(value.dueSoonMinutes, null);
-  const overdueMinutes = normalizeReminderMinutes(value.overdueMinutes, null);
-  return { enabled, dueSoonMinutes, overdueMinutes };
-}
-
-function buildTaskReminderDraftFromForm(formData, {
-  originalTask = null,
-  importance = DEFAULT_IMPORTANCE,
-  lateGraceMinutes = DEFAULT_LATE_GRACE_MINUTES,
-  widgetTaskMeta = null
-} = {}) {
-  return normalizeTaskReminders({
-    enabled: formData.get("taskRemindersEnabled") === "on",
-    dueSoonMinutes: normalizeReminderMinutes(formData.get("taskReminderDueSoonMinutes"), null),
-    overdueMinutes: normalizeReminderMinutes(formData.get("taskReminderOverdueMinutes"), null)
-  }, {
-    originalReminders: originalTask?.reminders,
-    importance,
-    lateGraceMinutes,
-    widgetTaskMeta
-  });
-}
-
-function normalizeSkipRule(value) {
-  if (!value || typeof value !== "object") {
-    return { type: "none" };
-  }
-
-  if (value.type === "after-due-minutes") {
-    return {
-      type: value.type,
-      graceMinutes: parsePositiveOrZeroNumber(value.graceMinutes) ?? 0
-    };
-  }
-
-  if (value.type === "end-of-day") {
-    return { type: value.type };
-  }
-
-  if (value.type === "widget-lockout") {
-    return {
-      type: value.type,
-      policy: typeof value.policy === "string" ? value.policy : ""
-    };
-  }
-
-  return { type: "none" };
 }
 
 function mergeRetiredWidgets(localRetired = [], remoteRetired = [], activeWidgets = []) {

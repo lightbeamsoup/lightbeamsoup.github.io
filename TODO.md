@@ -16,7 +16,6 @@
 
 - Codebase: Continue extracting `app.js` orchestration into smaller feature modules.
 - Codebase: Extract tree action/state orchestration out of `app.js` into a dedicated tree controller module.
-- Codebase: Extract task composer, recurrence, skip-rule, and reminder form logic out of `app.js`.
 - Codebase: Extract store normalization, merge, and comparable-signature logic out of `app.js`.
 - Codebase: Continue splitting Travel Buddy into focused render, live-data, task-sync, and state modules.
 - Codebase: Split Workout Coach into focused render, chart, task-sync, and state modules.
@@ -37,6 +36,7 @@
 
 ### Codebase Maintenance
 
+- 2026-04-01: Extract the task composer, recurrence, skip-rule, reminder defaults, and linked-series form helpers out of `app.js` into `lifetree/modules/taskComposer.js`.
 - 2026-03-29: Split `lifetree/style.css` into imported stylesheet chunks so the top-level file stops carrying the whole UI.
 - 2026-03-29: Extract Task Desk task/history rendering and delegated click wiring out of `app.js` into `lifetree/modules/taskHistoryUi.js`.
 - 2026-03-29: Extract the tree style modal rendering helpers out of `app.js` into `lifetree/modules/treeUi.js`.
