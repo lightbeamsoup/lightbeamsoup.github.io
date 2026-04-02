@@ -34,6 +34,7 @@
 
 ### Codebase Maintenance
 
+- 2026-04-01: Extract notification modal flow, Drive sync-state UI, remote-drift checks, and notification send helpers out of `app.js` into `lifetree/modules/notificationSyncController.js`.
 - 2026-04-01: Extract store normalization, category/task merge, deletion-marker handling, and comparable-signature logic out of `app.js` into `lifetree/modules/storeData.js`.
 - 2026-04-01: Extract tree detail/style modal state, fruit harvest, point exchange, and skin actions out of `app.js` into `lifetree/modules/treeController.js`.
 - 2026-04-01: Extract the task composer, recurrence, skip-rule, reminder defaults, and linked-series form helpers out of `app.js` into `lifetree/modules/taskComposer.js`.
