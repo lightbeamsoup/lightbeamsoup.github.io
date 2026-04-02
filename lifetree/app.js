@@ -491,6 +491,10 @@ const taskComposerRefs = {
   dailyInstanceTimes
 };
 
+function normalizeImportanceInput(value) {
+  return value === "low" || value === "high" ? value : DEFAULT_IMPORTANCE;
+}
+
 const {
   appendDailyInstanceTimeRow,
   applyRecurrenceToForm,
@@ -518,7 +522,7 @@ const {
   createId,
   getMaxTaskPoints,
   resolveCategorySnapshot,
-  normalizeImportance,
+  normalizeImportance: normalizeImportanceInput,
   normalizeTaskPoints,
   normalizeWidgetTaskMeta,
   normalizeWidgetCompletion,
