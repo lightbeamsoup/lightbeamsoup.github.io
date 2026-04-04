@@ -841,6 +841,7 @@ export function createNotificationSyncController({
       let appliedCount = 0;
       let pulledCount = 0;
       let pushedCount = 0;
+      let statusMirroredCount = 0;
       for (const task of store.tasks) {
         const result = byTaskId.get(task.id);
         if (!result || result.ok !== true) {
@@ -857,7 +858,9 @@ export function createNotificationSyncController({
           linkedAt: typeof result.linkedAt === "number" ? result.linkedAt : now,
           lastSeenGoogleUpdatedAt: typeof result.lastSeenGoogleUpdatedAt === "string" ? result.lastSeenGoogleUpdatedAt : "",
           scheduleFingerprint: typeof result.scheduleFingerprint === "string" ? result.scheduleFingerprint : "",
-          statusMirroredAt: typeof currentLink.statusMirroredAt === "number" ? currentLink.statusMirroredAt : 0,
+          statusMirroredAt: typeof result.statusMirroredAt === "number"
+            ? result.statusMirroredAt
+            : (typeof currentLink.statusMirroredAt === "number" ? currentLink.statusMirroredAt : 0),
           schemaVersion: 1
         }, {
           calendarId: result.calendarId || googleCalendar.calendarId
@@ -888,6 +891,8 @@ export function createNotificationSyncController({
           task.updatedAt = now;
           if (result.direction === "push" || result.direction === "create") {
             pushedCount += 1;
+          } else if (result.direction === "status") {
+            statusMirroredCount += 1;
           }
         }
         appliedCount += 1;
@@ -912,9 +917,9 @@ export function createNotificationSyncController({
       renderSyncMeta();
       if (errorCount > 0) {
         const firstError = results.find((entry) => entry?.ok === false)?.error || "Calendar sync hit one or more Google errors.";
-        setSyncStatus(`Calendar sync updated ${appliedCount} task${appliedCount === 1 ? "" : "s"} (${pulledCount} pulled, ${pushedCount} pushed), but ${errorCount} failed: ${firstError}`, "error");
+        setSyncStatus(`Calendar sync updated ${appliedCount} task${appliedCount === 1 ? "" : "s"} (${pulledCount} pulled, ${pushedCount} pushed, ${statusMirroredCount} status mirrored), but ${errorCount} failed: ${firstError}`, "error");
       } else {
-        setSyncStatus(`Calendar sync updated ${appliedCount} task${appliedCount === 1 ? "" : "s"} (${pulledCount} pulled, ${pushedCount} pushed) against ${nextCalendarSummary}. Save to Drive if you want the links and pulled edits on other devices.`, "success");
+        setSyncStatus(`Calendar sync updated ${appliedCount} task${appliedCount === 1 ? "" : "s"} (${pulledCount} pulled, ${pushedCount} pushed, ${statusMirroredCount} status mirrored) against ${nextCalendarSummary}. Save to Drive if you want the links and pulled edits on other devices.`, "success");
       }
     } catch (error) {
       const message = String(error?.message || "Calendar schedule sync failed");

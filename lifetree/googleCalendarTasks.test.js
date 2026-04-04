@@ -111,9 +111,8 @@ test("schedule sync request includes eligible linked tasks and marks whether the
   });
 
   assert.equal(payload.totalEligibleTasks, 2);
-  assert.deepEqual(payload.tasks.map((task) => task.taskId), ["weekly-retinol", "dog-walk"]);
+  assert.deepEqual(payload.tasks.map((task) => task.taskId), ["weekly-retinol"]);
   assert.equal(payload.tasks.find((task) => task.taskId === "weekly-retinol")?.needsPush, true);
-  assert.equal(payload.tasks.find((task) => task.taskId === "dog-walk")?.needsPush, false);
 });
 
 test("event payload builds recurrence, reminders, and metadata for recurring tasks", () => {
@@ -235,6 +234,85 @@ test("floating-local tasks use the current user timezone while fixed tasks keep 
   assert.equal(fixedPayload.extendedProperties.private.lifetreeTimeZoneMode, "fixed");
   assert.equal(syncPayload.tasks[0].scheduleFingerprint, buildGoogleCalendarTaskScheduleFingerprint(syncPayload.tasks[0]));
   assert.equal(syncPayload.tasks[1].scheduleFingerprint, buildGoogleCalendarTaskScheduleFingerprint(syncPayload.tasks[1]));
+});
+
+test("linked resolved tasks request status-only Google sync when lifecycle changed", () => {
+  const completedTask = {
+    id: "dog-walk",
+    name: "Dog walk",
+    details: "",
+    dueDate: "2026-04-05",
+    startDate: "2026-04-05",
+    timeOfDay: "18:30",
+    length: "medium",
+    recurrence: { type: "none" },
+    reminders: { enabled: true, dueSoonMinutes: 15, overdueMinutes: 15 },
+    importance: "medium",
+    categoryKey: "health",
+    lateGraceMinutes: 15,
+    ownerWidgetType: "workout",
+    ownerTaskKey: "dog-walk",
+    widgetTaskKind: "workout-session",
+    widgetTaskMeta: {},
+    status: "done",
+    archived: false,
+    historyOnly: false,
+    templateId: "",
+    history: [{ id: "dog-walk-h1", type: "completed", at: 200 }]
+  };
+  completedTask.googleCalendar = normalizeGoogleCalendarTaskLink({
+    calendarId: "lifetree-cal",
+    eventId: "event-1",
+    scheduleFingerprint: buildGoogleCalendarTaskScheduleFingerprint(completedTask),
+    statusMirroredAt: 0
+  }, { calendarId: "lifetree-cal" });
+
+  const payload = buildGoogleCalendarScheduleSyncRequest({
+    tasks: [completedTask]
+  }, {
+    calendarId: "lifetree-cal",
+    calendarSummary: "Lifetree",
+    calendarTimeZone: "America/Los_Angeles"
+  });
+
+  assert.equal(payload.totalEligibleTasks, 1);
+  assert.equal(payload.tasks.length, 1);
+  assert.equal(payload.tasks[0].needsPush, false);
+  assert.equal(payload.tasks[0].needsStatusPush, true);
+  assert.equal(payload.tasks[0].statusMirrorVersion, 200);
+});
+
+test("event payload mirrors lifecycle state into the Google description footer and private metadata", () => {
+  const payload = buildGoogleCalendarEventPayload({
+    taskId: "pack-trip",
+    name: "Pack for departure",
+    details: "Finish the packing list.",
+    dueDate: "2026-04-05",
+    startDate: "2026-04-05",
+    timeOfDay: "20:00",
+    length: "medium",
+    recurrence: { type: "none" },
+    reminders: { enabled: true, dueSoonMinutes: 60, overdueMinutes: 15 },
+    importance: "high",
+    categoryKey: "travel",
+    lateGraceMinutes: 15,
+    ownerWidgetType: "travel",
+    ownerTaskKey: "pack-trip",
+    widgetTaskKind: "travel-pack",
+    widgetTaskMeta: {
+      timeZoneMode: "floating-local"
+    },
+    history: [{ id: "pack-trip-h1", type: "completed", at: new Date("2026-04-04T19:15:00-07:00").getTime() }],
+    status: "done",
+    googleCalendar: {},
+    userTimeZone: "America/Los_Angeles"
+  }, {
+    calendarTimeZone: "America/Los_Angeles"
+  });
+
+  assert.match(payload.description, /Lifetree status: completed/);
+  assert.equal(payload.extendedProperties.private.lifetreeStatus, "completed");
+  assert.equal(payload.extendedProperties.private.lifetreeLifecycleType, "completed");
 });
 
 test("schedule patch parser reads Google event schedule fields back into Lifetree form", () => {

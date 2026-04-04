@@ -347,7 +347,7 @@ app.post("/api/google-calendar/sync-schedule", async (req, res) => {
           }
         }
 
-        if (!task.needsPush && linkedEventId) {
+        if (!task.needsPush && !task.needsStatusPush && linkedEventId) {
           results.push({
             taskId: task.taskId,
             ok: true,
@@ -377,14 +377,17 @@ app.post("/api/google-calendar/sync-schedule", async (req, res) => {
         results.push({
           taskId: task.taskId,
           ok: true,
-          direction: linkedEventId ? "push" : "create",
+          direction: linkedEventId
+            ? (task.needsPush ? "push" : "status")
+            : "create",
           calendarId,
           eventId: typeof event.id === "string" ? event.id : "",
           recurringEventId: typeof event.recurringEventId === "string" ? event.recurringEventId : "",
           htmlLink: typeof event.htmlLink === "string" ? event.htmlLink : "",
           linkedAt: Date.now(),
           lastSeenGoogleUpdatedAt: typeof event.updated === "string" ? event.updated : "",
-          scheduleFingerprint: task.scheduleFingerprint
+          scheduleFingerprint: task.scheduleFingerprint,
+          statusMirroredAt: task.statusMirrorVersion || 0
         });
       } catch (error) {
         results.push({

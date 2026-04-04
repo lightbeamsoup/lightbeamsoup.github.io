@@ -47,7 +47,7 @@ export function isGoogleCalendarSchedulableTask(task) {
   if (!task || typeof task !== "object") {
     return false;
   }
-  if (task.archived === true || task.historyOnly === true || task.status !== "open") {
+  if (task.archived === true || task.historyOnly === true) {
     return false;
   }
   if (!task.dueDate || typeof task.dueDate !== "string") {
@@ -60,7 +60,28 @@ export function isGoogleCalendarSchedulableTask(task) {
   if (task.templateId && recurrenceType !== "none") {
     return false;
   }
-  return true;
+  return task.status === "open";
+}
+
+function isGoogleCalendarStatusMirrorableTask(task) {
+  if (!task || typeof task !== "object") {
+    return false;
+  }
+  if (task.archived === true || task.historyOnly === true) {
+    return false;
+  }
+  if (!task.dueDate || typeof task.dueDate !== "string") {
+    return false;
+  }
+  const recurrenceType = String(task?.recurrence?.type || "none");
+  if (recurrenceType === "generated" || recurrenceType === "archived-series") {
+    return false;
+  }
+  if (task.templateId && recurrenceType !== "none") {
+    return false;
+  }
+  const googleCalendar = normalizeGoogleCalendarTaskLink(task.googleCalendar);
+  return Boolean(googleCalendar.eventId);
 }
 
 export function buildGoogleCalendarTaskScheduleFingerprint(task) {
@@ -97,7 +118,7 @@ export function buildGoogleCalendarScheduleSyncRequest(store, googleCalendarInte
     ? calendar.calendarSummary.trim()
     : "Lifetree";
   const calendarTimeZone = typeof calendar.calendarTimeZone === "string" ? calendar.calendarTimeZone.trim() : "";
-  const eligibleTasks = tasks.filter(isGoogleCalendarSchedulableTask);
+  const eligibleTasks = tasks.filter((task) => isGoogleCalendarSchedulableTask(task) || isGoogleCalendarStatusMirrorableTask(task));
   const syncTasks = eligibleTasks
     .map((task) => {
       const googleCalendar = normalizeGoogleCalendarTaskLink(task.googleCalendar, { calendarId });
@@ -109,11 +130,15 @@ export function buildGoogleCalendarScheduleSyncRequest(store, googleCalendarInte
         ...task,
         userTimeZone
       });
+      const statusMirrorState = getGoogleCalendarTaskStatusMirrorState(task);
+      const statusMirrorVersion = getGoogleCalendarTaskStatusMirrorVersion(task);
       const needsPush = !googleCalendar.eventId
         || googleCalendar.calendarId !== calendarId
         || googleCalendar.scheduleFingerprint !== scheduleFingerprint;
+      const needsStatusPush = Boolean(googleCalendar.eventId) && statusMirrorVersion > (googleCalendar.statusMirroredAt || 0);
       return {
         needsPush,
+        needsStatusPush,
         taskId: task.id,
         name: String(task.name || ""),
         details: String(task.details || ""),
@@ -133,9 +158,12 @@ export function buildGoogleCalendarScheduleSyncRequest(store, googleCalendarInte
         userTimeZone: String(userTimeZone || "").trim(),
         timeZoneMode,
         googleCalendar,
-        scheduleFingerprint
+        scheduleFingerprint,
+        statusMirrorVersion,
+        statusMirrorLifecycleType: statusMirrorState.lifecycleType
       };
-    });
+    })
+    .filter((task) => task.needsPush || task.needsStatusPush);
 
   return {
     calendarId,
@@ -170,6 +198,10 @@ export function normalizeGoogleCalendarSyncTask(value, { calendarId = "", calend
     widgetTaskMeta,
     googleCalendar: normalizeGoogleCalendarTaskLink(source.googleCalendar, { calendarId }),
     userTimeZone: String(source.userTimeZone || userTimeZone || "").trim(),
+    status: typeof source.status === "string" ? source.status : "open",
+    history: Array.isArray(source.history) ? source.history : [],
+    statusMirrorLifecycleType: typeof source.statusMirrorLifecycleType === "string" ? source.statusMirrorLifecycleType : "",
+    statusMirrorVersion: Number.isFinite(Number(source.statusMirrorVersion)) ? Number(source.statusMirrorVersion) : 0,
     scheduleFingerprint: typeof source.scheduleFingerprint === "string"
       ? source.scheduleFingerprint
       : buildGoogleCalendarTaskScheduleFingerprint(source)
@@ -336,8 +368,10 @@ function buildGoogleCalendarEventDescription(task) {
   if (task.details) {
     parts.push(task.details.trim());
   }
+  const statusLine = buildGoogleCalendarStatusDescription(task);
   const footer = [
     "Created by Lifetree.",
+    statusLine,
     `Lifetree task ID: ${task.taskId}`,
     task.ownerWidgetType ? `Lifetree widget: ${humanizeWidgetLabel(task.ownerWidgetType)}` : ""
   ].filter(Boolean).join("\n");
@@ -359,6 +393,7 @@ function humanizeWidgetLabel(widgetType) {
 }
 
 function buildGoogleCalendarExtendedProperties(task) {
+  const statusState = getGoogleCalendarTaskStatusMirrorState(task);
   return {
     lifetreeTaskId: task.taskId,
     lifetreeTaskKind: task.recurrence.type === "none" ? "one-off" : "recurring-master",
@@ -370,8 +405,109 @@ function buildGoogleCalendarExtendedProperties(task) {
     lifetreeLateGraceMinutes: String(task.lateGraceMinutes || 0),
     lifetreeTimeZoneMode: resolveGoogleCalendarTaskTimeZoneMode(task),
     lifetreeEventTimeZone: String(task.timeZone || ""),
+    lifetreeStatus: statusState.status,
+    lifetreeStatusAt: statusState.changedAt > 0 ? String(statusState.changedAt) : "",
+    lifetreeLifecycleType: statusState.lifecycleType,
     lifetreeSchemaVersion: String(GOOGLE_CALENDAR_TASK_SCHEMA_VERSION)
   };
+}
+
+function buildGoogleCalendarStatusDescription(task) {
+  const statusState = getGoogleCalendarTaskStatusMirrorState(task);
+  const displayTimeZone = resolveGoogleCalendarTaskTimeZone(task, task?.userTimeZone || "");
+  if (statusState.lifecycleType === "completed") {
+    return `Lifetree status: completed ${formatGoogleCalendarStatusTimestamp(statusState.changedAt, displayTimeZone)}`;
+  }
+  if (statusState.lifecycleType === "skipped") {
+    return `Lifetree status: skipped ${formatGoogleCalendarStatusTimestamp(statusState.changedAt, displayTimeZone)}`;
+  }
+  if (statusState.lifecycleType === "reopened") {
+    return `Lifetree status: open (restored ${formatGoogleCalendarStatusTimestamp(statusState.changedAt, displayTimeZone)})`;
+  }
+  return "";
+}
+
+function getGoogleCalendarTaskStatusMirrorState(task) {
+  const explicitLifecycleType = typeof task?.statusMirrorLifecycleType === "string" ? task.statusMirrorLifecycleType : "";
+  const explicitVersion = Number.isFinite(Number(task?.statusMirrorVersion)) ? Number(task.statusMirrorVersion) : 0;
+  if (explicitLifecycleType === "completed" || explicitLifecycleType === "skipped" || explicitLifecycleType === "reopened") {
+    return {
+      status: explicitLifecycleType === "completed"
+        ? "completed"
+        : explicitLifecycleType === "skipped"
+          ? "skipped"
+          : "open",
+      lifecycleType: explicitLifecycleType,
+      changedAt: explicitVersion
+    };
+  }
+  const latestLifecycle = getLatestGoogleCalendarLifecycleEntry(task);
+  if (!latestLifecycle) {
+    return {
+      status: "open",
+      lifecycleType: "",
+      changedAt: 0
+    };
+  }
+  if (latestLifecycle.type === "completed") {
+    return {
+      status: "completed",
+      lifecycleType: "completed",
+      changedAt: latestLifecycle.at || 0
+    };
+  }
+  if (latestLifecycle.type === "skipped") {
+    return {
+      status: "skipped",
+      lifecycleType: "skipped",
+      changedAt: latestLifecycle.at || 0
+    };
+  }
+  return {
+    status: "open",
+    lifecycleType: "reopened",
+    changedAt: latestLifecycle.at || 0
+  };
+}
+
+function getGoogleCalendarTaskStatusMirrorVersion(task) {
+  return getGoogleCalendarTaskStatusMirrorState(task).changedAt || 0;
+}
+
+function getLatestGoogleCalendarLifecycleEntry(task) {
+  const history = Array.isArray(task?.history) ? task.history : [];
+  let latest = null;
+  for (const item of history) {
+    if (!item || (item.type !== "completed" && item.type !== "skipped" && item.type !== "reopened")) {
+      continue;
+    }
+    if (!latest || (item.at || 0) > (latest.at || 0)) {
+      latest = item;
+    }
+  }
+  return latest;
+}
+
+function formatGoogleCalendarStatusTimestamp(value, timeZone = "") {
+  const at = Number(value);
+  if (!Number.isFinite(at) || at <= 0) {
+    return "";
+  }
+  const date = new Date(at);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  const month = date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    ...(timeZone ? { timeZone } : {})
+  });
+  const time = date.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    ...(timeZone ? { timeZone } : {})
+  });
+  return `${month}, ${time}`;
 }
 
 function buildGoogleCalendarEventReminders(task) {

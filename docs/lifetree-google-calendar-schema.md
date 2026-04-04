@@ -134,6 +134,9 @@ Use `extendedProperties.private` for machine-readable Lifetree metadata:
   "lifetreeImportance": "medium",
   "lifetreeLength": "medium",
   "lifetreeLateGraceMinutes": "15",
+  "lifetreeStatus": "open|completed|skipped",
+  "lifetreeStatusAt": "1712268720000",
+  "lifetreeLifecycleType": "completed|skipped|reopened|",
   "lifetreeSchemaVersion": "1"
 }
 ```
@@ -143,6 +146,7 @@ Rules:
 - keep values string-serializable
 - only store data needed to reconstruct schedule-linked behavior
 - do not store full history, points, or large widget payloads here
+- mirror only the latest lifecycle state, not the full audit history
 
 ## Event description convention
 
