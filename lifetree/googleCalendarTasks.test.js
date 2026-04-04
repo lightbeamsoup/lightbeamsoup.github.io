@@ -5,7 +5,8 @@ import {
   buildGoogleCalendarEventPayload,
   buildGoogleCalendarScheduleSyncRequest,
   buildGoogleCalendarTaskScheduleFingerprint,
-  normalizeGoogleCalendarTaskLink
+  normalizeGoogleCalendarTaskLink,
+  normalizeGoogleCalendarSyncTask
 } from "./modules/googleCalendarTasks.js";
 
 test("schedule sync request includes eligible linked tasks and marks whether they need a push", () => {
@@ -148,6 +149,28 @@ test("schedule sync request carries pending Google Calendar deletions", () => {
       kind: "task"
     }
   ]);
+});
+
+test("google calendar sync task normalization preserves push and remote-check flags", () => {
+  const normalized = normalizeGoogleCalendarSyncTask({
+    taskId: "energy-checkin",
+    name: "Energy check-in",
+    dueDate: "2026-04-05",
+    startDate: "2026-04-05",
+    timeOfDay: "07:00",
+    recurrence: { type: "daily", interval: 1, weekday: 0, day: 1, ordinal: "first", endDate: "", count: null, forever: true },
+    reminders: { enabled: true, dueSoonMinutes: 30, overdueMinutes: 15 },
+    needsRemoteCheck: true,
+    needsPush: true,
+    needsStatusPush: false
+  }, {
+    calendarId: "lifetree-cal",
+    calendarTimeZone: "America/Los_Angeles"
+  });
+
+  assert.equal(normalized.needsRemoteCheck, true);
+  assert.equal(normalized.needsPush, true);
+  assert.equal(normalized.needsStatusPush, false);
 });
 
 test("event payload builds recurrence, reminders, and metadata for recurring tasks", () => {

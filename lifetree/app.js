@@ -404,6 +404,7 @@ const developerTreeSkin = document.getElementById("developerTreeSkin");
 const grantTreeSkinButton = document.getElementById("grantTreeSkin");
 const removeTreeSkinButton = document.getElementById("removeTreeSkin");
 const copyWidgetDiagnosticsButton = document.getElementById("copyWidgetDiagnostics");
+const copyGoogleCalendarDiagnosticsButton = document.getElementById("copyGoogleCalendarDiagnostics");
 const copyNotificationDiagnosticsButton = document.getElementById("copyNotificationDiagnostics");
 const downloadLocalDataButton = document.getElementById("downloadLocalData");
 const downloadDriveDataButton = document.getElementById("downloadDriveData");
@@ -1065,6 +1066,7 @@ notificationSyncController = createNotificationSyncController({
     saveDriveButton,
     bootstrapGoogleCalendarButton,
     syncGoogleCalendarButton,
+    copyGoogleCalendarDiagnosticsButton,
     clearDriveDataButton,
     clearWidgetDriveDataButton,
     downloadDriveDataButton,
@@ -1135,6 +1137,7 @@ const {
   clearRemoteStoreState,
   closeNotifications,
   copyNotificationDiagnostics,
+  copyGoogleCalendarDiagnostics,
   getAutosavePermission,
   getCurrentStoreFingerprint,
   getCurrentUserFingerprint,
@@ -1367,6 +1370,7 @@ grantTreeSkinButton.addEventListener("click", buySelectedTreeSkin);
 removeTreeSkinButton.addEventListener("click", removeSelectedTreeSkin);
 resetFruitGrowthButton.addEventListener("click", resetDeveloperFruitGrowth);
 copyWidgetDiagnosticsButton.addEventListener("click", copyWidgetDiagnostics);
+copyGoogleCalendarDiagnosticsButton.addEventListener("click", copyGoogleCalendarDiagnostics);
 copyNotificationDiagnosticsButton.addEventListener("click", copyNotificationDiagnostics);
 downloadLocalDataButton.addEventListener("click", downloadLocalBackup);
 downloadDriveDataButton.addEventListener("click", downloadDriveData);

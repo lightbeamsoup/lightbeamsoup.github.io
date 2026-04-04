@@ -91,6 +91,7 @@ export function createNotificationSyncController({
     saveDriveButton,
     bootstrapGoogleCalendarButton,
     syncGoogleCalendarButton,
+    copyGoogleCalendarDiagnosticsButton,
     clearDriveDataButton,
     clearWidgetDriveDataButton,
     downloadDriveDataButton,
@@ -1310,6 +1311,46 @@ export function createNotificationSyncController({
     }
   }
 
+  async function copyGoogleCalendarDiagnostics() {
+    const googleCalendar = normalizeIntegrations(getStore().integrations).googleCalendar;
+    if (!googleCalendar.calendarId) {
+      setSyncStatus("Set up the Lifetree calendar before copying calendar diagnostics.", "error");
+      return;
+    }
+
+    const currentUserTimeZone = typeof Intl !== "undefined"
+      ? Intl.DateTimeFormat().resolvedOptions().timeZone || ""
+      : "";
+    const diagnosticsRequest = buildGoogleCalendarScheduleSyncRequest(getStore(), googleCalendar, {
+      userTimeZone: currentUserTimeZone
+    });
+
+    try {
+      const response = await fetch(`${apiBase}/api/google-calendar/diagnostics`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        credentials: fetchCredentials,
+        body: JSON.stringify(diagnosticsRequest)
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.error || "Calendar diagnostics failed");
+      }
+      const diagnostics = `${JSON.stringify(payload, null, 2)}\n`;
+      try {
+        await navigator.clipboard.writeText(diagnostics);
+        setSyncStatus("Copied Google Calendar diagnostics. Paste that output here and I can inspect missing or duplicate recurring check-ins.", "info");
+      } catch {
+        setSyncStatus("Clipboard access failed. Open DevTools and copy the Google Calendar diagnostics from the console instead.", "error");
+        console.log(diagnostics);
+      }
+    } catch (error) {
+      setSyncStatus(`Calendar diagnostics failed: ${error.message}`, "error");
+    }
+  }
+
   function setDriveSaveInFlight(inFlight, mode = "") {
     driveSaveState.inFlight = Boolean(inFlight);
     driveSaveState.mode = driveSaveState.inFlight ? mode : "";
@@ -1338,6 +1379,9 @@ export function createNotificationSyncController({
     const googleCalendar = normalizeIntegrations(getStore().integrations).googleCalendar;
     bootstrapGoogleCalendarButton.disabled = !authState.authenticated || saveInFlight;
     syncGoogleCalendarButton.disabled = !authState.authenticated || saveInFlight || !googleCalendar.calendarId;
+    if (copyGoogleCalendarDiagnosticsButton) {
+      copyGoogleCalendarDiagnosticsButton.disabled = !authState.authenticated || !googleCalendar.calendarId;
+    }
     bootstrapGoogleCalendarButton.textContent = saveInFlight
       ? "Waiting…"
       : (googleCalendar.calendarId ? "Check Lifetree calendar" : "Setup Lifetree calendar");
@@ -1488,6 +1532,7 @@ export function createNotificationSyncController({
     checkForRemoteDrift,
     clearRemoteStoreState,
     closeNotifications,
+    copyGoogleCalendarDiagnostics,
     copyNotificationDiagnostics,
     getAutosavePermission,
     getCurrentStoreFingerprint,

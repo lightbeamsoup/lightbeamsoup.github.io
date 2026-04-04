@@ -187,6 +187,9 @@ export function normalizeGoogleCalendarSyncTask(value, { calendarId = "", calend
   const recurrence = normalizeExportRecurrence(source.recurrence);
   const widgetTaskMeta = normalizeExportWidgetTaskMeta(source.widgetTaskMeta);
   const normalized = {
+    needsRemoteCheck: source.needsRemoteCheck === true,
+    needsPush: source.needsPush === true,
+    needsStatusPush: source.needsStatusPush === true,
     taskId: typeof source.taskId === "string" ? source.taskId : "",
     name: typeof source.name === "string" ? source.name.trim() : "",
     details: typeof source.details === "string" ? source.details : "",

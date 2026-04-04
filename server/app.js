@@ -459,6 +459,132 @@ app.post("/api/google-calendar/sync-schedule", async (req, res) => {
   }
 });
 
+app.post("/api/google-calendar/diagnostics", async (req, res) => {
+  try {
+    const user = requireUser(req);
+    const accessToken = await refreshAccessToken(user);
+    const requestedCalendarId = sanitizeTravelText(req.body?.calendarId, 256);
+    const requestedSummary = sanitizeTravelText(req.body?.calendarSummary, 80) || LIFETREE_GOOGLE_CALENDAR_SUMMARY;
+    const requestedTimeZone = sanitizeTravelText(req.body?.calendarTimeZone, 80);
+    const userTimeZone = sanitizeTravelText(req.body?.userTimeZone, 80);
+    const calendar = requestedCalendarId
+      ? {
+          id: requestedCalendarId,
+          summary: requestedSummary,
+          timeZone: requestedTimeZone
+        }
+      : await ensureLifetreeCalendar(accessToken, {
+          summary: requestedSummary,
+          timeZone: requestedTimeZone
+        });
+    const calendarId = calendar.id || "";
+    const calendarTimeZone = typeof calendar.timeZone === "string" ? calendar.timeZone : requestedTimeZone;
+    const tasks = Array.isArray(req.body?.tasks)
+      ? req.body.tasks
+          .map((task) => normalizeGoogleCalendarSyncTask(task, {
+            calendarId,
+            calendarTimeZone,
+            userTimeZone
+          }))
+          .filter((task) => task.taskId && task.dueDate)
+          .slice(0, 500)
+      : [];
+    const pendingDeletions = normalizeGoogleCalendarDeletionRequests(req.body?.pendingDeletions, calendarId);
+
+    const taskDiagnostics = [];
+    let linkedTaskCount = 0;
+    let recurringTaskCount = 0;
+    let missingLinkCount = 0;
+    let linkedEventMissingCount = 0;
+    let relinkCandidateCount = 0;
+    let duplicateTaskCount = 0;
+    let duplicateEventCount = 0;
+
+    for (const task of tasks) {
+      const linkedEventId = task.googleCalendar.eventId || "";
+      const resolved = await resolveGoogleCalendarTaskEvent(accessToken, calendarId, task, linkedEventId, {
+        deleteDuplicates: false
+      });
+      const canonicalEvent = resolved.canonicalEvent;
+      const isRecurring = String(task.recurrence?.type || "none") !== "none";
+      const relinkCandidate = Boolean(canonicalEvent && canonicalEvent.id !== linkedEventId);
+      const linkedEventExists = Boolean(!linkedEventId || canonicalEvent?.id === linkedEventId);
+      const duplicateEventIds = Array.isArray(resolved.duplicateEventIds) ? resolved.duplicateEventIds : [];
+      if (linkedEventId) {
+        linkedTaskCount += 1;
+      } else {
+        missingLinkCount += 1;
+      }
+      if (isRecurring) {
+        recurringTaskCount += 1;
+      }
+      if (resolved.linkedEventMissing) {
+        linkedEventMissingCount += 1;
+      }
+      if (relinkCandidate) {
+        relinkCandidateCount += 1;
+      }
+      if (duplicateEventIds.length > 0) {
+        duplicateTaskCount += 1;
+        duplicateEventCount += duplicateEventIds.length;
+      }
+
+      taskDiagnostics.push({
+        taskId: task.taskId,
+        name: task.name,
+        ownerWidgetType: task.ownerWidgetType || "",
+        widgetTaskKind: task.widgetTaskKind || "",
+        recurrenceType: String(task.recurrence?.type || "none"),
+        dueDate: task.dueDate,
+        timeOfDay: task.timeOfDay,
+        status: task.status,
+        linkedEventId,
+        linkedEventExists,
+        linkedEventMissing: resolved.linkedEventMissing,
+        matchingEventCount: Array.isArray(resolved.matchingEvents) ? resolved.matchingEvents.length : 0,
+        canonicalEventId: canonicalEvent?.id || "",
+        relinkCandidate,
+        duplicateEventIds,
+        needsPush: task.needsPush === true,
+        needsStatusPush: task.needsStatusPush === true,
+        scheduleFingerprint: task.scheduleFingerprint,
+        statusMirrorVersion: task.statusMirrorVersion || 0,
+        googleEvents: (Array.isArray(resolved.matchingEvents) ? resolved.matchingEvents : []).map((event) => ({
+          id: typeof event?.id === "string" ? event.id : "",
+          updated: typeof event?.updated === "string" ? event.updated : "",
+          status: typeof event?.status === "string" ? event.status : "",
+          recurringEventId: typeof event?.recurringEventId === "string" ? event.recurringEventId : "",
+          summary: typeof event?.summary === "string" ? event.summary : "",
+          start: event?.start?.dateTime || event?.start?.date || "",
+          htmlLink: typeof event?.htmlLink === "string" ? event.htmlLink : ""
+        }))
+      });
+    }
+
+    res.json({
+      ok: true,
+      calendarId,
+      calendarSummary: calendar.summary || requestedSummary || LIFETREE_GOOGLE_CALENDAR_SUMMARY,
+      calendarTimeZone,
+      userTimeZone,
+      pendingDeletionCount: pendingDeletions.length,
+      totals: {
+        taskCount: tasks.length,
+        linkedTaskCount,
+        recurringTaskCount,
+        missingLinkCount,
+        linkedEventMissingCount,
+        relinkCandidateCount,
+        duplicateTaskCount,
+        duplicateEventCount
+      },
+      tasks: taskDiagnostics
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get("/api/lifetree/load", async (req, res) => {
   try {
     const user = requireUser(req);
@@ -1392,7 +1518,7 @@ function chooseCanonicalGoogleCalendarEvent(events, task, linkedEventId = "") {
   return preferred[0] || null;
 }
 
-async function resolveGoogleCalendarTaskEvent(accessToken, calendarId, task, linkedEventId = "") {
+async function resolveGoogleCalendarTaskEvent(accessToken, calendarId, task, linkedEventId = "", { deleteDuplicates = true } = {}) {
   const recurrenceType = String(task?.recurrence?.type || "none");
   const shouldListByTaskId = !linkedEventId || recurrenceType !== "none";
   const events = [];
@@ -1418,15 +1544,19 @@ async function resolveGoogleCalendarTaskEvent(accessToken, calendarId, task, lin
     ? events.filter((event) => event?.id && event.id !== canonicalEvent.id)
     : [];
   const duplicateDeletedEventIds = [];
-  for (const duplicate of duplicateEvents) {
-    const outcome = await deleteGoogleCalendarEvent(accessToken, calendarId, duplicate.id);
-    if (outcome.deleted || outcome.missing) {
-      duplicateDeletedEventIds.push(duplicate.id);
+  if (deleteDuplicates) {
+    for (const duplicate of duplicateEvents) {
+      const outcome = await deleteGoogleCalendarEvent(accessToken, calendarId, duplicate.id);
+      if (outcome.deleted || outcome.missing) {
+        duplicateDeletedEventIds.push(duplicate.id);
+      }
     }
   }
 
   return {
     canonicalEvent,
+    matchingEvents: events,
+    duplicateEventIds: duplicateEvents.map((event) => event.id).filter(Boolean),
     duplicateDeletedEventIds,
     linkedEventMissing
   };
