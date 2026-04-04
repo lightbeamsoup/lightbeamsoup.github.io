@@ -103,6 +103,16 @@ export function createTaskComposerBindings(config = {}) {
       return { type: "none" };
     }
 
+    if (value.type === "recurring-window") {
+      return {
+        type: value.type,
+        period: value.period === "monthly" ? "monthly" : "weekly",
+        cutoffDate: /^\d{4}-\d{2}-\d{2}$/.test(String(value.cutoffDate || "")) ? String(value.cutoffDate) : "",
+        cutoffTime: /^\d{2}:\d{2}$/.test(String(value.cutoffTime || "")) ? String(value.cutoffTime) : "",
+        cutoffReason: value.cutoffReason === "next-instance" ? "next-instance" : "period-end"
+      };
+    }
+
     if (value.type === "after-due-minutes") {
       return {
         type: value.type,

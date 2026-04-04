@@ -504,6 +504,18 @@ export function shouldAutoSkipTask(task, now = new Date()) {
     return Boolean(dueAt && now.getTime() >= dueAt.getTime() + Math.max(graceMinutes, 0) * 60_000);
   }
 
+  if (skipType === "recurring-window") {
+    const cutoffDate = String(task.skipRule?.cutoffDate || "");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(cutoffDate)) {
+      return false;
+    }
+    const cutoffTime = String(task.skipRule?.cutoffTime || "");
+    const cutoff = cutoffTime
+      ? buildTaskDateTime({ ...task, dueDate: cutoffDate, startDate: cutoffDate, timeOfDay: cutoffTime }, cutoffTime)
+      : buildTaskDayEndDateTime({ ...task, dueDate: cutoffDate, startDate: cutoffDate });
+    return Boolean(cutoff && now.getTime() >= cutoff.getTime());
+  }
+
   return false;
 }
 

@@ -701,6 +701,82 @@ test("end-of-day auto-skip ignores earlier visible due times", () => {
   assert.equal(shouldAutoSkipTask(task, new Date("2026-03-22T00:01:00")), true);
 });
 
+test("weekly recurring window auto-skip waits until the next instance", () => {
+  const task = {
+    id: "weekly-1",
+    status: "open",
+    dueDate: "2026-03-30",
+    timeOfDay: "09:00",
+    skipRule: {
+      type: "recurring-window",
+      period: "weekly",
+      cutoffDate: "2026-04-02",
+      cutoffTime: "18:30",
+      cutoffReason: "next-instance"
+    }
+  };
+
+  assert.equal(shouldAutoSkipTask(task, new Date("2026-04-02T18:29:00")), false);
+  assert.equal(shouldAutoSkipTask(task, new Date("2026-04-02T18:30:00")), true);
+});
+
+test("weekly recurring window auto-skip waits until the end of the week without a later instance", () => {
+  const task = {
+    id: "weekly-last",
+    status: "open",
+    dueDate: "2026-03-30",
+    timeOfDay: "09:00",
+    skipRule: {
+      type: "recurring-window",
+      period: "weekly",
+      cutoffDate: "2026-04-04",
+      cutoffTime: "",
+      cutoffReason: "period-end"
+    }
+  };
+
+  assert.equal(shouldAutoSkipTask(task, new Date("2026-04-04T23:59:59")), false);
+  assert.equal(shouldAutoSkipTask(task, new Date("2026-04-05T00:00:00")), true);
+});
+
+test("monthly recurring window auto-skip waits until the next instance", () => {
+  const task = {
+    id: "monthly-1",
+    status: "open",
+    dueDate: "2026-03-10",
+    timeOfDay: "09:00",
+    skipRule: {
+      type: "recurring-window",
+      period: "monthly",
+      cutoffDate: "2026-03-24",
+      cutoffTime: "10:15",
+      cutoffReason: "next-instance"
+    }
+  };
+
+  assert.equal(shouldAutoSkipTask(task, new Date("2026-03-24T10:14:00")), false);
+  assert.equal(shouldAutoSkipTask(task, new Date("2026-03-24T10:15:00")), true);
+});
+
+test("monthly recurring window auto-skip waits until the end of the month without a later instance", () => {
+  const task = {
+    id: "monthly-last",
+    status: "open",
+    dueDate: "2026-03-10",
+    timeOfDay: "09:00",
+    skipRule: {
+      type: "recurring-window",
+      period: "monthly",
+      cutoffDate: "2026-03-31",
+      cutoffTime: "",
+      cutoffReason: "period-end"
+    }
+  };
+
+  assert.equal(shouldAutoSkipTask(task, new Date("2026-03-31T23:59:59")), false);
+  assert.equal(shouldAutoSkipTask(task, new Date("2026-04-01T00:00:00")), true);
+});
+
 test("energy completion only targets the active reminder window", () => {
   const tasks = [
     {

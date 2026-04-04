@@ -17,6 +17,7 @@ import {
 } from "./logic.js";
 import {
   buildCanopyColumnsData,
+  getCanopyRecurringGroupKey,
   renderCanopyColumns,
   renderCanopyDetailContent
 } from "./modules/canopy.js";
@@ -3951,7 +3952,108 @@ function resolveGeneratedSkipRule(existingSkipRule, templateSkipRule) {
   if (normalizedTemplate?.type === "widget-lockout") {
     return normalizedTemplate;
   }
+  const normalizedExisting = normalizeSkipRule(existingSkipRule);
+  if (normalizedExisting?.type === "recurring-window") {
+    return normalizedTemplate;
+  }
   return normalizeSkipRule(existingSkipRule || templateSkipRule);
+}
+
+function endOfWeekDateString(value) {
+  const date = new Date(`${value}T12:00:00`);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  date.setDate(date.getDate() + (6 - date.getDay()));
+  return toDateString(date);
+}
+
+function endOfMonthDateString(value) {
+  const date = new Date(`${value}T12:00:00`);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  date.setMonth(date.getMonth() + 1, 0);
+  return toDateString(date);
+}
+
+function buildRecurringWindowSkipRule(task, template, nextTask = null) {
+  const groupKey = getCanopyRecurringGroupKey(template || task);
+  if (groupKey !== "weekly" && groupKey !== "monthly") {
+    return normalizeSkipRule(template?.skipRule || task?.skipRule);
+  }
+
+  const scheduledDate = task.dueDate || task.startDate || "";
+  if (!scheduledDate) {
+    return normalizeSkipRule(template?.skipRule || task?.skipRule);
+  }
+
+  const periodEndDate = groupKey === "weekly"
+    ? endOfWeekDateString(scheduledDate)
+    : endOfMonthDateString(scheduledDate);
+  const nextDate = nextTask?.dueDate || nextTask?.startDate || "";
+  const nextTime = nextTask?.timeOfDay || "00:00";
+  const useNextInstanceCutoff = nextDate && (
+    nextDate < periodEndDate
+    || (nextDate === periodEndDate && nextTime < "23:59")
+  );
+
+  if (useNextInstanceCutoff) {
+    return {
+      type: "recurring-window",
+      period: groupKey,
+      cutoffDate: nextDate,
+      cutoffTime: nextTime,
+      cutoffReason: "next-instance"
+    };
+  }
+
+  return {
+    type: "recurring-window",
+    period: groupKey,
+    cutoffDate: periodEndDate,
+    cutoffTime: "",
+    cutoffReason: "period-end"
+  };
+}
+
+function findNextRecurringSeriesTask(task, tasks) {
+  const seriesTasks = task.linkedSeries?.groupId
+    ? tasks.filter((candidate) => (
+      !candidate.archived
+      && candidate.id !== task.id
+      && candidate.linkedSeries?.groupId === task.linkedSeries.groupId
+    ))
+    : tasks.filter((candidate) => (
+      !candidate.archived
+      && candidate.id !== task.id
+      && candidate.templateId
+      && candidate.templateId === task.templateId
+    ));
+
+  return seriesTasks
+    .filter((candidate) => compareTaskSchedule(candidate, task) > 0)
+    .sort(compareTaskSchedule)[0] || null;
+}
+
+function syncRecurringWindowSkipRules() {
+  const tasksById = new Map(store.tasks.map((task) => [task.id, task]));
+
+  for (const task of store.tasks) {
+    if (task.archived || !task.templateId) {
+      continue;
+    }
+
+    const template = tasksById.get(task.templateId);
+    const templateSkipRule = normalizeSkipRule(template?.skipRule);
+    if (templateSkipRule?.type === "widget-lockout") {
+      task.skipRule = templateSkipRule;
+      continue;
+    }
+
+    const nextTask = findNextRecurringSeriesTask(task, store.tasks);
+    task.skipRule = buildRecurringWindowSkipRule(task, template, nextTask);
+  }
 }
 
 function buildGeneratedInstance(template, occurrenceIndex, startDate, dueDate, existingTask = null) {
@@ -4006,6 +4108,7 @@ function reconcileRecurringSeries() {
   }
   syncWidgetOwnedTasks();
   syncLinkedSeriesGroups();
+  syncRecurringWindowSkipRules();
   trimTasks();
 }
 
@@ -4185,7 +4288,6 @@ function syncLinkedSeriesGroup(groupId) {
     return;
   }
 
-  const isWeeklyWindow = groupedTasks[0]?.linkedSeries?.kind === LINKED_SERIES_KIND_WEEKLY;
   const slotCount = groupedTasks.reduce((max, task) => Math.max(max, task.linkedSeries?.slotCount || 1), 1);
   let previous = null;
   for (const task of groupedTasks) {
@@ -4193,9 +4295,6 @@ function syncLinkedSeriesGroup(groupId) {
       ...task.linkedSeries,
       slotCount
     };
-    if (isWeeklyWindow && task.skipRule?.type !== "widget-lockout") {
-      task.skipRule = { type: "end-of-day" };
-    }
     task.sequenceDependencyId = previous ? previous.id : "";
     previous = task;
   }
