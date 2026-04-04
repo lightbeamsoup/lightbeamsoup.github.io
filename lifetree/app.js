@@ -750,6 +750,8 @@ const canopyController = createCanopyController({
   renderPriorityIndicator,
   getPendingActionForTask: (...args) => widgetController?.getPendingActionForTask(...args) || null,
   getPendingActionByKey: (...args) => widgetController?.getPendingActionByKey(...args) || null,
+  isShellQuickCompleteEligible,
+  stageShellQuickCompleteTask,
   markTaskOpen: (...args) => taskHistoryController?.markTaskOpen(...args),
   markTaskCompleted: (...args) => taskHistoryController?.markTaskCompleted(...args),
   markTaskSkipped: (...args) => taskHistoryController?.markTaskSkipped(...args),
@@ -3073,6 +3075,84 @@ function isBlocked(task) {
     }
     return dependency.status !== "done";
   });
+}
+
+function findActiveWidgetForTask(task) {
+  if (!task?.ownerWidgetType) {
+    return null;
+  }
+
+  if (task.ownerWidgetId) {
+    const directMatch = store.widgets.find((widget) => widget.id === task.ownerWidgetId && widget.type === task.ownerWidgetType);
+    if (directMatch) {
+      return directMatch;
+    }
+  }
+
+  return store.widgets.find((widget) => widget.type === task.ownerWidgetType) || null;
+}
+
+function isShellQuickCompleteEligible(task) {
+  if (!task || task.archived) {
+    return false;
+  }
+
+  if (!task.ownerWidgetType) {
+    return true;
+  }
+
+  const definition = getWidgetDefinition(task.ownerWidgetType);
+  const activeWidget = findActiveWidgetForTask(task);
+  if (!definition?.canShellQuickComplete || !activeWidget) {
+    return false;
+  }
+
+  return Boolean(definition.canShellQuickComplete({
+    task,
+    widget: activeWidget,
+    tasks: store.tasks
+  }));
+}
+
+function stageShellQuickCompleteTask(task) {
+  if (!task?.ownerWidgetType) {
+    return false;
+  }
+
+  const definition = getWidgetDefinition(task.ownerWidgetType);
+  const activeWidget = findActiveWidgetForTask(task);
+  if (!definition?.stageShellQuickComplete || !activeWidget) {
+    return false;
+  }
+
+  return Boolean(definition.stageShellQuickComplete({
+    task,
+    widget: activeWidget,
+    tasks: store.tasks,
+    helpers: {
+      getStore: () => store,
+      createId,
+      applyAutoSkipRules,
+      completeNextTaskFromWidget,
+      completeWidgetTaskById,
+      reopenWidgetTaskById,
+      skipWidgetTaskById,
+      openWidgetDetail,
+      stageWidgetAction,
+      getPendingActionForWidget,
+      getPendingActionForTask,
+      undoPendingAction,
+      reconcileRecurringSeries,
+      persistStore,
+      renderAll,
+      setSyncStatus,
+      todayString,
+      resolveCategorySnapshot,
+      openTaskDesk: handleOpenTaskDesk,
+      regenerateSeries,
+      retireWidgetOwnedSeries
+    }
+  }));
 }
 
 function describeCompletionGate(task) {

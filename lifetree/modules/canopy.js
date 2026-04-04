@@ -462,16 +462,17 @@ function renderRecurringDetailSeriesCard(series, formatDate, escapeHtml, getPend
     return `
       <article class="canopy-group-task pending" style="--canopy-category-color: ${taskColor}">
         <div class="canopy-group-main">
-          <strong>${escapeHtml(series.displayName)}</strong>
-          <span>${escapeHtml(series.progressLabel)}</span>
+          ${renderRecurringSeriesHeading(series, escapeHtml)}
           ${renderCanopyMeta(task, escapeHtml, renderPriorityIndicator)}
           <span class="canopy-task-status">${escapeHtml(series.statusLabel)}</span>
         </div>
         <div class="canopy-task-footer">
           <span class="canopy-task-status">${escapeHtml(pendingAction.description || "Pending action")}</span>
-          <button type="button" class="canopy-task-undo" data-canopy-action="undo" data-task-id="${pendingEntry.task.id}" data-pending-key="${pendingAction.key}">
-            Undo
-          </button>
+          ${series.pendingQuickComplete ? "" : `
+            <button type="button" class="canopy-task-undo" data-canopy-action="undo" data-task-id="${pendingEntry.task.id}" data-pending-key="${pendingAction.key}">
+              Undo
+            </button>
+          `}
         </div>
       </article>
     `;
@@ -480,19 +481,17 @@ function renderRecurringDetailSeriesCard(series, formatDate, escapeHtml, getPend
   return `
     <article class="canopy-group-task${series.completedCount === series.totalCount ? " done" : ""}${series.skippedCount === series.totalCount ? " skipped" : ""}${blocked ? " blocked" : ""}${series.deadlineState ? ` deadline-${series.deadlineState}` : ""}" style="--canopy-category-color: ${taskColor}">
       <div class="canopy-group-main">
-        <strong>${escapeHtml(series.displayName)}</strong>
-        <span>${escapeHtml(series.progressLabel)}</span>
+        ${renderRecurringSeriesHeading(series, escapeHtml)}
         ${renderCanopyMeta(task, escapeHtml, renderPriorityIndicator)}
         <span class="canopy-task-status">${escapeHtml(series.statusLabel)}</span>
-        ${series.isWidgetManaged
+        ${series.isWidgetManaged && !series.shellQuickCompleteEligible
           ? `<span class="canopy-note">${escapeHtml(series.lockedNote)}</span>`
           : (blocked ? `<span class="canopy-note">${escapeHtml(series.blockedNote || "Blocked")}</span>` : "")}
       </div>
-      <div class="canopy-task-footer${series.isWidgetManaged ? " locked" : ""}">
+      <div class="canopy-task-footer${series.isWidgetManaged && !series.shellQuickCompleteEligible ? " locked" : ""}">
         <span class="canopy-task-status">${escapeHtml(series.footerLabel)}</span>
         <div class="canopy-task-actions">
-          <button
-            ${renderRecurringSeriesActions(series, escapeHtml)}
+          ${renderRecurringSeriesActions(series, escapeHtml)}
         </div>
       </div>
     </article>
@@ -681,8 +680,44 @@ function buildRecurringSeriesStatusLabel({
   return "Ready for the next completion in this period.";
 }
 
+function renderRecurringSeriesHeading(series, escapeHtml) {
+  return `
+    <div class="canopy-group-heading">
+      ${renderRecurringSeriesToggle(series, escapeHtml)}
+      <div class="canopy-group-heading-copy">
+        <strong>${escapeHtml(series.displayName)}</strong>
+        <span>${escapeHtml(series.progressLabel)}</span>
+      </div>
+    </div>
+  `;
+}
+
+function renderRecurringSeriesToggle(series, escapeHtml) {
+  const toggle = series.shellQuickToggle;
+  if (!toggle) {
+    return "";
+  }
+
+  return `
+    <button
+      type="button"
+      class="canopy-group-toggle${toggle.active ? " is-complete" : ""}${toggle.pending ? " is-pending" : ""}"
+      data-canopy-action="${escapeHtml(toggle.action)}"
+      data-task-id="${escapeHtml(toggle.taskId || "")}"
+      data-pending-key="${escapeHtml(toggle.pendingKey || "")}"
+      data-help="${escapeHtml(toggle.help || "")}"
+      aria-label="${escapeHtml(toggle.title || "Quick complete")}"
+      title="${escapeHtml(toggle.title || "Quick complete")}"
+      ${toggle.disabled ? "disabled" : ""}
+    >${escapeHtml(toggle.label || "□")}</button>
+  `;
+}
+
 function renderRecurringSeriesActions(series, escapeHtml) {
   if (series.isWidgetManaged) {
+    if (series.shellQuickCompleteEligible) {
+      return "";
+    }
     return `
       <button type="button" class="canopy-task-icon complete" title="Managed by widget" aria-label="Managed by widget" data-help="${escapeHtml(`Complete ${series.displayName} from its widget.`)}" disabled>✓</button>
       <button type="button" class="canopy-task-icon skip" title="Managed by widget" aria-label="Managed by widget" data-help="${escapeHtml(`Skip ${series.displayName} from its widget.`)}" disabled>×</button>
@@ -722,26 +757,30 @@ function renderRecurringSeriesActions(series, escapeHtml) {
         : null);
 
   return `
-    <button
-      type="button"
-      class="canopy-task-icon complete${completeAction?.active ? " is-active" : ""}"
-      data-canopy-action="${completeAction?.action || "complete-group-task"}"
-      data-task-id="${escapeHtml(completeAction?.taskId || "")}"
-      data-help="${escapeHtml(completeAction?.active ? `Mark ${series.displayName} incomplete for this period.` : `Complete the next ${series.displayName} instance.`)}"
-      aria-label="${escapeHtml(completeAction?.active ? `Mark ${series.displayName} incomplete` : `Complete ${series.displayName}`)}"
-      title="${escapeHtml(completeAction?.active ? "Mark incomplete" : "Complete")}"
-      ${!completeAction || completeAction.disabled ? "disabled" : ""}
-    >✓</button>
-    <button
-      type="button"
-      class="canopy-task-icon skip${skipAction?.active ? " is-active" : ""}"
-      data-canopy-action="${skipAction?.action || "skip-group-task"}"
-      data-task-id="${escapeHtml(skipAction?.taskId || "")}"
-      data-help="${escapeHtml(skipAction?.active ? `Mark the latest ${series.displayName} skip incomplete.` : `Skip the next ${series.displayName} instance.`)}"
-      aria-label="${escapeHtml(skipAction?.active ? `Mark ${series.displayName} incomplete` : `Skip ${series.displayName}`)}"
-      title="${escapeHtml(skipAction?.active ? "Mark incomplete" : "Skip")}"
-      ${!skipAction || skipAction.disabled ? "disabled" : ""}
-    >×</button>
+    ${series.shellQuickCompleteEligible ? "" : `
+      <button
+        type="button"
+        class="canopy-task-icon complete${completeAction?.active ? " is-active" : ""}"
+        data-canopy-action="${completeAction?.action || "complete-group-task"}"
+        data-task-id="${escapeHtml(completeAction?.taskId || "")}"
+        data-help="${escapeHtml(completeAction?.active ? `Mark ${series.displayName} incomplete for this period.` : `Complete the next ${series.displayName} instance.`)}"
+        aria-label="${escapeHtml(completeAction?.active ? `Mark ${series.displayName} incomplete` : `Complete ${series.displayName}`)}"
+        title="${escapeHtml(completeAction?.active ? "Mark incomplete" : "Complete")}"
+        ${!completeAction || completeAction.disabled ? "disabled" : ""}
+      >✓</button>
+    `}
+    ${skipAction ? `
+      <button
+        type="button"
+        class="canopy-task-icon skip${skipAction?.active ? " is-active" : ""}"
+        data-canopy-action="${skipAction?.action || "skip-group-task"}"
+        data-task-id="${escapeHtml(skipAction?.taskId || "")}"
+        data-help="${escapeHtml(skipAction?.active ? `Mark the latest ${series.displayName} skip incomplete.` : `Skip the next ${series.displayName} instance.`)}"
+        aria-label="${escapeHtml(skipAction?.active ? `Mark ${series.displayName} incomplete` : `Skip ${series.displayName}`)}"
+        title="${escapeHtml(skipAction?.active ? "Mark incomplete" : "Skip")}"
+        ${skipAction.disabled ? "disabled" : ""}
+      >×</button>
+    ` : ""}
   `;
 }
 

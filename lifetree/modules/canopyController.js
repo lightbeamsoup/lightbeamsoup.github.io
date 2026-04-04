@@ -18,6 +18,8 @@ export function createCanopyController(config = {}) {
     formatPointsLabel = (value) => String(value ?? ""),
     escapeHtml = (value) => String(value ?? ""),
     renderPriorityIndicator = () => "",
+    isShellQuickCompleteEligible = () => false,
+    stageShellQuickCompleteTask = () => false,
     getPendingActionForTask = () => null,
     getPendingActionByKey = () => null,
     markTaskOpen = () => {},
@@ -165,6 +167,34 @@ export function createCanopyController(config = {}) {
       stagePendingAction({
         key: `complete:${task.id}`,
         taskId: task.id,
+        description: `Pending completion for ${task.name}. Click undo within 3 seconds to cancel.`,
+        commit: () => {
+          const nextTask = getStore().tasks.find((item) => item.id === task.id);
+          if (!nextTask || nextTask.archived || nextTask.status !== "open" || isBlockedTask(nextTask)) {
+            return false;
+          }
+          markTaskCompleted(nextTask);
+          return { message: `Completed ${nextTask.name} from the canopy.`, tone: "info" };
+        }
+      });
+      return;
+    }
+
+    if (action === "quick-complete-group-task") {
+      if (task.status !== "open") {
+        return;
+      }
+      if (isBlockedTask(task)) {
+        setSyncStatus(describeBlockedTask(task), "error");
+        return;
+      }
+      if (stageShellQuickCompleteTask(task)) {
+        return;
+      }
+      stagePendingAction({
+        key: `complete:${task.id}`,
+        taskId: task.id,
+        shellQuickComplete: true,
         description: `Pending completion for ${task.name}. Click undo within 3 seconds to cancel.`,
         commit: () => {
           const nextTask = getStore().tasks.find((item) => item.id === task.id);
@@ -369,11 +399,11 @@ export function createCanopyController(config = {}) {
       }));
     const recurringEntries = buildRecurringCanopyEntries(store);
 
-    canopyState.columns = enrichCanopyColumnsWithRecurringBonuses(buildCanopyColumnsData({
+    canopyState.columns = annotateRecurringQuickComplete(enrichCanopyColumnsWithRecurringBonuses(buildCanopyColumnsData({
       standardCards,
       recurringEntries,
       today
-    }), today);
+    }), today));
 
     renderCanopyColumns(canopyColumns, {
       columns: canopyState.columns,
@@ -430,6 +460,86 @@ export function createCanopyController(config = {}) {
         blocked: isBlocked(task),
         blockedNote: describeCompletionGate(task)
       }));
+  }
+
+  function annotateRecurringQuickComplete(columns = []) {
+    return columns.map((column) => ({
+      ...column,
+      recurringGroups: column.recurringGroups.map((group) => ({
+        ...group,
+        seriesCards: group.seriesCards.map((series) => annotateRecurringSeriesQuickComplete(series))
+      }))
+    }));
+  }
+
+  function annotateRecurringSeriesQuickComplete(series) {
+    const nextOpenTask = series.nextOpenTaskId
+      ? getStore().tasks.find((task) => task.id === series.nextOpenTaskId) || null
+      : null;
+    const nextActionTask = series.nextActionTaskId
+      ? getStore().tasks.find((task) => task.id === series.nextActionTaskId) || null
+      : null;
+    const latestCompletedTask = series.latestCompletedTaskId
+      ? getStore().tasks.find((task) => task.id === series.latestCompletedTaskId) || null
+      : null;
+    const pendingTask = nextActionTask || nextOpenTask || latestCompletedTask || null;
+    const pendingAction = pendingTask ? getPendingActionForTask(pendingTask.id) : null;
+    const shellQuickCompleteEligible = isShellQuickCompleteEligible(nextOpenTask || latestCompletedTask || series.representativeTask);
+    const pendingQuickComplete = Boolean(shellQuickCompleteEligible && pendingAction?.shellQuickComplete);
+
+    let shellQuickToggle = null;
+    if (pendingQuickComplete) {
+      shellQuickToggle = {
+        action: "undo",
+        taskId: pendingTask?.id || "",
+        pendingKey: pendingAction.key || "",
+        active: false,
+        pending: true,
+        disabled: false,
+        label: "×",
+        title: "Undo pending completion",
+        help: `Undo the pending completion for ${series.displayName}.`
+      };
+    } else if (pendingAction) {
+      shellQuickToggle = null;
+    } else if (nextOpenTask && shellQuickCompleteEligible) {
+      shellQuickToggle = {
+        action: "quick-complete-group-task",
+        taskId: nextOpenTask.id,
+        pendingKey: "",
+        active: false,
+        pending: false,
+        disabled: !nextActionTask,
+        label: "□",
+        title: "Quick complete",
+        help: nextActionTask
+          ? `Quick-complete ${series.displayName}.`
+          : (series.blockedNote || `Complete ${series.displayName} once it unlocks.`)
+      };
+    } else if (latestCompletedTask && shellQuickCompleteEligible) {
+      shellQuickToggle = {
+        action: "reopen-group-task",
+        taskId: latestCompletedTask.id,
+        pendingKey: "",
+        active: true,
+        pending: false,
+        disabled: false,
+        label: "✓",
+        title: "Mark incomplete",
+        help: `Mark ${series.displayName} incomplete for this period.`
+      };
+    }
+
+    return {
+      ...series,
+      shellQuickCompleteEligible,
+      pendingQuickComplete,
+      shellQuickToggle,
+      lockedNote: shellQuickCompleteEligible ? "" : series.lockedNote,
+      statusLabel: shellQuickCompleteEligible && series.isWidgetManaged && series.nextOpenTaskId
+        ? "Quick complete is available here or from the widget."
+        : series.statusLabel
+    };
   }
 
   function enrichCanopyColumnsWithRecurringBonuses(columns, today = todayString()) {

@@ -254,6 +254,18 @@ body.developer-open {
   gap: 10px;
 }
 
+.canopy-group-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.canopy-group-heading-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
 .canopy-task-footer {
   display: flex;
   justify-content: space-between;
@@ -294,6 +306,13 @@ body.developer-open {
   font-size: 1.15rem;
   line-height: 1;
   padding: 0;
+}
+
+.canopy-group-toggle {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  font-size: 1rem;
 }
 
 .canopy-task-icon.complete {
@@ -571,6 +590,7 @@ body.developer-open {
 }
 
 .canopy-task-main > span,
+.canopy-group-heading-copy > span,
 .canopy-empty,
 .canopy-note {
   color: var(--muted);

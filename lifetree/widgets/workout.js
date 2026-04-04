@@ -107,6 +107,27 @@ export const workoutWidgetDefinition = {
     repairWorkoutOwnedSkipRules(widget, store);
   },
 
+  canShellQuickComplete({ task }) {
+    return task?.widgetTaskKind === "workout-session";
+  },
+
+  stageShellQuickComplete({ widget, task, helpers }) {
+    if (!widget || !task || task.status !== "open" || task.widgetTaskKind !== "workout-session") {
+      helpers.setSyncStatus("That workout task is no longer ready to complete.", "error");
+      return false;
+    }
+
+    stageWorkoutTaskLog(widget, task, {
+      durationMinutes: normalizeDurationMinutes(task.widgetTaskMeta?.durationMinutes || 30),
+      intensity: normalizeWorkoutIntensity(task.widgetTaskMeta?.intensity),
+      caloriesBurned: normalizeCaloriesBurned(task.widgetTaskMeta?.caloriesBurned ?? DEFAULT_WORKOUT_CALORIES)
+    }, helpers, {
+      shellQuickComplete: true,
+      description: `Pending quick completion for ${task.name}. Click undo within 3 seconds to cancel.`
+    });
+    return true;
+  },
+
   render({ widget, tasks, escapeHtml, formatDateTime, getPendingActionForWidget }) {
     const planCount = widget.settings.workoutPlans.length;
     const latestWorkout = widget.data.workoutEntries[widget.data.workoutEntries.length - 1] || null;
@@ -952,16 +973,7 @@ export const workoutWidgetDefinition = {
     if (action === "quick-workout-complete") {
       const taskId = actionTarget.getAttribute("data-task-id") || "";
       const task = helpers.getStore().tasks.find((entry) => entry.id === taskId);
-      if (!task || task.status !== "open" || task.widgetTaskKind !== "workout-session") {
-        helpers.setSyncStatus("That workout task is no longer ready to complete.", "error");
-        return true;
-      }
-
-      stageWorkoutTaskLog(widget, task, {
-        durationMinutes: normalizeDurationMinutes(task.widgetTaskMeta?.durationMinutes || 30),
-        intensity: normalizeWorkoutIntensity(task.widgetTaskMeta?.intensity),
-        caloriesBurned: normalizeCaloriesBurned(task.widgetTaskMeta?.caloriesBurned ?? DEFAULT_WORKOUT_CALORIES)
-      }, helpers);
+      workoutWidgetDefinition.stageShellQuickComplete({ widget, task, helpers });
       return true;
     }
 
@@ -991,7 +1003,7 @@ export const workoutWidgetDefinition = {
   }
 };
 
-function stageWorkoutTaskLog(widget, task, { durationMinutes, intensity, caloriesBurned }, helpers) {
+function stageWorkoutTaskLog(widget, task, { durationMinutes, intensity, caloriesBurned }, helpers, options = {}) {
   const taskId = task?.id || "";
   if (!taskId) {
     return;
@@ -1002,10 +1014,11 @@ function stageWorkoutTaskLog(widget, task, { durationMinutes, intensity, calorie
   const entryTime = Date.now();
   helpers.stageWidgetAction(widget, `workout-log:${taskId}`, {
     taskId,
+    shellQuickComplete: options.shellQuickComplete === true,
     durationMinutes: normalizedDuration,
     intensity: normalizedIntensity,
     caloriesBurned: normalizedCalories,
-    description: `Pending workout log for ${task.name}. Click undo within 3 seconds to cancel.`,
+    description: options.description || `Pending workout log for ${task.name}. Click undo within 3 seconds to cancel.`,
     commit: () => {
       const currentTask = helpers.getStore().tasks.find((entry) => entry.id === taskId);
       if (!currentTask || currentTask.status !== "open" || currentTask.widgetTaskKind !== "workout-session") {

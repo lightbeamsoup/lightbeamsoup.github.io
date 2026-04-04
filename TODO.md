@@ -7,8 +7,6 @@
 - Widgets: Create a Hydration widget that tracks ounces consumed and grows a plant as you water it.
 - Integrations: Add Apple Fitness integration.
 - Notifications: Move auth/session storage into a shared backend before re-enabling the dedicated Railway worker.
-- Canopy: Decide how dailies should be marked complete directly from the shell view.
-- Tasks: Add task snoozing.
 
 ### Codebase Maintenance
 
@@ -30,6 +28,10 @@
 - 2026-03-29: Make Drive merge/conflict popups clearer about overwrite versus merge behavior and show exact local/Drive timestamps.
 - 2026-03-29: Move task conflict precedence from whole-store timestamps to task-level `updatedAt` values.
 - 2026-03-29: Coordinate multiple open browser sessions/tabs before silent saves using `BroadcastChannel` remote-state notices.
+
+### Canopy
+
+- 2026-04-04: Add inline shell quick-complete toggles for daily/weekly/monthly canopy cards, including widget-controlled eligibility and the shared 3-second undo window.
 
 ### Codebase Maintenance
 
