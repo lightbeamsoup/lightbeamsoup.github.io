@@ -389,6 +389,7 @@ const developerEmail = document.getElementById("developerEmail");
 const developerWidgetType = document.getElementById("developerWidgetType");
 const developerMaxTaskPoints = document.getElementById("developerMaxTaskPoints");
 const developerMaxPointHistoryEntries = document.getElementById("developerMaxPointHistoryEntries");
+const developerVerboseDriveSync = document.getElementById("developerVerboseDriveSync");
 const developerInjectCategory = document.getElementById("developerInjectCategory");
 const developerInjectPoints = document.getElementById("developerInjectPoints");
 const developerInjectSource = document.getElementById("developerInjectSource");
@@ -1076,6 +1077,7 @@ notificationSyncController = createNotificationSyncController({
   getStore: () => store,
   persistStore,
   formatDateTime,
+  normalizeDevSettings,
   normalizeProfile,
   normalizeIntegrations,
   normalizeGoogleCalendarIntegration,
@@ -1177,6 +1179,7 @@ developerController = createDeveloperController({
     developerWidgetType,
     developerMaxTaskPoints,
     developerMaxPointHistoryEntries,
+    developerVerboseDriveSync,
     developerInjectCategory,
     developerInjectPoints,
     developerInjectSource,
@@ -1240,7 +1243,8 @@ const {
   renderDeveloperPanel,
   resetDeveloperFruitGrowth,
   updateMaxPointHistoryEntriesSetting,
-  updateMaxTaskPointsSetting
+  updateMaxTaskPointsSetting,
+  updateVerboseDriveSyncSetting
 } = developerController;
 
 updateRecurrenceVisibility();
@@ -1356,6 +1360,7 @@ clearDriveDataButton.addEventListener("click", clearDriveData);
 openDeveloperButton.addEventListener("click", openDeveloper);
 developerMaxTaskPoints.addEventListener("change", updateMaxTaskPointsSetting);
 developerMaxPointHistoryEntries.addEventListener("change", updateMaxPointHistoryEntriesSetting);
+developerVerboseDriveSync.addEventListener("change", updateVerboseDriveSyncSetting);
 injectPointsButton.addEventListener("click", injectDeveloperPoints);
 addFruitGrowthButton.addEventListener("click", () => adjustDeveloperFruitGrowth(1));
 removeFruitGrowthButton.addEventListener("click", () => adjustDeveloperFruitGrowth(-1));

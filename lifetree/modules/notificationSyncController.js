@@ -13,6 +13,7 @@ export function createNotificationSyncController({
   getStore,
   persistStore,
   formatDateTime,
+  normalizeDevSettings,
   normalizeProfile,
   normalizeIntegrations,
   normalizeGoogleCalendarIntegration,
@@ -108,6 +109,39 @@ export function createNotificationSyncController({
     inFlight: false,
     phase: ""
   };
+
+  function isVerboseDriveSyncEnabled() {
+    return normalizeDevSettings(getStore().devSettings).verboseDriveSync === true;
+  }
+
+  function buildVerboseGoogleSyncSummary({
+    lead = "",
+    appliedCount = 0,
+    changedCount = 0,
+    pulledCount = 0,
+    pushedCount = 0,
+    statusMirroredCount = 0,
+    instanceOverrideAppliedCount = 0,
+    checkedCount = 0,
+    relinkedCount = 0,
+    remoteDeletedCount = 0,
+    recreatedAfterRemoteDeleteCount = 0,
+    processedDeletionCount = 0,
+    deletedEventCount = 0,
+    duplicateDeletedCount = 0,
+    orphanDeletedCount = 0
+  }) {
+    const summarySuffix = `; ${checkedCount} already up to date; ${relinkedCount} relinked; ${remoteDeletedCount} remote deleted; ${recreatedAfterRemoteDeleteCount} recreated after remote delete`;
+    return `${lead}Google sync checked ${appliedCount} task${appliedCount === 1 ? "" : "s"} (${changedCount} changed: ${pulledCount} pulled, ${pushedCount} pushed, ${statusMirroredCount} status mirrored, ${instanceOverrideAppliedCount} instance override${instanceOverrideAppliedCount === 1 ? "" : "s"} applied${summarySuffix}) and processed ${processedDeletionCount} deletion${processedDeletionCount === 1 ? "" : "s"} (${deletedEventCount} Google event${deletedEventCount === 1 ? "" : "s"} removed, ${duplicateDeletedCount} duplicate${duplicateDeletedCount === 1 ? "" : "s"} cleaned up, ${orphanDeletedCount} orphan${orphanDeletedCount === 1 ? "" : "s"} removed)`;
+  }
+
+  function buildCompactGoogleSyncSummary({
+    appliedCount = 0,
+    nextCalendarSummary = "Lifetree",
+    mirroredToDrive = false
+  }) {
+    return `Google sync checked ${appliedCount} task${appliedCount === 1 ? "" : "s"} against ${nextCalendarSummary}. Everything was already up to date.${mirroredToDrive ? " Mirrored the current Lifetree state to Drive." : " Drive state was unchanged."}`;
+  }
 
   function isNotificationsOpen() {
     return !notificationsModal.classList.contains("hidden");
@@ -1084,15 +1118,50 @@ export function createNotificationSyncController({
       }
       renderSyncMeta();
       const changedCount = pulledCount + pushedCount + statusMirroredCount + instanceOverrideAppliedCount + remoteDeletedCount;
-      const summarySuffix = `; ${checkedCount} already up to date; ${relinkedCount} relinked; ${remoteDeletedCount} remote deleted; ${recreatedAfterRemoteDeleteCount} recreated after remote delete`;
+      const verboseSummary = buildVerboseGoogleSyncSummary({
+        lead,
+        appliedCount,
+        changedCount,
+        pulledCount,
+        pushedCount,
+        statusMirroredCount,
+        instanceOverrideAppliedCount,
+        checkedCount,
+        relinkedCount,
+        remoteDeletedCount,
+        recreatedAfterRemoteDeleteCount,
+        processedDeletionCount,
+        deletedEventCount,
+        duplicateDeletedCount,
+        orphanDeletedCount
+      });
       if (errorCount + deletionErrorCount + orphanDeletionErrorCount > 0) {
         const firstError = results.find((entry) => entry?.ok === false)?.error
           || payload.deletionResults?.find((entry) => entry?.ok === false)?.error
           || payload.orphanDeletionResults?.find((entry) => entry?.ok === false)?.error
           || "Google sync hit one or more Google errors.";
-        setSyncStatus(`${lead}Google sync checked ${appliedCount} task${appliedCount === 1 ? "" : "s"} (${changedCount} changed: ${pulledCount} pulled, ${pushedCount} pushed, ${statusMirroredCount} status mirrored, ${instanceOverrideAppliedCount} instance override${instanceOverrideAppliedCount === 1 ? "" : "s"} applied${summarySuffix}) and processed ${processedDeletionCount} deletion${processedDeletionCount === 1 ? "" : "s"} (${deletedEventCount} Google event${deletedEventCount === 1 ? "" : "s"} removed, ${duplicateDeletedCount} duplicate${duplicateDeletedCount === 1 ? "" : "s"} cleaned up, ${orphanDeletedCount} orphan${orphanDeletedCount === 1 ? "" : "s"} removed), but ${errorCount + deletionErrorCount + orphanDeletionErrorCount} failed: ${firstError}`, "error");
+        setSyncStatus(`${verboseSummary}, but ${errorCount + deletionErrorCount + orphanDeletionErrorCount} failed: ${firstError}`, "error");
       } else {
-        setSyncStatus(`${lead}Google sync checked ${appliedCount} task${appliedCount === 1 ? "" : "s"} (${changedCount} changed: ${pulledCount} pulled, ${pushedCount} pushed, ${statusMirroredCount} status mirrored, ${instanceOverrideAppliedCount} instance override${instanceOverrideAppliedCount === 1 ? "" : "s"} applied${summarySuffix}) and processed ${processedDeletionCount} deletion${processedDeletionCount === 1 ? "" : "s"} (${deletedEventCount} Google event${deletedEventCount === 1 ? "" : "s"} removed, ${duplicateDeletedCount} duplicate${duplicateDeletedCount === 1 ? "" : "s"} cleaned up, ${orphanDeletedCount} orphan${orphanDeletedCount === 1 ? "" : "s"} removed) against ${nextCalendarSummary}.${mirroredToDrive ? " Mirrored the updated Google state to Drive." : " Drive state was unchanged."}`, "success");
+        const shouldShowVerboseSummary = isVerboseDriveSyncEnabled()
+          || Boolean(lead)
+          || changedCount > 0
+          || processedDeletionCount > 0
+          || deletedEventCount > 0
+          || duplicateDeletedCount > 0
+          || orphanDeletedCount > 0
+          || relinkedCount > 0
+          || recreatedAfterRemoteDeleteCount > 0
+          || mirroredToDrive;
+        setSyncStatus(
+          shouldShowVerboseSummary
+            ? `${verboseSummary} against ${nextCalendarSummary}.${mirroredToDrive ? " Mirrored the updated Google state to Drive." : " Drive state was unchanged."}`
+            : buildCompactGoogleSyncSummary({
+                appliedCount,
+                nextCalendarSummary,
+                mirroredToDrive
+              }),
+          "success"
+        );
       }
       return {
         ok: errorCount + deletionErrorCount + orphanDeletionErrorCount === 0,

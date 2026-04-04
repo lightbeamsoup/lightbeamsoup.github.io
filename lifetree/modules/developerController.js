@@ -43,6 +43,7 @@ export function createDeveloperController(config = {}) {
     developerWidgetType = null,
     developerMaxTaskPoints = null,
     developerMaxPointHistoryEntries = null,
+    developerVerboseDriveSync = null,
     developerInjectCategory = null,
     developerInjectPoints = null,
     developerInjectSource = null,
@@ -198,6 +199,9 @@ export function createDeveloperController(config = {}) {
     if (developerMaxPointHistoryEntries) {
       developerMaxPointHistoryEntries.value = String(devSettings.maxPointHistoryEntries);
     }
+    if (developerVerboseDriveSync) {
+      developerVerboseDriveSync.checked = devSettings.verboseDriveSync === true;
+    }
     if (taskPointsInput) {
       taskPointsInput.max = String(devSettings.maxTaskPoints);
     }
@@ -253,6 +257,26 @@ export function createDeveloperController(config = {}) {
     renderDeveloperPanel();
     renderTreeDetailIfOpen();
     setSyncStatus(`Recent point history is now capped at ${nextValue} entries over the last 7 days.`, "info");
+  }
+
+  function updateVerboseDriveSyncSetting() {
+    const store = getStore();
+    const nextValue = developerVerboseDriveSync?.checked === true;
+    store.devSettings = normalizeDevSettings({
+      ...store.devSettings,
+      verboseDriveSync: nextValue
+    });
+    if (developerVerboseDriveSync) {
+      developerVerboseDriveSync.checked = store.devSettings.verboseDriveSync === true;
+    }
+    persistStore();
+    renderDeveloperPanel();
+    setSyncStatus(
+      nextValue
+        ? "Verbose Drive sync is on. Google sync always shows the full breakdown."
+        : "Verbose Drive sync is off. Quiet Google sync runs use the shorter summary.",
+      "info"
+    );
   }
 
   function injectDeveloperPoints() {
@@ -385,6 +409,7 @@ export function createDeveloperController(config = {}) {
     renderDeveloperPanel,
     resetDeveloperFruitGrowth,
     updateMaxPointHistoryEntriesSetting,
-    updateMaxTaskPointsSetting
+    updateMaxTaskPointsSetting,
+    updateVerboseDriveSyncSetting
   };
 }

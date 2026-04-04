@@ -41,9 +41,11 @@ export function normalizeDevSettings(value) {
   const maxPointHistoryEntries = Number.isFinite(pointHistoryNumeric) && pointHistoryNumeric > 0
     ? Math.round(pointHistoryNumeric)
     : DEFAULT_MAX_POINT_HISTORY_ENTRIES;
+  const verboseDriveSync = value?.verboseDriveSync === true;
   return {
     maxTaskPoints: Math.max(1, Math.min(50, maxTaskPoints)),
-    maxPointHistoryEntries: Math.max(1, Math.min(MAX_POINT_HISTORY_ENTRIES, maxPointHistoryEntries))
+    maxPointHistoryEntries: Math.max(1, Math.min(MAX_POINT_HISTORY_ENTRIES, maxPointHistoryEntries)),
+    verboseDriveSync
   };
 }
 
