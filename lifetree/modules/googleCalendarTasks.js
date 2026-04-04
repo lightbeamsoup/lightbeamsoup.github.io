@@ -240,6 +240,10 @@ export function isGoogleCalendarRecurringInstanceOverrideEvent(event) {
   return typeof event?.recurringEventId === "string" && event.recurringEventId.trim().length > 0;
 }
 
+export function isGoogleCalendarDeletedEvent(event) {
+  return String(event?.status || "").trim().toLowerCase() === "cancelled";
+}
+
 export function chooseCanonicalGoogleCalendarTaskEvent(events, task, linkedEventId = "") {
   const uniqueEvents = Array.from(new Map(
     (Array.isArray(events) ? events : [])

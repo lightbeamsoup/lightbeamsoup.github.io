@@ -29,6 +29,7 @@ import {
   buildGoogleCalendarTaskSchedulePatchFromEvent,
   findOrphanedGoogleCalendarTaskEvents,
   getGoogleCalendarEventTaskId,
+  isGoogleCalendarDeletedEvent,
   normalizeGoogleCalendarSyncTask,
   parseGoogleCalendarEventStart,
   splitGoogleCalendarTaskEvents
@@ -1550,7 +1551,8 @@ async function getGoogleCalendarEvent(accessToken, calendarId, eventId) {
   if (!response.ok) {
     throw new Error(await formatGoogleError(response, "Google Calendar event lookup failed"));
   }
-  return response.json();
+  const event = await response.json();
+  return isGoogleCalendarDeletedEvent(event) ? null : event;
 }
 
 function normalizeGoogleCalendarDeletionRequest(value, defaultCalendarId = "") {
@@ -1639,7 +1641,7 @@ async function listGoogleCalendarEventsByTaskId(accessToken, calendarId, taskId)
   }
 
   const payload = await response.json();
-  return Array.isArray(payload.items) ? payload.items : [];
+  return (Array.isArray(payload.items) ? payload.items : []).filter((event) => !isGoogleCalendarDeletedEvent(event));
 }
 
 async function listGoogleCalendarTaskTaggedEvents(accessToken, calendarId) {
@@ -1673,7 +1675,7 @@ async function listGoogleCalendarTaskTaggedEvents(accessToken, calendarId) {
     const payload = await response.json();
     const items = Array.isArray(payload.items) ? payload.items : [];
     for (const event of items) {
-      if (getGoogleCalendarEventTaskId(event)) {
+      if (!isGoogleCalendarDeletedEvent(event) && getGoogleCalendarEventTaskId(event)) {
         events.push(event);
       }
     }

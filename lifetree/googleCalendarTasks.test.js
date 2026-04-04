@@ -7,6 +7,7 @@ import {
   buildGoogleCalendarTaskScheduleFingerprint,
   chooseCanonicalGoogleCalendarTaskEvent,
   findOrphanedGoogleCalendarTaskEvents,
+  isGoogleCalendarDeletedEvent,
   isGoogleCalendarRecurringInstanceOverrideEvent,
   normalizeGoogleCalendarTaskLink,
   normalizeGoogleCalendarSyncTask,
@@ -257,6 +258,12 @@ test("recurring Google instance overrides are not treated as duplicate series ev
   const originalStart = parseGoogleCalendarEventStart(override.originalStartTime, "America/Los_Angeles");
   assert.equal(originalStart.startDate, "2026-04-05");
   assert.equal(originalStart.timeOfDay, "12:00");
+});
+
+test("cancelled Google Calendar events are treated as deleted", () => {
+  assert.equal(isGoogleCalendarDeletedEvent({ status: "cancelled" }), true);
+  assert.equal(isGoogleCalendarDeletedEvent({ status: "confirmed" }), false);
+  assert.equal(isGoogleCalendarDeletedEvent({}), false);
 });
 
 test("event payload builds recurrence, reminders, and metadata for recurring tasks", () => {
