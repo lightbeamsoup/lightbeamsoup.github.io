@@ -11,6 +11,17 @@ export function createTaskComposerBindings(config = {}) {
     normalizeWidgetTaskMeta,
     normalizeWidgetCompletion,
     normalizeLinkedSeries,
+    normalizeGoogleCalendarTaskLink = (value) => ({
+      calendarId: typeof value?.calendarId === "string" ? value.calendarId : "",
+      eventId: typeof value?.eventId === "string" ? value.eventId : "",
+      recurringEventId: typeof value?.recurringEventId === "string" ? value.recurringEventId : "",
+      source: typeof value?.source === "string" ? value.source : "lifetree",
+      linkedAt: typeof value?.linkedAt === "number" ? value.linkedAt : 0,
+      lastSeenGoogleUpdatedAt: typeof value?.lastSeenGoogleUpdatedAt === "string" ? value.lastSeenGoogleUpdatedAt : "",
+      scheduleFingerprint: typeof value?.scheduleFingerprint === "string" ? value.scheduleFingerprint : "",
+      statusMirroredAt: typeof value?.statusMirroredAt === "number" ? value.statusMirroredAt : 0,
+      schemaVersion: 1
+    }),
     deriveTaskNotBeforeAt,
     defaultImportance = "medium",
     defaultLateGraceMinutes = 15,
@@ -306,6 +317,7 @@ export function createTaskComposerBindings(config = {}) {
         ? values.widgetTaskKind
         : (typeof originalTask?.widgetTaskKind === "string" ? originalTask.widgetTaskKind : ""),
       widgetTaskMeta: normalizedWidgetTaskMeta,
+      googleCalendar: normalizeGoogleCalendarTaskLink(originalTask?.googleCalendar),
       reminders: normalizedReminders,
       linkedSeries: normalizeLinkedSeries(values?.linkedSeries || originalTask?.linkedSeries),
       sequenceDependencyId: typeof values?.sequenceDependencyId === "string"

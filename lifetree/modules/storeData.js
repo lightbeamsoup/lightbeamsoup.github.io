@@ -40,6 +40,17 @@ export function createStoreDataBindings(config = {}) {
       }
     }),
     choosePreferredIntegrations = (local, _remote) => normalizeIntegrations(local),
+    normalizeGoogleCalendarTaskLink = (value) => ({
+      calendarId: typeof value?.calendarId === "string" ? value.calendarId : "",
+      eventId: typeof value?.eventId === "string" ? value.eventId : "",
+      recurringEventId: typeof value?.recurringEventId === "string" ? value.recurringEventId : "",
+      source: typeof value?.source === "string" ? value.source : "lifetree",
+      linkedAt: typeof value?.linkedAt === "number" ? value.linkedAt : 0,
+      lastSeenGoogleUpdatedAt: typeof value?.lastSeenGoogleUpdatedAt === "string" ? value.lastSeenGoogleUpdatedAt : "",
+      scheduleFingerprint: typeof value?.scheduleFingerprint === "string" ? value.scheduleFingerprint : "",
+      statusMirroredAt: typeof value?.statusMirroredAt === "number" ? value.statusMirroredAt : 0,
+      schemaVersion: 1
+    }),
     normalizeNotifications,
     choosePreferredNotifications,
     normalizeDevSettings,
@@ -268,6 +279,7 @@ export function createStoreDataBindings(config = {}) {
       ownerTaskKey: typeof task.ownerTaskKey === "string" ? task.ownerTaskKey : "",
       widgetTaskKind: typeof task.widgetTaskKind === "string" ? task.widgetTaskKind : "",
       widgetTaskMeta: normalizedWidgetTaskMeta,
+      googleCalendar: normalizeGoogleCalendarTaskLink(task.googleCalendar),
       reminders: normalizeTaskReminders(task.reminders, {
         importance: normalizedImportance,
         lateGraceMinutes: normalizedLateGraceMinutes,
@@ -589,6 +601,7 @@ export function createStoreDataBindings(config = {}) {
       ownerTaskKey: task.ownerTaskKey || "",
       widgetTaskKind: task.widgetTaskKind || "",
       widgetTaskMeta: normalizeWidgetTaskMeta(task.widgetTaskMeta),
+      googleCalendar: normalizeGoogleCalendarTaskLink(task.googleCalendar),
       reminders: normalizeTaskReminders(task.reminders, {
         importance: task.importance,
         lateGraceMinutes: task.lateGraceMinutes,
@@ -905,6 +918,7 @@ export function createStoreDataBindings(config = {}) {
           ownerTaskKey: task.ownerTaskKey,
           widgetTaskKind: task.widgetTaskKind || "",
           widgetTaskMeta: normalizeWidgetTaskMeta(task.widgetTaskMeta),
+          googleCalendar: normalizeGoogleCalendarTaskLink(task.googleCalendar),
           linkedSeries: normalizeLinkedSeries(task.linkedSeries),
           sequenceDependencyId: task.sequenceDependencyId || "",
           widgetCompletion: {
@@ -1037,6 +1051,7 @@ export function createStoreDataBindings(config = {}) {
     normalizeCategoryColor,
     normalizeCategoryDefinitions,
     normalizeDeletionMarkers,
+    normalizeGoogleCalendarTaskLink,
     normalizeImportance,
     normalizeLinkedSeries,
     normalizeRecurringBonusSelections,

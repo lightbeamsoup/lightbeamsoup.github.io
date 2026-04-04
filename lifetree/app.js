@@ -82,6 +82,10 @@ import {
   normalizeGoogleCalendarIntegration,
   normalizeIntegrations
 } from "./modules/googleCalendar.js";
+import {
+  buildGoogleCalendarScheduleSyncRequest,
+  normalizeGoogleCalendarTaskLink
+} from "./modules/googleCalendarTasks.js";
 import { createTaskDeskController } from "./modules/taskDesk.js";
 import {
   renderPriorityIndicator as renderPriorityIndicatorShared,
@@ -379,6 +383,7 @@ const googleSignOutButton = document.getElementById("googleSignOut");
 const loadDriveButton = document.getElementById("loadDrive");
 const saveDriveButton = document.getElementById("saveDrive");
 const bootstrapGoogleCalendarButton = document.getElementById("bootstrapGoogleCalendar");
+const syncGoogleCalendarButton = document.getElementById("syncGoogleCalendarSchedule");
 const openDeveloperButton = document.getElementById("openDeveloper");
 const developerModal = document.getElementById("developerModal");
 const closeDeveloperButton = document.getElementById("closeDeveloper");
@@ -535,6 +540,7 @@ const {
   normalizeWidgetTaskMeta,
   normalizeWidgetCompletion,
   normalizeLinkedSeries: normalizeLinkedSeriesInput,
+  normalizeGoogleCalendarTaskLink,
   deriveTaskNotBeforeAt,
   defaultImportance: DEFAULT_IMPORTANCE,
   defaultLateGraceMinutes: DEFAULT_LATE_GRACE_MINUTES,
@@ -664,6 +670,7 @@ const {
   choosePreferredProfile,
   normalizeIntegrations,
   choosePreferredIntegrations,
+  normalizeGoogleCalendarTaskLink,
   normalizeNotifications,
   choosePreferredNotifications,
   normalizeDevSettings,
@@ -1057,6 +1064,7 @@ notificationSyncController = createNotificationSyncController({
     loadDriveButton,
     saveDriveButton,
     bootstrapGoogleCalendarButton,
+    syncGoogleCalendarButton,
     clearDriveDataButton,
     clearWidgetDriveDataButton,
     downloadDriveDataButton,
@@ -1075,6 +1083,8 @@ notificationSyncController = createNotificationSyncController({
   normalizeProfile,
   normalizeIntegrations,
   normalizeGoogleCalendarIntegration,
+  normalizeGoogleCalendarTaskLink,
+  buildGoogleCalendarScheduleSyncRequest,
   normalizeNotifications,
   normalizeNotificationTimezone,
   normalizeRecipientEmail,
@@ -1128,6 +1138,7 @@ const {
   getCurrentUserFingerprint,
   handleGoogleDisconnect,
   handleEnsureGoogleCalendar,
+  handleSyncGoogleCalendarSchedule,
   handleManualLoadFromDrive,
   handleManualSaveToDrive,
   handleNotificationsFormChange,
@@ -1340,6 +1351,7 @@ googleSignOutButton.addEventListener("click", handleGoogleDisconnect);
 loadDriveButton.addEventListener("click", handleManualLoadFromDrive);
 saveDriveButton.addEventListener("click", handleManualSaveToDrive);
 bootstrapGoogleCalendarButton.addEventListener("click", handleEnsureGoogleCalendar);
+syncGoogleCalendarButton.addEventListener("click", handleSyncGoogleCalendarSchedule);
 clearDriveDataButton.addEventListener("click", clearDriveData);
 openDeveloperButton.addEventListener("click", openDeveloper);
 developerMaxTaskPoints.addEventListener("change", updateMaxTaskPointsSetting);

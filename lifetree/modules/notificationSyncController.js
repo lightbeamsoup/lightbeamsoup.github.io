@@ -14,6 +14,8 @@ export function createNotificationSyncController({
   normalizeProfile,
   normalizeIntegrations,
   normalizeGoogleCalendarIntegration,
+  normalizeGoogleCalendarTaskLink,
+  buildGoogleCalendarScheduleSyncRequest,
   normalizeNotifications,
   normalizeNotificationTimezone,
   normalizeRecipientEmail,
@@ -86,6 +88,7 @@ export function createNotificationSyncController({
     loadDriveButton,
     saveDriveButton,
     bootstrapGoogleCalendarButton,
+    syncGoogleCalendarButton,
     clearDriveDataButton,
     clearWidgetDriveDataButton,
     downloadDriveDataButton,
@@ -761,6 +764,136 @@ export function createNotificationSyncController({
     }
   }
 
+  async function handleSyncGoogleCalendarSchedule() {
+    if (!authState.authenticated) {
+      const authenticated = await refreshAuthStatus({ suppressUnavailableError: false });
+      if (!authenticated) {
+        setSyncStatus("Connect Google first to sync the Lifetree schedule.", "error");
+        return;
+      }
+    }
+
+    const googleCalendar = normalizeIntegrations(getStore().integrations).googleCalendar;
+    if (!googleCalendar.calendarId) {
+      setSyncStatus("Set up the Lifetree calendar first, then sync the schedule.", "error");
+      return;
+    }
+
+    const syncRequest = buildGoogleCalendarScheduleSyncRequest(getStore(), googleCalendar);
+    if (syncRequest.tasks.length === 0) {
+      const now = Date.now();
+      persistGoogleCalendarState({
+        lastCalendarSyncAt: now,
+        lastCalendarSyncStatus: "success",
+        lastCalendarSyncMessage: syncRequest.totalEligibleTasks > 0
+          ? "The Lifetree calendar schedule is already up to date."
+          : "No scheduled Lifetree tasks are ready for calendar sync."
+      }, now);
+      renderSyncMeta();
+      setSyncStatus(
+        syncRequest.totalEligibleTasks > 0
+          ? "The Lifetree calendar schedule is already up to date."
+          : "No scheduled Lifetree tasks are ready for calendar sync.",
+        "info"
+      );
+      updateGoogleButtons();
+      return;
+    }
+
+    syncGoogleCalendarButton.disabled = true;
+    syncGoogleCalendarButton.textContent = "Syncing…";
+    try {
+      const response = await fetch(`${apiBase}/api/google-calendar/sync-schedule`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        credentials: fetchCredentials,
+        body: JSON.stringify(syncRequest)
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.error || "Calendar schedule sync failed");
+      }
+
+      const now = Date.now();
+      const results = Array.isArray(payload.tasks) ? payload.tasks : [];
+      const byTaskId = new Map(results
+        .filter((entry) => entry && typeof entry.taskId === "string" && entry.taskId)
+        .map((entry) => [entry.taskId, entry]));
+      const nextCalendarSummary = payload.calendarSummary || googleCalendar.calendarSummary || "Lifetree";
+      const nextCalendarTimeZone = payload.calendarTimeZone || googleCalendar.calendarTimeZone || "";
+
+      const store = getStore();
+      let appliedCount = 0;
+      for (const task of store.tasks) {
+        const result = byTaskId.get(task.id);
+        if (!result || result.ok !== true) {
+          continue;
+        }
+        const currentLink = normalizeGoogleCalendarTaskLink(task.googleCalendar, {
+          calendarId: googleCalendar.calendarId
+        });
+        task.googleCalendar = normalizeGoogleCalendarTaskLink({
+          calendarId: result.calendarId || googleCalendar.calendarId,
+          eventId: result.eventId || "",
+          recurringEventId: result.recurringEventId || "",
+          source: "lifetree",
+          linkedAt: typeof result.linkedAt === "number" ? result.linkedAt : now,
+          lastSeenGoogleUpdatedAt: typeof result.lastSeenGoogleUpdatedAt === "string" ? result.lastSeenGoogleUpdatedAt : "",
+          scheduleFingerprint: typeof result.scheduleFingerprint === "string" ? result.scheduleFingerprint : "",
+          statusMirroredAt: typeof currentLink.statusMirroredAt === "number" ? currentLink.statusMirroredAt : 0,
+          schemaVersion: 1
+        }, {
+          calendarId: result.calendarId || googleCalendar.calendarId
+        });
+        task.updatedAt = now;
+        appliedCount += 1;
+      }
+      if (appliedCount > 0) {
+        persistStore();
+      }
+
+      const errorCount = results.filter((entry) => entry?.ok === false).length;
+      persistGoogleCalendarState({
+        connected: true,
+        calendarId: payload.calendarId || googleCalendar.calendarId,
+        calendarSummary: nextCalendarSummary,
+        calendarTimeZone: nextCalendarTimeZone,
+        lastCalendarSyncAt: now,
+        lastCalendarSyncStatus: errorCount > 0 && appliedCount === 0 ? "error" : "success",
+        lastCalendarSyncMessage: errorCount > 0
+          ? `Synced ${appliedCount} scheduled task${appliedCount === 1 ? "" : "s"} with ${errorCount} error${errorCount === 1 ? "" : "s"}.`
+          : `Synced ${appliedCount} scheduled task${appliedCount === 1 ? "" : "s"} to Google Calendar.`
+      }, now);
+      renderSyncMeta();
+      if (errorCount > 0) {
+        const firstError = results.find((entry) => entry?.ok === false)?.error || "Calendar sync hit one or more Google errors.";
+        setSyncStatus(`Synced ${appliedCount} task${appliedCount === 1 ? "" : "s"} locally for Google Calendar, but ${errorCount} failed: ${firstError}`, "error");
+      } else {
+        setSyncStatus(`Synced ${appliedCount} scheduled task${appliedCount === 1 ? "" : "s"} to ${nextCalendarSummary}. Save to Drive if you want the event links on other devices.`, "success");
+      }
+    } catch (error) {
+      const message = String(error?.message || "Calendar schedule sync failed");
+      const now = Date.now();
+      persistGoogleCalendarState({
+        lastCalendarSyncAt: now,
+        lastCalendarSyncStatus: "error",
+        lastCalendarSyncMessage: message
+      }, now);
+      renderSyncMeta();
+      if (message.includes("insufficientPermissions") || message.includes("insufficient_scope")) {
+        setSyncStatus("Reconnect Google and grant Calendar access, then sync the Lifetree schedule again.", "error");
+      } else if (message === "Not authenticated") {
+        setSyncStatus("Connect Google first to sync the Lifetree schedule.", "error");
+      } else {
+        setSyncStatus(`Lifetree schedule sync failed: ${message}`, "error");
+      }
+    } finally {
+      updateGoogleButtons();
+    }
+  }
+
   async function saveCurrentStoreToDrive({ quiet = false, force = false, mode = "manual" } = {}) {
     if (driveSaveState.inFlight) {
       return { success: false, skipped: true };
@@ -1131,9 +1264,11 @@ export function createNotificationSyncController({
     saveDriveButton.disabled = !authState.authenticated || saveInFlight;
     const googleCalendar = normalizeIntegrations(getStore().integrations).googleCalendar;
     bootstrapGoogleCalendarButton.disabled = !authState.authenticated || saveInFlight;
+    syncGoogleCalendarButton.disabled = !authState.authenticated || saveInFlight || !googleCalendar.calendarId;
     bootstrapGoogleCalendarButton.textContent = saveInFlight
       ? "Waiting…"
       : (googleCalendar.calendarId ? "Check Lifetree calendar" : "Setup Lifetree calendar");
+    syncGoogleCalendarButton.textContent = saveInFlight ? "Waiting…" : "Sync Lifetree schedule";
     saveDriveButton.dataset.state = saveInFlight ? driveSaveState.mode || "saving" : "idle";
     saveDriveButton.textContent = saveInFlight
       ? (driveSaveState.mode === "autosave" ? "Autosaving…" : "Saving…")
@@ -1288,6 +1423,7 @@ export function createNotificationSyncController({
     getNotificationSendState,
     handleGoogleDisconnect,
     handleEnsureGoogleCalendar,
+    handleSyncGoogleCalendarSchedule,
     handleManualLoadFromDrive,
     handleManualSaveToDrive,
     handleNotificationsFormChange,
