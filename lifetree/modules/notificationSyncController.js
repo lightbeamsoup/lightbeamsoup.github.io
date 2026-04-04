@@ -16,6 +16,7 @@ export function createNotificationSyncController({
   normalizeGoogleCalendarIntegration,
   normalizeGoogleCalendarTaskLink,
   buildGoogleCalendarScheduleSyncRequest,
+  normalizeTask,
   normalizeNotifications,
   normalizeNotificationTimezone,
   normalizeRecipientEmail,
@@ -826,6 +827,8 @@ export function createNotificationSyncController({
 
       const store = getStore();
       let appliedCount = 0;
+      let pulledCount = 0;
+      let pushedCount = 0;
       for (const task of store.tasks) {
         const result = byTaskId.get(task.id);
         if (!result || result.ok !== true) {
@@ -847,7 +850,34 @@ export function createNotificationSyncController({
         }, {
           calendarId: result.calendarId || googleCalendar.calendarId
         });
-        task.updatedAt = now;
+        if (result.direction === "pull" && result.schedulePatch && typeof result.schedulePatch === "object") {
+          const nextTask = normalizeTask({
+            ...task,
+            name: typeof result.schedulePatch.name === "string" ? result.schedulePatch.name : task.name,
+            details: typeof result.schedulePatch.details === "string" ? result.schedulePatch.details : task.details,
+            startDate: typeof result.schedulePatch.startDate === "string" ? result.schedulePatch.startDate : task.startDate,
+            dueDate: typeof result.schedulePatch.dueDate === "string" ? result.schedulePatch.dueDate : task.dueDate,
+            timeOfDay: typeof result.schedulePatch.timeOfDay === "string" ? result.schedulePatch.timeOfDay : task.timeOfDay,
+            recurrence: result.schedulePatch.recurrence || task.recurrence,
+            reminders: {
+              ...(task.reminders && typeof task.reminders === "object" ? task.reminders : {}),
+              ...(result.schedulePatch.reminders && typeof result.schedulePatch.reminders === "object" ? result.schedulePatch.reminders : {})
+            },
+            widgetTaskMeta: {
+              ...(task.widgetTaskMeta && typeof task.widgetTaskMeta === "object" ? task.widgetTaskMeta : {}),
+              ...(result.schedulePatch.widgetTaskMeta && typeof result.schedulePatch.widgetTaskMeta === "object" ? result.schedulePatch.widgetTaskMeta : {})
+            },
+            googleCalendar: task.googleCalendar,
+            updatedAt: now
+          });
+          Object.assign(task, nextTask);
+          pulledCount += 1;
+        } else {
+          task.updatedAt = now;
+          if (result.direction === "push" || result.direction === "create") {
+            pushedCount += 1;
+          }
+        }
         appliedCount += 1;
       }
       if (appliedCount > 0) {
@@ -869,9 +899,9 @@ export function createNotificationSyncController({
       renderSyncMeta();
       if (errorCount > 0) {
         const firstError = results.find((entry) => entry?.ok === false)?.error || "Calendar sync hit one or more Google errors.";
-        setSyncStatus(`Synced ${appliedCount} task${appliedCount === 1 ? "" : "s"} locally for Google Calendar, but ${errorCount} failed: ${firstError}`, "error");
+        setSyncStatus(`Calendar sync updated ${appliedCount} task${appliedCount === 1 ? "" : "s"} (${pulledCount} pulled, ${pushedCount} pushed), but ${errorCount} failed: ${firstError}`, "error");
       } else {
-        setSyncStatus(`Synced ${appliedCount} scheduled task${appliedCount === 1 ? "" : "s"} to ${nextCalendarSummary}. Save to Drive if you want the event links on other devices.`, "success");
+        setSyncStatus(`Calendar sync updated ${appliedCount} task${appliedCount === 1 ? "" : "s"} (${pulledCount} pulled, ${pushedCount} pushed) against ${nextCalendarSummary}. Save to Drive if you want the links and pulled edits on other devices.`, "success");
       }
     } catch (error) {
       const message = String(error?.message || "Calendar schedule sync failed");

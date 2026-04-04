@@ -26,6 +26,7 @@ import {
 } from "../lifetree/modules/notifications.js";
 import {
   buildGoogleCalendarEventPayload,
+  buildGoogleCalendarTaskSchedulePatchFromEvent,
   normalizeGoogleCalendarSyncTask
 } from "../lifetree/modules/googleCalendarTasks.js";
 
@@ -308,10 +309,59 @@ app.post("/api/google-calendar/sync-schedule", async (req, res) => {
     let updatedCount = 0;
     for (const task of tasks) {
       try {
+        const linkedEventId = task.googleCalendar.eventId || "";
+        if (linkedEventId) {
+          const remoteEvent = await getGoogleCalendarEvent(accessToken, calendarId, linkedEventId);
+          if (!remoteEvent) {
+            results.push({
+              taskId: task.taskId,
+              ok: false,
+              error: "The linked Google Calendar event no longer exists. Deletion reconciliation is not implemented yet."
+            });
+            continue;
+          }
+
+          if (remoteEvent.updated && remoteEvent.updated !== task.googleCalendar.lastSeenGoogleUpdatedAt) {
+            const schedulePatch = buildGoogleCalendarTaskSchedulePatchFromEvent(remoteEvent, {
+              calendarTimeZone
+            });
+            results.push({
+              taskId: task.taskId,
+              ok: true,
+              direction: "pull",
+              calendarId,
+              eventId: typeof remoteEvent.id === "string" ? remoteEvent.id : linkedEventId,
+              recurringEventId: typeof remoteEvent.recurringEventId === "string" ? remoteEvent.recurringEventId : "",
+              htmlLink: typeof remoteEvent.htmlLink === "string" ? remoteEvent.htmlLink : "",
+              linkedAt: task.googleCalendar.linkedAt || Date.now(),
+              lastSeenGoogleUpdatedAt: typeof remoteEvent.updated === "string" ? remoteEvent.updated : "",
+              scheduleFingerprint: schedulePatch.scheduleFingerprint,
+              schedulePatch
+            });
+            continue;
+          }
+        }
+
+        if (!task.needsPush && linkedEventId) {
+          results.push({
+            taskId: task.taskId,
+            ok: true,
+            direction: "noop",
+            calendarId,
+            eventId: linkedEventId,
+            recurringEventId: task.googleCalendar.recurringEventId || "",
+            htmlLink: "",
+            linkedAt: task.googleCalendar.linkedAt || Date.now(),
+            lastSeenGoogleUpdatedAt: task.googleCalendar.lastSeenGoogleUpdatedAt || "",
+            scheduleFingerprint: task.scheduleFingerprint
+          });
+          continue;
+        }
+
         const event = await upsertGoogleCalendarEvent(
           accessToken,
           calendarId,
-          task.googleCalendar.eventId,
+          linkedEventId,
           buildGoogleCalendarEventPayload(task, { calendarTimeZone })
         );
         if (event.created === true) {
@@ -322,6 +372,7 @@ app.post("/api/google-calendar/sync-schedule", async (req, res) => {
         results.push({
           taskId: task.taskId,
           ok: true,
+          direction: linkedEventId ? "push" : "create",
           calendarId,
           eventId: typeof event.id === "string" ? event.id : "",
           recurringEventId: typeof event.recurringEventId === "string" ? event.recurringEventId : "",
@@ -1103,6 +1154,25 @@ async function upsertGoogleCalendarEvent(accessToken, calendarId, eventId, event
     return insertGoogleCalendarEvent(accessToken, calendarId, eventPayload);
   }
   return updateGoogleCalendarEvent(accessToken, calendarId, eventId, eventPayload);
+}
+
+async function getGoogleCalendarEvent(accessToken, calendarId, eventId) {
+  const response = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}?fields=id,updated,htmlLink,recurringEventId,status,summary,description,location,start,end,recurrence,reminders,extendedProperties`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`
+      }
+    }
+  );
+
+  if (response.status === 404 || response.status === 410) {
+    return null;
+  }
+  if (!response.ok) {
+    throw new Error(await formatGoogleError(response, "Google Calendar event lookup failed"));
+  }
+  return response.json();
 }
 
 async function findDriveFile(accessToken) {

@@ -1,13 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  buildGoogleCalendarTaskSchedulePatchFromEvent,
   buildGoogleCalendarEventPayload,
   buildGoogleCalendarScheduleSyncRequest,
   buildGoogleCalendarTaskScheduleFingerprint,
   normalizeGoogleCalendarTaskLink
 } from "./modules/googleCalendarTasks.js";
 
-test("schedule sync request exports only scheduled tasks that need Google Calendar updates", () => {
+test("schedule sync request includes eligible linked tasks and marks whether they need a push", () => {
   const recurringTask = {
     id: "weekly-retinol",
     name: "Retinol",
@@ -110,7 +111,9 @@ test("schedule sync request exports only scheduled tasks that need Google Calend
   });
 
   assert.equal(payload.totalEligibleTasks, 2);
-  assert.deepEqual(payload.tasks.map((task) => task.taskId), ["weekly-retinol"]);
+  assert.deepEqual(payload.tasks.map((task) => task.taskId), ["weekly-retinol", "dog-walk"]);
+  assert.equal(payload.tasks.find((task) => task.taskId === "weekly-retinol")?.needsPush, true);
+  assert.equal(payload.tasks.find((task) => task.taskId === "dog-walk")?.needsPush, false);
 });
 
 test("event payload builds recurrence, reminders, and metadata for recurring tasks", () => {
@@ -157,4 +160,58 @@ test("event payload builds recurrence, reminders, and metadata for recurring tas
   });
   assert.equal(payload.extendedProperties.private.lifetreeWidgetType, "energy");
   assert.equal(payload.extendedProperties.private.lifetreeTaskKind, "recurring-master");
+});
+
+test("schedule patch parser reads Google event schedule fields back into Lifetree form", () => {
+  const patch = buildGoogleCalendarTaskSchedulePatchFromEvent({
+    summary: "Retinol",
+    description: "Use every other week.\n\nCreated by Lifetree.\n\nLifetree task ID: weekly-retinol",
+    location: "Bathroom",
+    start: {
+      dateTime: "2026-04-08T21:30:00-07:00",
+      timeZone: "America/Los_Angeles"
+    },
+    end: {
+      dateTime: "2026-04-08T21:45:00-07:00",
+      timeZone: "America/Los_Angeles"
+    },
+    recurrence: [
+      "RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=WE;UNTIL=20260531"
+    ],
+    reminders: {
+      useDefault: false,
+      overrides: [{ method: "popup", minutes: 45 }]
+    },
+    extendedProperties: {
+      private: {
+        lifetreeLength: "very-short",
+        lifetreeImportance: "medium",
+        lifetreeCategoryKey: "health",
+        lifetreeLateGraceMinutes: "15",
+        lifetreeWidgetType: "travel",
+        lifetreeWidgetTaskKind: "check-in"
+      }
+    }
+  }, {
+    calendarTimeZone: "America/Los_Angeles"
+  });
+
+  assert.equal(patch.name, "Retinol");
+  assert.equal(patch.details, "Use every other week.");
+  assert.equal(patch.startDate, "2026-04-08");
+  assert.equal(patch.dueDate, "2026-04-08");
+  assert.equal(patch.timeOfDay, "21:30");
+  assert.deepEqual(patch.recurrence, {
+    type: "weekly",
+    interval: 2,
+    weekday: 3,
+    day: 1,
+    ordinal: "first",
+    sourceType: "",
+    endDate: "2026-05-31",
+    count: null,
+    forever: false
+  });
+  assert.equal(patch.reminders.dueSoonMinutes, 45);
+  assert.equal(patch.widgetTaskMeta.googleCalendarLocation, "Bathroom");
 });

@@ -12,7 +12,6 @@
 
 ### Integrations
 
-- Google Calendar: Read Google event edits back into Lifetree and prefer Google for schedule fields while preserving local-only state.
 - Google Calendar: Mirror completion, skip, and restore status into event description/private metadata without treating Calendar as the audit log.
 - Google Calendar: Map recurring Lifetree series to recurring Google events plus exception handling for edited instances.
 - Google Calendar: Reconcile deletions, offline edits, and Drive/local/Google conflicts across schedule-linked items.
@@ -80,6 +79,7 @@
 - 2026-04-04: Add one-way export of scheduled one-off tasks and recurring series into the dedicated `Lifetree` calendar.
 - 2026-04-04: Store Lifetree machine metadata in Google event `extendedProperties.private` while keeping history, points, and widget state local.
 - 2026-04-04: Add a manual `Sync Lifetree schedule` action and reflect the last schedule sync result in the shell sync panel.
+- 2026-04-04: Pull linked Google Calendar event edits back into Lifetree and prefer Google for schedule fields during manual schedule sync.
 
 ### Workout Coach
 

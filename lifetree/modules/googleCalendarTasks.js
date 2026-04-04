@@ -9,6 +9,13 @@ const GOOGLE_BYSETPOS_BY_ORDINAL = {
   fourth: 4,
   last: -1
 };
+const ORDINAL_BY_GOOGLE_BYSETPOS = {
+  1: "first",
+  2: "second",
+  3: "third",
+  4: "fourth",
+  [-1]: "last"
+};
 const DURATION_MINUTES_BY_LENGTH = {
   "very-short": 15,
   short: 30,
@@ -69,7 +76,8 @@ export function buildGoogleCalendarTaskScheduleFingerprint(task) {
     lateGraceMinutes: Number.isFinite(Number(task?.lateGraceMinutes)) ? Number(task.lateGraceMinutes) : 0,
     ownerWidgetType: String(task?.ownerWidgetType || ""),
     widgetTaskKind: String(task?.widgetTaskKind || ""),
-    timeZone: resolveGoogleCalendarTaskTimeZone(task, "")
+    timeZone: resolveGoogleCalendarTaskTimeZone(task, ""),
+    location: resolveGoogleCalendarTaskLocation(task)
   }));
 }
 
@@ -88,11 +96,11 @@ export function buildGoogleCalendarScheduleSyncRequest(store, googleCalendarInte
     .map((task) => {
       const googleCalendar = normalizeGoogleCalendarTaskLink(task.googleCalendar, { calendarId });
       const scheduleFingerprint = buildGoogleCalendarTaskScheduleFingerprint(task);
-      const needsSync = !googleCalendar.eventId
+      const needsPush = !googleCalendar.eventId
         || googleCalendar.calendarId !== calendarId
         || googleCalendar.scheduleFingerprint !== scheduleFingerprint;
       return {
-        needsSync,
+        needsPush,
         taskId: task.id,
         name: String(task.name || ""),
         details: String(task.details || ""),
@@ -112,9 +120,7 @@ export function buildGoogleCalendarScheduleSyncRequest(store, googleCalendarInte
         googleCalendar,
         scheduleFingerprint
       };
-    })
-    .filter((task) => task.needsSync)
-    .map(({ needsSync: _needsSync, ...task }) => task);
+    });
 
   return {
     calendarId,
@@ -180,6 +186,41 @@ export function buildGoogleCalendarEventPayload(task, { calendarTimeZone = "" } 
     extendedProperties: {
       private: buildGoogleCalendarExtendedProperties(normalized)
     }
+  };
+}
+
+export function buildGoogleCalendarTaskSchedulePatchFromEvent(event, { calendarTimeZone = "" } = {}) {
+  const start = parseGoogleCalendarEventStart(event, calendarTimeZone);
+  const details = extractTaskDetailsFromGoogleDescription(event?.description);
+  const recurrence = parseGoogleCalendarRecurrence(event?.recurrence);
+  const reminders = parseGoogleCalendarEventReminders(event?.reminders);
+  const privateProps = event?.extendedProperties?.private && typeof event.extendedProperties.private === "object"
+    ? event.extendedProperties.private
+    : {};
+  const widgetTimeZone = typeof start.timeZone === "string" && start.timeZone.trim() ? start.timeZone.trim() : "";
+  const location = typeof event?.location === "string" ? event.location.trim() : "";
+  const patch = {
+    name: typeof event?.summary === "string" && event.summary.trim() ? event.summary.trim() : "Untitled task",
+    details,
+    startDate: start.startDate,
+    dueDate: start.dueDate,
+    timeOfDay: start.timeOfDay,
+    recurrence,
+    reminders,
+    length: normalizeLengthValue(privateProps.lifetreeLength),
+    importance: normalizeImportanceValue(privateProps.lifetreeImportance),
+    categoryKey: typeof privateProps.lifetreeCategoryKey === "string" ? privateProps.lifetreeCategoryKey : "",
+    lateGraceMinutes: normalizeNonNegativeNumber(privateProps.lifetreeLateGraceMinutes, 0),
+    ownerWidgetType: typeof privateProps.lifetreeWidgetType === "string" ? privateProps.lifetreeWidgetType : "",
+    widgetTaskKind: typeof privateProps.lifetreeWidgetTaskKind === "string" ? privateProps.lifetreeWidgetTaskKind : "",
+    widgetTaskMeta: {
+      ...(widgetTimeZone ? { timeZone: widgetTimeZone } : {}),
+      ...(location ? { googleCalendarLocation: location } : {})
+    }
+  };
+  return {
+    ...patch,
+    scheduleFingerprint: buildGoogleCalendarTaskScheduleFingerprint(patch)
   };
 }
 
@@ -294,6 +335,18 @@ function buildGoogleCalendarEventReminders(task) {
   };
 }
 
+function parseGoogleCalendarEventReminders(value) {
+  const source = value && typeof value === "object" ? value : {};
+  const overrides = Array.isArray(source.overrides) ? source.overrides : [];
+  const popupOverride = overrides.find((entry) => Number.isFinite(Number(entry?.minutes)));
+  const dueSoonMinutes = popupOverride ? Number(popupOverride.minutes) : null;
+  return {
+    enabled: source.useDefault === true || overrides.length > 0,
+    dueSoonMinutes,
+    overdueMinutes: null
+  };
+}
+
 function buildGoogleCalendarEventStartEnd(task, timeZone) {
   const durationMinutes = DURATION_MINUTES_BY_LENGTH[task.length] || DURATION_MINUTES_BY_LENGTH.medium;
   const hasTime = Boolean(task.timeOfDay);
@@ -345,6 +398,42 @@ function buildGoogleCalendarEventStartEnd(task, timeZone) {
   };
 }
 
+function parseGoogleCalendarEventStart(event, calendarTimeZone) {
+  const start = event?.start && typeof event.start === "object" ? event.start : {};
+  const end = event?.end && typeof event.end === "object" ? event.end : {};
+  const eventTimeZone = typeof start.timeZone === "string" && start.timeZone.trim()
+    ? start.timeZone.trim()
+    : (typeof end.timeZone === "string" && end.timeZone.trim()
+      ? end.timeZone.trim()
+      : String(calendarTimeZone || "").trim());
+
+  if (typeof start.date === "string" && start.date) {
+    const startDate = normalizeDateString(start.date);
+    const normalizedEndDate = typeof end.date === "string" ? normalizeDateString(end.date) : "";
+    const dueDate = normalizedEndDate
+      ? addDaysToDateString(normalizedEndDate, -1)
+      : startDate;
+    return {
+      startDate,
+      dueDate,
+      timeOfDay: "",
+      timeZone: ""
+    };
+  }
+
+  const startDateTime = typeof start.dateTime === "string" ? start.dateTime : "";
+  const endDateTime = typeof end.dateTime === "string" ? end.dateTime : "";
+  const startDate = normalizeDateString(startDateTime.slice(0, 10));
+  const dueDate = normalizeDateString((endDateTime || startDateTime).slice(0, 10));
+  const timeOfDay = normalizeTimeString(startDateTime.slice(11, 16));
+  return {
+    startDate,
+    dueDate: dueDate || startDate,
+    timeOfDay,
+    timeZone: eventTimeZone
+  };
+}
+
 function buildGoogleCalendarRecurrence(task) {
   const recurrence = normalizeExportRecurrence(task.recurrence);
   if (!recurrence || recurrence.type === "none") {
@@ -389,6 +478,84 @@ function buildGoogleCalendarRecurrence(task) {
   return [`RRULE:${parts.join(";")}`];
 }
 
+function parseGoogleCalendarRecurrence(recurrenceLines) {
+  if (!Array.isArray(recurrenceLines) || recurrenceLines.length === 0) {
+    return { type: "none" };
+  }
+  const rruleLine = recurrenceLines.find((line) => typeof line === "string" && line.startsWith("RRULE:"));
+  if (!rruleLine) {
+    return { type: "none" };
+  }
+  const fields = Object.fromEntries(
+    rruleLine.slice("RRULE:".length)
+      .split(";")
+      .map((entry) => entry.split("="))
+      .filter(([key, value]) => key && value)
+  );
+  const interval = normalizePositiveNumber(fields.INTERVAL, 1);
+  const count = normalizePositiveNumber(fields.COUNT, null);
+  const endDate = normalizeUntilDate(fields.UNTIL);
+  const forever = !count && !endDate;
+
+  if (fields.FREQ === "DAILY") {
+    return {
+      type: "daily",
+      interval,
+      weekday: 0,
+      day: 1,
+      ordinal: "first",
+      sourceType: "",
+      endDate,
+      count,
+      forever
+    };
+  }
+
+  if (fields.FREQ === "WEEKLY") {
+    return {
+      type: "weekly",
+      interval,
+      weekday: GOOGLE_WEEKDAY_CODES.indexOf(String(fields.BYDAY || "SU")),
+      day: 1,
+      ordinal: "first",
+      sourceType: "",
+      endDate,
+      count,
+      forever
+    };
+  }
+
+  if (fields.FREQ === "MONTHLY" && fields.BYMONTHDAY) {
+    return {
+      type: "monthly-date",
+      interval,
+      weekday: 0,
+      day: normalizePositiveNumber(fields.BYMONTHDAY, 1),
+      ordinal: "first",
+      sourceType: "",
+      endDate,
+      count,
+      forever
+    };
+  }
+
+  if (fields.FREQ === "MONTHLY" && fields.BYDAY && fields.BYSETPOS) {
+    return {
+      type: "monthly-weekday",
+      interval,
+      weekday: GOOGLE_WEEKDAY_CODES.indexOf(String(fields.BYDAY || "SU")),
+      day: 1,
+      ordinal: ORDINAL_BY_GOOGLE_BYSETPOS[Number(fields.BYSETPOS)] || "first",
+      sourceType: "",
+      endDate,
+      count,
+      forever
+    };
+  }
+
+  return { type: "none" };
+}
+
 function normalizeDateString(value) {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(value || "")) ? String(value) : "";
 }
@@ -401,6 +568,54 @@ function addDaysToDateString(dateString, days) {
   const date = new Date(`${dateString}T12:00:00Z`);
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
+}
+
+function extractTaskDetailsFromGoogleDescription(description) {
+  const text = typeof description === "string" ? description.trim() : "";
+  if (!text) {
+    return "";
+  }
+  const footerMarker = "\n\nCreated by Lifetree.";
+  const footerIndex = text.indexOf(footerMarker);
+  if (footerIndex >= 0) {
+    return text.slice(0, footerIndex).trim();
+  }
+  if (text === "Created by Lifetree.") {
+    return "";
+  }
+  return text;
+}
+
+function normalizeUntilDate(value) {
+  const text = String(value || "").trim();
+  if (!text) {
+    return "";
+  }
+  const compact = text.slice(0, 8);
+  if (!/^\d{8}$/.test(compact)) {
+    return "";
+  }
+  return `${compact.slice(0, 4)}-${compact.slice(4, 6)}-${compact.slice(6, 8)}`;
+}
+
+function normalizePositiveNumber(value, fallback = null) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : fallback;
+}
+
+function normalizeNonNegativeNumber(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : fallback;
+}
+
+function normalizeLengthValue(value) {
+  const text = String(value || "");
+  return DURATION_MINUTES_BY_LENGTH[text] ? text : "medium";
+}
+
+function normalizeImportanceValue(value) {
+  const text = String(value || "").toLowerCase();
+  return text === "low" || text === "high" ? text : "medium";
 }
 
 function addMinutesToDateTimeString(dateString, timeString, minutes) {
