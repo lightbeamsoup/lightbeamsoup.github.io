@@ -25,6 +25,7 @@
 
 ### Drive Sync
 
+- 2026-04-04: Skip no-op autosave writes and stop first-load startup saves from firing after normalization-only repairs.
 - 2026-03-29: Add passive remote-drift detection on focus/online, pause autosave when Drive changed elsewhere, and disable the blind pagehide overwrite path.
 - 2026-03-29: Make Drive merge/conflict popups clearer about overwrite versus merge behavior and show exact local/Drive timestamps.
 - 2026-03-29: Move task conflict precedence from whole-store timestamps to task-level `updatedAt` values.

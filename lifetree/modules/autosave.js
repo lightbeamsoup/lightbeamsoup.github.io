@@ -44,6 +44,14 @@ export function createAutosaveController({
         blockedReason: autosaveGate.reason || "blocked"
       };
     }
+    const currentFingerprint = computeStoreFingerprint(getStore());
+    if (lastSavedFingerprint && currentFingerprint === lastSavedFingerprint) {
+      return {
+        success: true,
+        skipped: true,
+        noChanges: true
+      };
+    }
 
     inFlight = true;
     nextRunAt = 0;

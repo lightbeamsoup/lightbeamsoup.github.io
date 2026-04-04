@@ -1455,13 +1455,17 @@ async function continueStartup() {
     finalizeStoreState();
     renderAll();
   }
-  const currentFingerprint = getCurrentStoreFingerprint();
+  const currentUserFingerprint = getCurrentUserFingerprint();
+  const currentUserUpdatedAt = store.userUpdatedAt || store.updatedAt || 0;
   const startupRemoteFingerprint = startupResult.remoteFingerprint || "";
+  const startupRemoteUserFingerprint = startupResult.remoteUserFingerprint || "";
+  const startupRemoteUserUpdatedAt = startupResult.remoteUserUpdatedAt || 0;
   const shouldAutosaveStartupDiff = Boolean(
     authState.authenticated
     && normalizeProfile(store.profile).autosaveEnabled
-    && startupRemoteFingerprint
-    && startupRemoteFingerprint !== currentFingerprint
+    && startupRemoteUserFingerprint
+    && startupRemoteUserFingerprint !== currentUserFingerprint
+    && currentUserUpdatedAt > startupRemoteUserUpdatedAt
   );
 
   if (shouldAutosaveStartupDiff) {
@@ -1469,7 +1473,7 @@ async function continueStartup() {
     if (autosaveResult?.success) {
       autosaveController.markCurrentAsSaved();
     }
-  } else if (startupResult.loaded && startupResult.synced) {
+  } else if (startupRemoteFingerprint || startupRemoteUserFingerprint || (startupResult.loaded && startupResult.synced)) {
     autosaveController.markCurrentAsSaved();
   }
   autosaveController.refreshSchedule();
