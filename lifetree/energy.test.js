@@ -238,6 +238,106 @@ test("energy ensureTasks recreates recurring reminder templates when stale non-t
   assert.equal(regenerated.length, 3);
 });
 
+test("energy syncOwnedTasks replaces stale closed recurring templates and carries Google links forward", () => {
+  const widget = {
+    id: "energy-widget",
+    type: "energy",
+    settings: {
+      reminderTimes: ["07:00", "12:00", "19:00"],
+      maxCheckins: 12
+    },
+    data: {
+      entries: []
+    }
+  };
+  const store = {
+    tasks: [
+      {
+        id: "stale-template",
+        templateId: "",
+        occurrenceIndex: 0,
+        ownerWidgetId: widget.id,
+        ownerWidgetType: "energy",
+        ownerTaskKey: "energy-reminder-1",
+        widgetTaskKind: "energy-checkin",
+        status: "done",
+        archived: false,
+        startDate: "2026-04-01",
+        dueDate: "2026-04-01",
+        timeOfDay: "12:00",
+        googleCalendar: {
+          calendarId: "lifetree-calendar",
+          eventId: "event-123",
+          recurringEventId: "",
+          linkedAt: 10,
+          lastSeenGoogleUpdatedAt: "2026-04-04T00:00:00.000Z",
+          scheduleFingerprint: "old-fingerprint",
+          statusMirroredAt: 20
+        },
+        recurrence: {
+          type: "daily",
+          interval: 1,
+          weekday: 0,
+          day: 1,
+          ordinal: "first",
+          endDate: "",
+          count: null,
+          forever: true
+        },
+        history: [{ id: "h1", type: "completed", at: 1 }]
+      },
+      {
+        id: "stale-generated",
+        templateId: "stale-template",
+        occurrenceIndex: 1,
+        ownerWidgetId: widget.id,
+        ownerWidgetType: "energy",
+        ownerTaskKey: "energy-reminder-1",
+        widgetTaskKind: "energy-checkin",
+        status: "open",
+        archived: false,
+        startDate: "2026-04-05",
+        dueDate: "2026-04-05",
+        timeOfDay: "12:00",
+        recurrence: { type: "generated", sourceType: "daily" }
+      }
+    ]
+  };
+  const regenerated = [];
+  let nextId = 0;
+
+  energyWidgetDefinition.syncOwnedTasks({
+    widget,
+    store,
+    helpers: {
+      createId: () => `new-template-${nextId++}`,
+      todayString: () => "2026-04-04",
+      regenerateSeries: (templateId) => {
+        regenerated.push(templateId);
+      },
+      resolveCategorySnapshot: () => ({
+        key: "health",
+        label: "Health",
+        color: "#77aa77"
+      })
+    }
+  });
+
+  const activeTemplate = store.tasks.find((task) => (
+    task.ownerTaskKey === "energy-reminder-1"
+    && !task.templateId
+    && task.recurrence?.type === "daily"
+    && task.status === "open"
+  ));
+  assert.ok(activeTemplate);
+  assert.notEqual(activeTemplate.id, "stale-template");
+  assert.equal(activeTemplate.googleCalendar?.eventId, "event-123");
+  assert.equal(store.tasks.find((task) => task.id === "stale-template")?.recurrence?.type, "none");
+  assert.equal(store.tasks.find((task) => task.id === "stale-template")?.googleCalendar?.eventId || "", "");
+  assert.equal(store.tasks.some((task) => task.id === "stale-generated"), false);
+  assert.ok(regenerated.includes(activeTemplate.id));
+});
+
 test("energy initial reminder date advances the current slot after its scheduled time has passed", () => {
   const dueDate = computeInitialReminderDate(
     "2026-04-04",

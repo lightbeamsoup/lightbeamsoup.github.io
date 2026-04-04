@@ -535,26 +535,76 @@ function buildReminderTemplate({ widget, helpers, store, reminderTimes, index, t
 }
 
 function ensureEnergyReminderTemplates(widget, store, helpers, reminderTimes, { preserveClosed = true } = {}) {
+  const staleTemplateIds = new Set();
+
   reminderTimes.forEach((time, index) => {
     const ownerTaskKey = `energy-reminder-${index}`;
-    const existing = findActiveEnergyReminderTemplate(store.tasks, widget.id, ownerTaskKey);
+    const templates = listEnergyReminderTemplates(store.tasks, widget.id, ownerTaskKey);
+    const carriedGoogleLink = selectEnergyReminderGoogleLinkCarrier(templates);
+    let activeTemplate = templates.find((task) => task.archived !== true && task.status === "open") || null;
+    let createdTemplate = false;
+    let needsRegenerate = false;
 
-    if (existing) {
-      return;
+    for (const template of templates) {
+      if (template === activeTemplate) {
+        continue;
+      }
+      staleTemplateIds.add(template.id);
+      demoteStaleEnergyReminderTemplate(template);
     }
 
-    const task = buildReminderTemplate({
-      widget,
-      helpers,
-      store,
-      reminderTimes,
-      index,
-      time
-    });
+    if (!activeTemplate) {
+      activeTemplate = buildReminderTemplate({
+        widget,
+        helpers,
+        store,
+        reminderTimes,
+        index,
+        time
+      });
+      if (carriedGoogleLink) {
+        activeTemplate.googleCalendar = {
+          ...carriedGoogleLink,
+          scheduleFingerprint: "",
+          statusMirroredAt: 0
+        };
+      }
+      createdTemplate = true;
+      store.tasks.unshift(activeTemplate);
+      needsRegenerate = true;
+    } else {
+      if (activeTemplate.timeOfDay !== time) {
+        activeTemplate.timeOfDay = time;
+        needsRegenerate = true;
+      }
+      if (carriedGoogleLink && (!activeTemplate.googleCalendar || !activeTemplate.googleCalendar.eventId)) {
+        activeTemplate.googleCalendar = {
+          ...carriedGoogleLink,
+          scheduleFingerprint: "",
+          statusMirroredAt: 0
+        };
+      }
+      if (templates.length > 1) {
+        needsRegenerate = true;
+      }
+    }
 
-    store.tasks.unshift(task);
-    helpers.regenerateSeries(task.id, { preserveClosed });
+    if (needsRegenerate) {
+      helpers.regenerateSeries(activeTemplate.id, {
+        preserveClosed: createdTemplate ? preserveClosed : true
+      });
+    }
   });
+
+  if (staleTemplateIds.size > 0) {
+    store.tasks = store.tasks.filter((task) => !(
+      task.ownerWidgetId === widget.id
+      && task.ownerWidgetType === ENERGY_WIDGET_TYPE
+      && task.templateId
+      && staleTemplateIds.has(task.templateId)
+      && task.status === "open"
+    ));
+  }
 }
 
 function stageEnergyVote(widget, level, mode, helpers) {
@@ -689,13 +739,7 @@ function applyReminderSettings(widget, nextReminderTimes, helpers) {
   const maxCheckins = normalizeMaxCheckins(widget.settings.maxCheckins);
   const reminderTimes = normalizeReminderTimes(nextReminderTimes, maxCheckins);
   const existingTemplates = store.tasks
-    .filter((task) =>
-      task.ownerWidgetId === widget.id
-      && task.ownerWidgetType === ENERGY_WIDGET_TYPE
-      && !task.archived
-      && !task.templateId
-      && task.ownerTaskKey?.startsWith("energy-reminder-")
-    )
+    .filter((task) => isOpenEnergyReminderTemplate(task, widget.id))
     .sort((left, right) => parseReminderIndex(left.ownerTaskKey) - parseReminderIndex(right.ownerTaskKey));
   const templateAssignments = matchReminderTemplates(existingTemplates, reminderTimes);
   const assignedTemplates = new Set(templateAssignments.values());
@@ -904,16 +948,68 @@ export function repairEnergyReminderTemplates(tasks, widgetId, {
 }
 
 function findActiveEnergyReminderTemplate(tasks, widgetId, ownerTaskKey) {
-  return (Array.isArray(tasks) ? tasks : []).find((task) => (
-    task?.ownerWidgetId === widgetId
-    && task?.ownerWidgetType === ENERGY_WIDGET_TYPE
-    && task?.ownerTaskKey === ownerTaskKey
-    && task?.archived !== true
-    && !task?.templateId
-    && task?.recurrence?.type !== "none"
-    && task?.recurrence?.type !== "generated"
-    && task?.recurrence?.type !== "archived-series"
-  )) || null;
+  return listEnergyReminderTemplates(tasks, widgetId, ownerTaskKey)
+    .find((task) => task.archived !== true && task.status === "open") || null;
+}
+
+function listEnergyReminderTemplates(tasks, widgetId, ownerTaskKey) {
+  return (Array.isArray(tasks) ? tasks : []).filter((task) => isEnergyReminderTemplate(task, widgetId, ownerTaskKey));
+}
+
+function isEnergyReminderTemplate(task, widgetId, ownerTaskKey = "") {
+  if (!task || task.ownerWidgetId !== widgetId || task.ownerWidgetType !== ENERGY_WIDGET_TYPE) {
+    return false;
+  }
+  if (ownerTaskKey && task.ownerTaskKey !== ownerTaskKey) {
+    return false;
+  }
+  if (task.templateId) {
+    return false;
+  }
+  const recurrenceType = String(task?.recurrence?.type || "none");
+  return recurrenceType !== "none" && recurrenceType !== "generated" && recurrenceType !== "archived-series";
+}
+
+function isOpenEnergyReminderTemplate(task, widgetId) {
+  return isEnergyReminderTemplate(task, widgetId)
+    && task.archived !== true
+    && task.status === "open";
+}
+
+function selectEnergyReminderGoogleLinkCarrier(templates) {
+  const linkedTemplate = (Array.isArray(templates) ? templates : []).find((task) => {
+    const eventId = typeof task?.googleCalendar?.eventId === "string" ? task.googleCalendar.eventId.trim() : "";
+    return Boolean(eventId);
+  });
+  if (!linkedTemplate) {
+    return null;
+  }
+  return {
+    ...(linkedTemplate.googleCalendar && typeof linkedTemplate.googleCalendar === "object" ? linkedTemplate.googleCalendar : {})
+  };
+}
+
+function demoteStaleEnergyReminderTemplate(task) {
+  task.recurrence = {
+    type: "none",
+    interval: 1,
+    weekday: 0,
+    day: 1,
+    ordinal: "first",
+    endDate: "",
+    count: null,
+    forever: false
+  };
+  task.googleCalendar = {
+    ...(task.googleCalendar && typeof task.googleCalendar === "object" ? task.googleCalendar : {}),
+    eventId: "",
+    recurringEventId: "",
+    linkedAt: 0,
+    lastSeenGoogleUpdatedAt: "",
+    scheduleFingerprint: "",
+    statusMirroredAt: 0
+  };
+  task.sequenceDependencyId = "";
 }
 
 export function findActiveEnergyCompletionTask(tasks, widgetId, mechanism = "energy-vote", at = Date.now()) {

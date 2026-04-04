@@ -66,6 +66,7 @@
 
 ### Integrations
 
+- 2026-04-04: Stabilize Energy reminder master recovery so fresh sessions stop rebuilding Google sync state from stale historical recurring anchors.
 - 2026-04-04: Collapse the shell Google controls down to a single auth toggle plus a unified Google sync action that reconciles Drive and Calendar in one flow.
 - 2026-04-04: Reconcile remote Google Calendar deletions against local and Drive state so missing linked events delete locally when unsynced state is clean, but recreate from local changes when offline edits still need to win.
 - 2026-04-04: Recompute Drive user-content fingerprints from normalized content, ignore sync metadata in conflict detection, and mirror successful calendar sync updates back to Drive when safe.
