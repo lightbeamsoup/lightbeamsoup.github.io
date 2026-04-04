@@ -704,6 +704,8 @@ const syncChannelState = {
 const driveConflictState = {
   resolver: null
 };
+let taskHistoryController = null;
+let widgetController = null;
 
 const canopyController = createCanopyController({
   refs: {
@@ -715,7 +717,7 @@ const canopyController = createCanopyController({
     canopyDetailFooter
   },
   getStore: () => store,
-  getVisibleCards,
+  getVisibleCards: (...args) => taskHistoryController?.getVisibleCards(...args) || [],
   todayString,
   getOpenTaskDeadlineState,
   isBlocked,
@@ -729,16 +731,16 @@ const canopyController = createCanopyController({
   formatPointsLabel,
   escapeHtml,
   renderPriorityIndicator,
-  getPendingActionForTask,
-  getPendingActionByKey,
-  markTaskOpen,
-  markTaskCompleted,
-  markTaskSkipped,
-  stagePendingAction,
-  undoPendingAction,
+  getPendingActionForTask: (...args) => widgetController?.getPendingActionForTask(...args) || null,
+  getPendingActionByKey: (...args) => widgetController?.getPendingActionByKey(...args) || null,
+  markTaskOpen: (...args) => taskHistoryController?.markTaskOpen(...args),
+  markTaskCompleted: (...args) => taskHistoryController?.markTaskCompleted(...args),
+  markTaskSkipped: (...args) => taskHistoryController?.markTaskSkipped(...args),
+  stagePendingAction: (...args) => widgetController?.stagePendingAction(...args),
+  undoPendingAction: (...args) => widgetController?.undoPendingAction(...args),
   isBlockedTask: isBlocked,
   describeBlockedTask,
-  clearPendingDelete,
+  clearPendingDelete: (...args) => taskHistoryController?.clearPendingDelete(...args),
   beginEdit,
   openTaskDesk: handleOpenTaskDesk,
   persistStore,
@@ -763,8 +765,7 @@ const {
   renderCanopyDetailIfOpen,
   syncRecurringBonusState
 } = canopyController;
-let taskHistoryController = null;
-const widgetController = createWidgetController({
+widgetController = createWidgetController({
   refs: {
     widgetSlots,
     widgetMenu,
