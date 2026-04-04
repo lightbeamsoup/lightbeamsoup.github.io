@@ -1120,6 +1120,7 @@ notificationSyncController = createNotificationSyncController({
   loadFromDrive,
   saveToDrive,
   peekRemoteStore,
+  finalizeStoreState,
   autosave: {
     getStatus: () => autosaveController?.getStatus() || {
       blockedReason: "",

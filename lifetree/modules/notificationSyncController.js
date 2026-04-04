@@ -49,6 +49,7 @@ export function createNotificationSyncController({
   loadFromDrive,
   saveToDrive,
   peekRemoteStore,
+  finalizeStoreState = null,
   autosave
 }) {
   const {
@@ -788,6 +789,10 @@ export function createNotificationSyncController({
       return;
     }
 
+    if (typeof finalizeStoreState === "function") {
+      finalizeStoreState();
+    }
+
     const currentUserTimeZone = typeof Intl !== "undefined"
       ? Intl.DateTimeFormat().resolvedOptions().timeZone || ""
       : "";
@@ -930,6 +935,7 @@ export function createNotificationSyncController({
       const processedDeletionCount = typeof payload.processedDeletionCount === "number" ? payload.processedDeletionCount : 0;
       const deletedEventCount = typeof payload.deletedCount === "number" ? payload.deletedCount : 0;
       const orphanDeletedCount = typeof payload.orphanDeletedCount === "number" ? payload.orphanDeletedCount : 0;
+      let mirroredToDrive = false;
       persistGoogleCalendarState({
         connected: true,
         calendarId: payload.calendarId || googleCalendar.calendarId,
@@ -942,6 +948,18 @@ export function createNotificationSyncController({
           ? `Synced ${appliedCount} scheduled task${appliedCount === 1 ? "" : "s"}, processed ${processedDeletionCount} requested calendar deletion${processedDeletionCount === 1 ? "" : "s"}, removed ${orphanDeletedCount} orphaned calendar event${orphanDeletedCount === 1 ? "" : "s"}, and hit ${errorCount + deletionErrorCount + orphanDeletionErrorCount} error${errorCount + deletionErrorCount + orphanDeletionErrorCount === 1 ? "" : "s"}.`
           : `Synced ${appliedCount} scheduled task${appliedCount === 1 ? "" : "s"}, processed ${processedDeletionCount} requested calendar deletion${processedDeletionCount === 1 ? "" : "s"}, and removed ${orphanDeletedCount} orphaned calendar event${orphanDeletedCount === 1 ? "" : "s"} in Google Calendar.`
       }, now);
+      if (
+        errorCount + deletionErrorCount + orphanDeletionErrorCount === 0
+        && !hasObservedRemoteDrift()
+        && (appliedCount > 0 || processedDeletionCount > 0 || orphanDeletedCount > 0 || relinkedCount > 0 || duplicateDeletedCount > 0)
+      ) {
+        const driveResult = await saveCurrentStoreToDrive({
+          quiet: true,
+          force: false,
+          mode: "calendar-sync"
+        });
+        mirroredToDrive = driveResult?.success === true;
+      }
       renderSyncMeta();
       if (errorCount + deletionErrorCount + orphanDeletionErrorCount > 0) {
         const firstError = results.find((entry) => entry?.ok === false)?.error
@@ -950,7 +968,7 @@ export function createNotificationSyncController({
           || "Calendar sync hit one or more Google errors.";
         setSyncStatus(`Calendar sync updated ${appliedCount} task${appliedCount === 1 ? "" : "s"} (${pulledCount} pulled, ${pushedCount} pushed, ${statusMirroredCount} status mirrored, ${relinkedCount} relinked) and processed ${processedDeletionCount} deletion${processedDeletionCount === 1 ? "" : "s"} (${deletedEventCount} Google event${deletedEventCount === 1 ? "" : "s"} removed, ${duplicateDeletedCount} duplicate${duplicateDeletedCount === 1 ? "" : "s"} cleaned up, ${orphanDeletedCount} orphan${orphanDeletedCount === 1 ? "" : "s"} removed), but ${errorCount + deletionErrorCount + orphanDeletionErrorCount} failed: ${firstError}`, "error");
       } else {
-        setSyncStatus(`Calendar sync updated ${appliedCount} task${appliedCount === 1 ? "" : "s"} (${pulledCount} pulled, ${pushedCount} pushed, ${statusMirroredCount} status mirrored, ${relinkedCount} relinked) and processed ${processedDeletionCount} deletion${processedDeletionCount === 1 ? "" : "s"} (${deletedEventCount} Google event${deletedEventCount === 1 ? "" : "s"} removed, ${duplicateDeletedCount} duplicate${duplicateDeletedCount === 1 ? "" : "s"} cleaned up, ${orphanDeletedCount} orphan${orphanDeletedCount === 1 ? "" : "s"} removed) against ${nextCalendarSummary}. Save to Drive if you want the links and pulled edits on other devices.`, "success");
+        setSyncStatus(`Calendar sync updated ${appliedCount} task${appliedCount === 1 ? "" : "s"} (${pulledCount} pulled, ${pushedCount} pushed, ${statusMirroredCount} status mirrored, ${relinkedCount} relinked) and processed ${processedDeletionCount} deletion${processedDeletionCount === 1 ? "" : "s"} (${deletedEventCount} Google event${deletedEventCount === 1 ? "" : "s"} removed, ${duplicateDeletedCount} duplicate${duplicateDeletedCount === 1 ? "" : "s"} cleaned up, ${orphanDeletedCount} orphan${orphanDeletedCount === 1 ? "" : "s"} removed) against ${nextCalendarSummary}.${mirroredToDrive ? " Mirrored the updated calendar state to Drive." : " Save to Drive if you want the links and pulled edits on other devices."}`, "success");
       }
     } catch (error) {
       const message = String(error?.message || "Calendar schedule sync failed");
@@ -1103,10 +1121,7 @@ export function createNotificationSyncController({
   }
 
   function getCurrentUserFingerprint() {
-    const store = getStore();
-    return typeof store.userFingerprint === "string" && store.userFingerprint
-      ? store.userFingerprint
-      : computeUserContentFingerprint(store);
+    return computeUserContentFingerprint(getStore());
   }
 
   function observeRemoteStoreState({

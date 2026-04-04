@@ -193,8 +193,8 @@ export function createDriveSyncController({
       const previousLocalStore = getStore();
       const localFingerprint = computeStoreFingerprint(previousLocalStore);
       const remoteFingerprint = computeStoreFingerprint(remoteStore);
-      const localUserFingerprint = previousLocalStore.userFingerprint || computeUserContentFingerprint(previousLocalStore);
-      const remoteUserFingerprint = remoteStore.userFingerprint || computeUserContentFingerprint(remoteStore);
+      const localUserFingerprint = computeUserContentFingerprint(previousLocalStore);
+      const remoteUserFingerprint = computeUserContentFingerprint(remoteStore);
       const localUserUpdatedAt = previousLocalStore.userUpdatedAt || previousLocalStore.updatedAt || 0;
       const remoteUserUpdatedAt = remoteStore.userUpdatedAt || remoteStore.updatedAt || 0;
 
@@ -359,7 +359,7 @@ export function createDriveSyncController({
         remoteFingerprint: computeStoreFingerprint(remoteStore),
         remoteSavedAt: parseDriveModifiedTime(payload.modifiedTime),
         remoteUserUpdatedAt: remoteStore.userUpdatedAt || remoteStore.updatedAt || 0,
-        remoteUserFingerprint: remoteStore.userFingerprint || computeUserContentFingerprint(remoteStore)
+        remoteUserFingerprint: computeUserContentFingerprint(remoteStore)
       };
     } catch (error) {
       if (error?.name === "AbortError") {
@@ -428,7 +428,7 @@ export function createDriveSyncController({
           remoteFingerprint: knownRemoteFingerprint,
           remoteSavedAt: knownRemoteSavedAt || knownRemoteUpdatedAt || currentStore.updatedAt || 0,
           remoteUserUpdatedAt: knownRemoteUserUpdatedAt || currentStore.userUpdatedAt || currentStore.updatedAt || 0,
-          remoteUserFingerprint: knownRemoteUserFingerprint || currentStore.userFingerprint || computeUserContentFingerprint(currentStore)
+          remoteUserFingerprint: knownRemoteUserFingerprint || computeUserContentFingerprint(currentStore)
         };
       }
 
@@ -440,8 +440,8 @@ export function createDriveSyncController({
         remoteStore.driveFileId = remotePayload.fileId || "";
         preferredFileId = remotePayload.fileId || preferredFileId;
         const latestLocalStore = getStore();
-        const localUserFingerprint = latestLocalStore.userFingerprint || computeUserContentFingerprint(latestLocalStore);
-        const remoteUserFingerprint = remoteStore.userFingerprint || computeUserContentFingerprint(remoteStore);
+        const localUserFingerprint = computeUserContentFingerprint(latestLocalStore);
+        const remoteUserFingerprint = computeUserContentFingerprint(remoteStore);
         const localUserUpdatedAt = latestLocalStore.userUpdatedAt || latestLocalStore.updatedAt || 0;
         const remoteUserUpdatedAt = remoteStore.userUpdatedAt || remoteStore.updatedAt || 0;
 
@@ -531,7 +531,7 @@ export function createDriveSyncController({
       const remoteFingerprint = computeStoreFingerprint(savedStore);
       const remoteSavedAt = parseDriveModifiedTime(savePayload.modifiedTime) || Date.now();
       const remoteUserUpdatedAt = savedStore.userUpdatedAt || savedStore.updatedAt || 0;
-      const remoteUserFingerprint = savedStore.userFingerprint || computeUserContentFingerprint(savedStore);
+      const remoteUserFingerprint = computeUserContentFingerprint(savedStore);
 
       if (!quiet) {
         const successMessage = saveOutcome === "keep-local"

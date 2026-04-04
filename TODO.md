@@ -71,6 +71,7 @@
 
 ### Integrations
 
+- 2026-04-04: Recompute Drive user-content fingerprints from normalized content, ignore sync metadata in conflict detection, and mirror successful calendar sync updates back to Drive when safe.
 - 2026-04-04: Repair drifted Energy recurring masters during widget sync and remove orphaned Lifetree-tagged Google Calendar events during manual schedule sync.
 - 2026-04-04: Queue local task and series deletions for Google Calendar cleanup and process those pending event deletes during manual calendar sync.
 - 2026-04-04: Relink recurring Google Calendar masters by `lifetreeTaskId` during manual sync and clean up duplicate matching events instead of creating new series events.
