@@ -18,11 +18,8 @@
 - Codebase: Split Workout Coach into focused render, chart, task-sync, and state modules.
 - Codebase: Split `lifetree/style.css` further from imported chunks into feature-owned stylesheets and shared utility layers.
 - Codebase: Consolidate repeated dark-mode card/chip/form styling into shared CSS utilities after the stylesheet split.
-- Codebase: Add a startup smoke test that imports `app.js` and catches top-level TDZ/initialization regressions before the UI boots.
-- Codebase: Add a Drive load/save regression fixture that exercises older widget stores, missing payload objects, and malformed remote JSON.
 - Codebase: Add a render-fallback smoke test so malformed widget data from Drive can fail per-widget without freezing the whole app.
 - Codebase: Add lightweight Lifetree store and widget schema docs.
-- Codebase: Add reusable fixture stores for travel, workout, and Drive-conflict scenarios.
 - Codebase: Add JSDoc typedefs for core store, task, and widget records.
 
 ## Recently completed
@@ -39,6 +36,9 @@
 - 2026-04-03: Extract canopy detail modal state, canopy actions, and recurring bonus logic out of `app.js` into `lifetree/modules/canopyController.js`.
 - 2026-04-03: Extract widget shell/menu orchestration, pending-action flow, and widget autoskip helpers out of `app.js` into `lifetree/modules/widgetController.js`.
 - 2026-04-03: Extract Task Desk filtering, history actions, lifecycle/status repair, and pending-delete controller logic out of `app.js` into `lifetree/modules/taskHistoryController.js`.
+- 2026-04-03: Add a reusable fixture-store module for travel, workout, and Drive-conflict testing scenarios.
+- 2026-04-03: Add a startup smoke test that imports `app.js` with a stubbed browser harness and catches top-level TDZ/initialization regressions.
+- 2026-04-03: Add store-data regression tests for older widget stores, missing payload objects, malformed remote JSON, and Drive conflict fixtures.
 - 2026-04-01: Extract notification modal flow, Drive sync-state UI, remote-drift checks, and notification send helpers out of `app.js` into `lifetree/modules/notificationSyncController.js`.
 - 2026-04-01: Extract store normalization, category/task merge, deletion-marker handling, and comparable-signature logic out of `app.js` into `lifetree/modules/storeData.js`.
 - 2026-04-01: Extract tree detail/style modal state, fruit harvest, point exchange, and skin actions out of `app.js` into `lifetree/modules/treeController.js`.

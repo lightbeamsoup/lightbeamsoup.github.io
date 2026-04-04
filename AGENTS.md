@@ -44,6 +44,7 @@
 - Settings/profile changes should update both the settings modal in [`lifetree/index.html`](/home/jbk/lightbeamsoup.github.io/lifetree/index.html) and the profile normalization defaults in [`lifetree/modules/profile.js`](/home/jbk/lightbeamsoup.github.io/lifetree/modules/profile.js).
 - Prefer reusing existing feature wiring before adding new action paths. Shared forms, pending-action flows, modal sections, scheduler helpers, and widget-owned task metadata should be extended rather than duplicated when possible.
 - When a feature already has a submit path or renderer helper, prefer extracting or expanding that shared helper instead of forking similar markup or commit logic in a second location.
+- Keep individual JS files under roughly `3000` lines when practical. If a script would exceed that limit, prefer extracting modular feature slices into focused modules instead of continuing to grow the file.
 - After each edit turn is complete and ready for a new prompt, create a local commit by default, but do not push unless the user explicitly asks.
 - Never run `git add` and `git commit` in parallel. Git staging/commit commands should always be executed serially to avoid `.git/index.lock` races.
 - Keep git commits scoped to the files actually changed for the task, and check `git diff`/`git status` before committing when the working tree has unrelated files.

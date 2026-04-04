@@ -447,7 +447,12 @@ export function createStoreDataBindings(config = {}) {
 
   function normalizeStore(input) {
     const source = input && typeof input === "object" ? input : {};
-    const tasks = Array.isArray(source.tasks) ? source.tasks.map(normalizeTask).slice(0, maxTasks) : [];
+    const tasks = Array.isArray(source.tasks)
+      ? source.tasks
+          .filter((task) => task && typeof task === "object")
+          .map(normalizeTask)
+          .slice(0, maxTasks)
+      : [];
     const categories = normalizeCategoryDefinitions(source.categories);
     const widgets = normalizeWidgets(source.widgets);
     const retiredWidgets = normalizeWidgets(source.retiredWidgets);
@@ -623,6 +628,12 @@ export function createStoreDataBindings(config = {}) {
   function mergeStores(localStore, remoteStore) {
     const mergedCategories = mergeCategoryDefinitions(localStore.categories, remoteStore.categories);
     const mergedWidgets = mergeWidgetLists(localStore.widgets, remoteStore.widgets);
+    const resolveMergedCategorySnapshot = createCategorySnapshotResolver(mergedCategories, mergedWidgets);
+    const mergedPointOptions = {
+      defaultCategoryKey,
+      normalizeCategoryColor,
+      resolveCategorySnapshot: resolveMergedCategorySnapshot
+    };
     const preferredUserState = choosePreferredUserSyncState(localStore, remoteStore);
     const mergedDeletionMarkers = mergeDeletionMarkers(localStore.deletionMarkers, remoteStore.deletionMarkers);
     const deletionMarkerMaps = buildDeletionMarkerMaps(mergedDeletionMarkers);
@@ -659,11 +670,14 @@ export function createStoreDataBindings(config = {}) {
       profile: choosePreferredProfile(localStore.profile, remoteStore.profile),
       notifications: choosePreferredNotifications(localStore.notifications, remoteStore.notifications),
       tasks: Array.from(mergedById.values()).sort((a, b) => b.createdAt - a.createdAt).slice(0, maxTasks),
-      pointLedger: mergePointLedger(localStore.pointLedger, remoteStore.pointLedger),
+      pointLedger: mergePointLedger(localStore.pointLedger, remoteStore.pointLedger, mergedPointOptions),
       pointHistory: mergePointHistory(
         Array.isArray(localStore.pointHistory) ? localStore.pointHistory : localStore.pointLedger,
         Array.isArray(remoteStore.pointHistory) ? remoteStore.pointHistory : remoteStore.pointLedger,
-        mergedDevSettings
+        {
+          ...mergedPointOptions,
+          maxEntries: mergedDevSettings.maxPointHistoryEntries
+        }
       ),
       treeState: choosePreferredTreeState(localStore.treeState, remoteStore.treeState),
       devSettings: mergedDevSettings,
