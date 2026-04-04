@@ -9,7 +9,6 @@
 - Integrations: Add Apple Fitness integration.
 - Notifications: Move auth/session storage into a shared backend before re-enabling the dedicated Railway worker.
 - Canopy: Decide how dailies should be marked complete directly from the shell view.
-- Notifications: Consolidate repeated activities in email summaries and reminders.
 - Tasks: Add task snoozing.
 
 ### Codebase Maintenance
@@ -63,6 +62,7 @@
 - 2026-03-27: Build reminder candidate selection, preview it in the Notifications modal, and send reminder emails manually through the connected Google account.
 - 2026-03-27: Add automated reminder sending with backend scheduler dedupe, plus a developer daily agenda email trigger.
 - 2026-03-28: Add an always-on backend worker mode so email summaries and reminders can keep sending when Lifetree itself is closed.
+- 2026-04-03: Composite repeated same-day tasks in agenda/summary emails, include overdue-open items in agendas, and surface Travel Buddy flight/forecast snapshots in notification emails.
 
 ### Workout Coach
 

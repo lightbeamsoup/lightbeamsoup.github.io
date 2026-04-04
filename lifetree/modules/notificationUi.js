@@ -97,13 +97,21 @@ function renderEmailReminderPreview(preview, escapeHtml) {
           ${preview.items.map((item) => renderReminderPreviewListItem(item, escapeHtml)).join("")}
         </ul>
       </section>
+      ${Array.isArray(preview.travelHighlights) && preview.travelHighlights.length > 0 ? `
+        <section class="notifications-preview-section">
+          <strong>Travel snapshot</strong>
+          <ul>
+            ${preview.travelHighlights.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
+          </ul>
+        </section>
+      ` : ""}
     </article>
   `;
 }
 
 function buildReminderPreviewIntro(preview) {
   if (preview.templateKind === "agenda") {
-    return "This agenda includes everything due today. Completed and skipped tasks stay visible for context.";
+    return "This agenda includes everything due today plus overdue items you can still complete. Completed and skipped tasks stay visible for context.";
   }
   if (preview.templateKind === "overdue") {
     return "This email is for tasks that have already crossed their overdue threshold.";

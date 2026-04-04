@@ -7,6 +7,11 @@ import {
   normalizeNotificationTimezone,
   normalizeRecipientEmail
 } from "./notifications.js";
+import {
+  buildCompositeNotificationTaskItems,
+  buildGroupedHistoryLines,
+  buildTravelNotificationHighlights
+} from "./notificationDigest.js";
 
 const LIFETREE_APP_URL = "https://www.joshcodes.ai/lifetree";
 
@@ -50,33 +55,51 @@ export function buildEmailSummaryPreview({
   const overdueTasks = openTasks
     .filter((entry) => entry.dueKey < localNowKey)
     .sort((left, right) => left.dueKey.localeCompare(right.dueKey))
+    .slice(0, 12);
+  const overdueTaskLines = buildCompositeNotificationTaskItems(overdueTasks, {
+    timeZone,
+    now,
+    mode: "summary"
+  })
     .slice(0, 5)
-    .map((entry) => formatNotificationTaskLine(entry.task));
+    .map((item) => item.label);
   const dueSoonTasks = openTasks
     .filter((entry) => entry.dueKey >= localNowKey && entry.dueKey <= localWindowEndKey)
     .sort((left, right) => left.dueKey.localeCompare(right.dueKey))
+    .slice(0, 12);
+  const dueSoonTaskLines = buildCompositeNotificationTaskItems(dueSoonTasks, {
+    timeZone,
+    now,
+    mode: "summary"
+  })
     .slice(0, 5)
-    .map((entry) => formatNotificationTaskLine(entry.task));
-  const recentCompleted = buildHistoryFeed(tasks)
+    .map((item) => item.label);
+  const completedEntries = buildHistoryFeed(tasks)
     .filter((entry) => entry.type === "completed" && (entry.at || 0) >= nowTimestamp - summaryWindowMs)
-    .slice(0, 5)
-    .map((entry) => `${entry.taskName} · ${formatDateTimeInTimeZone(entry.at, timeZone)}`);
-  const recentSkipped = buildHistoryFeed(tasks)
+    .slice(0, 12);
+  const recentCompleted = buildGroupedHistoryLines(completedEntries, {
+    timeZone,
+    eventLabel: "completed"
+  }).slice(0, 5);
+  const skippedEntries = buildHistoryFeed(tasks)
     .filter((entry) => entry.type === "skipped" && (entry.at || 0) >= nowTimestamp - summaryWindowMs)
-    .slice(0, 5)
-    .map((entry) => `${entry.taskName} · ${formatDateTimeInTimeZone(entry.at, timeZone)}`);
+    .slice(0, 12);
+  const recentSkipped = buildGroupedHistoryLines(skippedEntries, {
+    timeZone,
+    eventLabel: "skipped"
+  }).slice(0, 5);
   const recurringProgress = buildRecurringProgressItems(tasks, localToday).slice(0, 6);
   const treeSummary = buildTreeSummary(store, timeZone);
   const widgetHighlights = buildWidgetHighlights(store?.widgets, now, timeZone).slice(0, 4);
   const sections = [];
 
   if (summaryConfig.include?.overdue) {
-    sections.push({ title: "Overdue tasks", items: overdueTasks });
+    sections.push({ title: "Overdue tasks", items: overdueTaskLines });
   }
   if (summaryConfig.include?.dueSoon) {
     sections.push({
       title: summaryConfig.frequency === "weekly" ? "Due in the next 7 days" : "Due in the next 24 hours",
-      items: dueSoonTasks
+      items: dueSoonTaskLines
     });
   }
   if (summaryConfig.include?.completed) {
@@ -258,21 +281,29 @@ function buildTreeSummary(store) {
 }
 
 function buildWidgetHighlights(widgets, now, timeZone) {
-  return (Array.isArray(widgets) ? widgets : []).map((widget) => {
+  return (Array.isArray(widgets) ? widgets : []).flatMap((widget) => {
     if (widget?.type === "energy") {
       const entries = Array.isArray(widget?.data?.entries) ? widget.data.entries : [];
       const latest = entries[entries.length - 1];
-      return latest ? `Energy: ${latest.level}/5 at ${formatDateTimeInTimeZone(latest.at, timeZone)}` : "Energy: no recent votes";
+      return [latest ? `Energy: ${latest.level}/5 at ${formatDateTimeInTimeZone(latest.at, timeZone)}` : "Energy: no recent votes"];
     }
     if (widget?.type === "workout") {
       const workouts = Array.isArray(widget?.data?.workoutEntries) ? widget.data.workoutEntries : [];
       const latestWorkout = workouts[workouts.length - 1];
       const calorieCopy = `${sumWorkoutCaloriesForCurrentWeek(workouts, now, timeZone)} cal this week`;
-      return latestWorkout
+      return [latestWorkout
         ? `Workout Coach: ${latestWorkout.workoutType || "Workout"} at ${formatDateTimeInTimeZone(latestWorkout.at, timeZone)} · ${calorieCopy}`
-        : `Workout Coach: ${calorieCopy}`;
+        : `Workout Coach: ${calorieCopy}`];
     }
-    return `${widget?.type || "Widget"} is active`;
+    if (widget?.type === "travel") {
+      return buildTravelNotificationHighlights([widget], {
+        now,
+        timeZone,
+        maxForecastDays: 3,
+        maxItems: 2
+      });
+    }
+    return [`${widget?.type || "Widget"} is active`];
   });
 }
 
@@ -283,14 +314,6 @@ function getNotificationTaskDueKey(task) {
   }
   const timeOfDay = task?.timeOfDay || "23:59";
   return `${dueDate}T${timeOfDay}`;
-}
-
-function formatNotificationTaskLine(task) {
-  const dueDate = task?.dueDate || task?.startDate || "";
-  const timeOfDay = task?.timeOfDay || "23:59";
-  const recurringGroup = getRecurringGroupKind(task);
-  const recurringLabel = recurringGroup ? ` · ${capitalizeWord(recurringGroup)}` : "";
-  return `${task?.name || "Task"}${recurringLabel} · ${formatTaskDueLabel(dueDate, timeOfDay)}`;
 }
 
 function getRecurringGroupKind(task) {
@@ -373,14 +396,6 @@ function sumWorkoutCaloriesForCurrentWeek(entries, now, timeZone) {
   }, 0);
 }
 
-function formatTaskDueLabel(dateString, timeString) {
-  const parsed = new Date(`${dateString}T${timeString || "23:59"}:00`);
-  if (Number.isNaN(parsed.getTime())) {
-    return `${dateString} ${timeString || "23:59"}`.trim();
-  }
-  return `${parsed.toLocaleDateString([], { month: "short", day: "numeric" })} at ${parsed.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
-}
-
 function formatDateInTimeZone(value, timeZone) {
   return new Intl.DateTimeFormat(undefined, {
     timeZone,
@@ -451,11 +466,6 @@ function shiftDateString(dateString, days) {
 function weekdayFromDateString(dateString) {
   const parsed = new Date(`${dateString}T12:00:00Z`);
   return Number.isNaN(parsed.getTime()) ? 0 : parsed.getUTCDay();
-}
-
-function capitalizeWord(value) {
-  const text = String(value || "");
-  return text ? text.charAt(0).toUpperCase() + text.slice(1) : "";
 }
 
 function escapeHtml(value) {

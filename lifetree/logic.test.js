@@ -17,6 +17,7 @@ import {
   ,
   shouldAutoSkipTask
 } from "./logic.js";
+import { buildEmailReminderTemplates } from "./modules/notificationReminders.js";
 import { buildEmailSummaryPreview } from "./modules/notificationSummary.js";
 import { buildFruitDisplayState } from "./modules/treeState.js";
 import { exchangeTreeBankedPoints } from "./modules/treeStyles.js";
@@ -198,6 +199,172 @@ test("email summary preview includes skipped tasks from the summary window", () 
   assert.ok(skippedSection);
   assert.equal(skippedSection.items.length, 1);
   assert.match(skippedSection.items[0], /Laundry/);
+});
+
+test("agenda email composites same-day repeated tasks and includes overdue open items", () => {
+  const now = new Date("2026-03-30T08:30:00-07:00");
+  const previews = buildEmailReminderTemplates({
+    store: {
+      profile: { displayName: "Josh" },
+      tasks: [
+        {
+          id: "energy-1",
+          name: "Energy check-in",
+          status: "done",
+          dueDate: "2026-03-30",
+          timeOfDay: "07:00",
+          linkedSeries: { groupId: "energy-daily", slotIndex: 0, slotCount: 3 }
+        },
+        {
+          id: "energy-2",
+          name: "Energy check-in",
+          status: "open",
+          dueDate: "2026-03-30",
+          timeOfDay: "12:00",
+          linkedSeries: { groupId: "energy-daily", slotIndex: 1, slotCount: 3 }
+        },
+        {
+          id: "energy-3",
+          name: "Energy check-in",
+          status: "open",
+          dueDate: "2026-03-30",
+          timeOfDay: "19:00",
+          linkedSeries: { groupId: "energy-daily", slotIndex: 2, slotCount: 3 }
+        },
+        {
+          id: "cleanup-1",
+          name: "Empty under sink water",
+          status: "open",
+          dueDate: "2026-03-29",
+          timeOfDay: "20:00"
+        }
+      ],
+      widgets: []
+    },
+    emailConfig: {
+      reminders: {
+        enabled: true,
+        dailyAgendaEnabled: true,
+        dailyAgendaTime: "07:00"
+      },
+      summaries: {
+        timezone: "America/Los_Angeles"
+      }
+    },
+    now,
+    fallbackRecipientEmail: "josh@example.com"
+  });
+
+  const agenda = previews.find((preview) => preview.templateKind === "agenda");
+  assert.ok(agenda);
+  assert.ok(agenda.items.some((item) => item.label.includes("Energy check-in (3): due at 7:00 AM completed, 12:00 PM, 7:00 PM")));
+  assert.ok(agenda.items.some((item) => item.label.includes("Empty under sink water")));
+  assert.ok(agenda.items.some((item) => item.label.includes("Overdue")));
+});
+
+test("email summary composites repeated due items and includes travel live highlights", () => {
+  const now = new Date("2026-03-30T06:00:00-07:00");
+  const preview = buildEmailSummaryPreview({
+    store: {
+      profile: { displayName: "Josh" },
+      tasks: [
+        {
+          id: "energy-1",
+          name: "Energy check-in",
+          status: "open",
+          dueDate: "2026-03-30",
+          timeOfDay: "07:00",
+          linkedSeries: { groupId: "energy-daily", slotIndex: 0, slotCount: 3 }
+        },
+        {
+          id: "energy-2",
+          name: "Energy check-in",
+          status: "open",
+          dueDate: "2026-03-30",
+          timeOfDay: "12:00",
+          linkedSeries: { groupId: "energy-daily", slotIndex: 1, slotCount: 3 }
+        },
+        {
+          id: "energy-3",
+          name: "Energy check-in",
+          status: "open",
+          dueDate: "2026-03-30",
+          timeOfDay: "19:00",
+          linkedSeries: { groupId: "energy-daily", slotIndex: 2, slotCount: 3 }
+        }
+      ],
+      widgets: [
+        {
+          type: "travel",
+          data: {
+            trips: [
+              {
+                id: "trip-1",
+                name: "AI4NS",
+                destination: "Albuquerque, NM",
+                status: "active",
+                startDate: "2026-03-30",
+                endDate: "2026-04-01",
+                itinerary: {}
+              }
+            ],
+            liveSnapshots: {
+              "trip-1": {
+                flight: {
+                  status: "ok",
+                  flightLabel: "UA5375",
+                  statusLabel: "Scheduled",
+                  departureCode: "SFO",
+                  arrivalCode: "ABQ",
+                  departureTimeLabel: "Mar 30, 12:00 PM",
+                  gate: "E3",
+                  terminal: "3"
+                },
+                weather: {
+                  status: "ok",
+                  locationLabel: "Albuquerque, New Mexico",
+                  days: [
+                    { shortLabel: "Mon", temperatureLabel: "81/52F", conditionLabel: "Clouds" },
+                    { shortLabel: "Tue", temperatureLabel: "75/55F", conditionLabel: "Drizzle" }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      pointLedger: [],
+      treeState: {},
+      categories: []
+    },
+    emailConfig: {
+      summaries: {
+        enabled: true,
+        frequency: "daily",
+        sendTime: "18:00",
+        include: {
+          overdue: false,
+          dueSoon: true,
+          completed: false,
+          recurringProgress: false,
+          treePoints: false,
+          widgetHighlights: true
+        }
+      },
+      history: []
+    },
+    now,
+    fallbackRecipientEmail: "josh@example.com"
+  });
+
+  const dueSoonSection = preview.sections.find((section) => section.title === "Due in the next 24 hours");
+  assert.ok(dueSoonSection);
+  assert.ok(dueSoonSection.items.some((item) => item.includes("Energy check-in (3): due at 7:00 AM, 12:00 PM, 7:00 PM")));
+
+  const widgetHighlightsSection = preview.sections.find((section) => section.title === "Widget highlights");
+  assert.ok(widgetHighlightsSection);
+  assert.ok(widgetHighlightsSection.items.some((item) => item.includes("UA5375")));
+  assert.ok(widgetHighlightsSection.items.some((item) => item.includes("Forecast")));
 });
 
 test("preserves deleted series template history through archived records", () => {

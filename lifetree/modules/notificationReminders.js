@@ -1,4 +1,4 @@
-import { formatTaskDisplayName, WEEKDAY_LABELS } from "../logic.js";
+import { WEEKDAY_LABELS } from "../logic.js";
 import { getWidgetDefinition } from "../widgets/registry.js";
 import {
   DEFAULT_NOTIFICATION_TIMEZONE,
@@ -8,6 +8,10 @@ import {
   normalizeRecipientEmail,
   normalizeReminderMinutes
 } from "./notifications.js";
+import {
+  buildCompositeNotificationTaskItems,
+  buildTravelNotificationHighlights
+} from "./notificationDigest.js";
 
 const LIFETREE_APP_URL = "https://www.joshcodes.ai/lifetree";
 const REMINDER_TEMPLATE_ORDER = ["agenda", "due-soon", "overdue"];
@@ -40,6 +44,7 @@ export function buildEmailReminderTemplates({
     requireDailyAgendaTime
   });
   return buildReminderTemplatesFromCandidates({
+    store,
     reminders,
     displayName,
     recipientEmail,
@@ -100,6 +105,7 @@ export function buildScheduledEmailReminderTemplates({
   ];
 
   return buildReminderTemplatesFromCandidates({
+    store,
     reminders,
     displayName: String(store?.profile?.displayName || "").trim() || "Lifetree",
     recipientEmail: normalizeRecipientEmail(emailConfig?.recipientEmail || fallbackRecipientEmail || ""),
@@ -168,7 +174,7 @@ export function collectEmailReminderCandidates({
   }
 
   if (dailyAgendaAllowed && (!requireDailyAgendaTime || localTime >= normalizeNotificationTime(reminders.dailyAgendaTime, "07:00"))) {
-    dailyAgenda.push(...collectDailyAgendaCandidates(tasks, currentDate, timeZone));
+    dailyAgenda.push(...collectDailyAgendaCandidates(tasks, currentDate, timeZone, nowTimestamp, taskMap));
   }
 
   const sortCandidates = (left, right) => left.dueTimestamp - right.dueTimestamp
@@ -240,6 +246,14 @@ export function renderEmailReminderBodyHtml(preview) {
       <p style="margin: 0 0 14px; color: #4f637a;">${escapeHtml(preview.scheduleLabel)}${preview.recipientEmail ? ` · Sent to ${escapeHtml(preview.recipientEmail)}` : ""}</p>
       <p style="margin: 0 0 20px; color: #4f637a;">${escapeHtml(intro)}</p>
       ${itemsHtml}
+      ${Array.isArray(preview.travelHighlights) && preview.travelHighlights.length > 0 ? `
+      <section style="margin-top: 22px;">
+        <h2 style="margin: 0 0 10px; font-size: 18px; color: #253243;">Travel snapshot</h2>
+        <ul style="margin: 0; padding-left: 20px; color: #4f637a; line-height: 1.55;">
+          ${preview.travelHighlights.map((item) => `<li style="margin-bottom: 6px;">${escapeHtml(item)}</li>`).join("")}
+        </ul>
+      </section>
+      ` : ""}
       <p style="margin: 24px 0 0; color: #4f637a;">Open Lifetree: <a href="${LIFETREE_APP_URL}" style="color: #e57b4b;">${LIFETREE_APP_URL}</a></p>
     </main>
   </body>
@@ -260,6 +274,11 @@ export function renderEmailReminderBodyText(preview) {
     lines.push(...preview.items.map((item) => `- ${formatReminderTextItem(item)}`));
     lines.push("");
   }
+  if (Array.isArray(preview.travelHighlights) && preview.travelHighlights.length > 0) {
+    lines.push("Travel snapshot");
+    lines.push(...preview.travelHighlights.map((item) => `- ${item}`));
+    lines.push("");
+  }
   lines.push(`Open Lifetree: ${LIFETREE_APP_URL}`);
   return lines.join("\n").trim();
 }
@@ -275,6 +294,7 @@ export function buildReminderScheduleLabel(remindersConfig, timeZone = DEFAULT_N
 }
 
 function buildReminderTemplatesFromCandidates({
+  store,
   reminders,
   displayName,
   recipientEmail,
@@ -319,7 +339,8 @@ function buildReminderTemplatesFromCandidates({
       suppressedByQuietHours,
       templateKind: spec.templateKind,
       candidates: spec.items,
-      eventKeys: spec.eventKeys
+      eventKeys: spec.eventKeys,
+      store
     }))
     .filter(Boolean)
     .sort((left, right) => REMINDER_TEMPLATE_ORDER.indexOf(left.templateKind) - REMINDER_TEMPLATE_ORDER.indexOf(right.templateKind));
@@ -335,14 +356,27 @@ function buildReminderTemplatePreview({
   suppressedByQuietHours,
   templateKind,
   candidates,
-  eventKeys
+  eventKeys,
+  store
 }) {
   const safeCandidates = Array.isArray(candidates) ? candidates : [];
   if (safeCandidates.length === 0) {
     return null;
   }
-  const items = safeCandidates.map((candidate) => buildReminderPreviewItem(candidate.task, timeZone));
+  const items = buildCompositeNotificationTaskItems(safeCandidates, {
+    timeZone,
+    now,
+    mode: templateKind === "agenda" ? "agenda" : "summary"
+  });
   const dateCopy = formatDateInTimeZone(now, timeZone);
+  const travelHighlights = templateKind === "agenda"
+    ? buildTravelNotificationHighlights(store?.widgets, {
+        now,
+        timeZone,
+        maxForecastDays: 3,
+        maxItems: 2
+      })
+    : [];
   return {
     templateKind,
     eyebrow: templateKind === "agenda" ? "Lifetree agenda" : templateKind === "overdue" ? "Lifetree overdue reminder" : "Lifetree reminder",
@@ -355,7 +389,8 @@ function buildReminderTemplatePreview({
     suppressedByQuietHours,
     eventCount: items.length,
     eventKeys: [...new Set(eventKeys)].sort(),
-    reminderKey: [...new Set(eventKeys)].sort().join("|").slice(0, 240)
+    reminderKey: [...new Set(eventKeys)].sort().join("|").slice(0, 240),
+    travelHighlights
   };
 }
 
@@ -401,41 +436,38 @@ function getReminderTaskDueTimestamp(task, timeZone) {
   return zonedDateTimeToTimestamp(dueDate, task?.timeOfDay || "23:59", taskTimeZone);
 }
 
-function buildReminderPreviewItem(task, timeZone) {
-  const dueDate = task?.dueDate || task?.startDate || "";
-  const timeOfDay = task?.timeOfDay || "23:59";
-  const taskTimeZone = getReminderTaskTimeZone(task, timeZone);
-  const dueTimestamp = zonedDateTimeToTimestamp(dueDate, timeOfDay, taskTimeZone);
-  const dueCopy = Number.isFinite(dueTimestamp)
-    ? formatDateTimeInTimeZone(dueTimestamp, taskTimeZone)
-    : `${dueDate} ${timeOfDay}`.trim();
-  const status = task?.status === "done" ? "completed" : (task?.status === "skipped" ? "skipped" : "open");
-  return {
-    label: `${formatTaskDisplayName(task)} · Due ${dueCopy}${taskTimeZone !== timeZone ? ` (${taskTimeZone})` : ""}`,
-    status
-  };
-}
+function collectDailyAgendaCandidates(tasks, currentDate, timeZone, nowTimestamp, taskMap) {
+  const results = [];
+  const seenTaskIds = new Set();
 
-function collectDailyAgendaCandidates(tasks, currentDate, timeZone) {
-  return (Array.isArray(tasks) ? tasks : [])
-    .filter((task) => {
-      if (!task || task.archived) {
-        return false;
-      }
-      const dueTimestamp = getReminderTaskDueTimestamp(task, timeZone);
-      const dueDate = Number.isFinite(dueTimestamp)
-        ? getZonedDateString(new Date(dueTimestamp), timeZone)
-        : (task?.dueDate || task?.startDate || "");
-      if (dueDate !== currentDate) {
-        return false;
-      }
-      return task.status === "open" || task.status === "done" || task.status === "skipped";
-    })
-    .map((task) => ({
+  for (const task of Array.isArray(tasks) ? tasks : []) {
+    if (!task || task.archived || task.historyOnly) {
+      continue;
+    }
+    const dueTimestamp = getReminderTaskDueTimestamp(task, timeZone);
+    const dueDate = Number.isFinite(dueTimestamp)
+      ? getZonedDateString(new Date(dueTimestamp), timeZone)
+      : (task?.dueDate || task?.startDate || "");
+    const isToday = dueDate === currentDate && (task.status === "open" || task.status === "done" || task.status === "skipped");
+    const isOverdueOpen = task.status === "open"
+      && Number.isFinite(dueTimestamp)
+      && dueTimestamp < nowTimestamp
+      && shouldIncludeTaskForAgendaOverdue(task, { nowTimestamp, taskMap });
+    if (!isToday && !isOverdueOpen) {
+      continue;
+    }
+    if (seenTaskIds.has(task.id)) {
+      continue;
+    }
+    seenTaskIds.add(task.id);
+    results.push({
       key: `agenda:${currentDate}:${task.id}`,
       task,
-      dueTimestamp: getReminderTaskDueTimestamp(task, timeZone)
-    }));
+      dueTimestamp
+    });
+  }
+
+  return results;
 }
 
 function getReminderTaskTimeZone(task, fallbackTimeZone) {
@@ -503,7 +535,7 @@ function buildReminderSubject(displayName, templateKind, dateCopy) {
 
 function buildReminderTemplateIntro(preview) {
   if (preview.templateKind === "agenda") {
-    return "Here is everything due today. Tasks already completed or skipped stay listed so the day is easy to review at a glance.";
+    return "Here is everything due today, plus overdue items you can still complete. Tasks already completed or skipped stay listed so the day is easy to review at a glance.";
   }
   if (preview.templateKind === "overdue") {
     return "These tasks are now past their overdue threshold and still need attention.";
@@ -617,6 +649,28 @@ function formatTimeLabel(value) {
   return new Date(2000, 0, 1, hours, minutes, 0).toLocaleTimeString([], {
     hour: "numeric",
     minute: "2-digit"
+  });
+}
+
+function shouldIncludeTaskForAgendaOverdue(task, { nowTimestamp, taskMap }) {
+  if (!task || task.archived || task.historyOnly || task.status !== "open") {
+    return false;
+  }
+  if (typeof task.notBeforeAt === "number" && task.notBeforeAt > nowTimestamp) {
+    return false;
+  }
+  const dependencyIds = getTaskDependencyIds(task);
+  return !dependencyIds.some((dependencyId) => {
+    const dependency = taskMap.get(dependencyId);
+    if (!dependency) {
+      return false;
+    }
+    const definition = getWidgetDefinition(task.ownerWidgetType);
+    const satisfied = definition?.isDependencySatisfied?.({ task, dependency });
+    if (typeof satisfied === "boolean") {
+      return !satisfied;
+    }
+    return dependency.status !== "done";
   });
 }
 
