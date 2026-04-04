@@ -172,7 +172,7 @@ export function createDriveSyncController({
       }
       if (!payload.found) {
         if (!quietIfMissing) {
-          setSyncStatus("No Drive task file found yet. Save to Drive to create it.", "info");
+          setSyncStatus("No Drive task file found yet. Run Google sync to create it.", "info");
         }
         return {
           applied: false,

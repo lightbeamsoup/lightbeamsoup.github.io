@@ -90,10 +90,6 @@ export function createNotificationSyncController({
     syncAutosaveValue,
     syncCalendarValue,
     googleSignInButton,
-    googleSignOutButton,
-    loadDriveButton,
-    saveDriveButton,
-    bootstrapGoogleCalendarButton,
     syncGoogleCalendarButton,
     copyGoogleCalendarDiagnosticsButton,
     clearDriveDataButton,
@@ -107,6 +103,10 @@ export function createNotificationSyncController({
     storeRef: null,
     updatedAt: Number.NaN,
     fingerprint: ""
+  };
+  const googleSyncState = {
+    inFlight: false,
+    phase: ""
   };
 
   function isNotificationsOpen() {
@@ -666,8 +666,7 @@ export function createNotificationSyncController({
     renderSyncMeta();
   }
 
-  async function handleManualLoadFromDrive() {
-    const result = await loadFromDrive();
+  function applyDriveLoadObservation(result) {
     if (result?.found) {
       observeRemoteStoreState({
         updatedAt: result.remoteUpdatedAt,
@@ -698,16 +697,24 @@ export function createNotificationSyncController({
     renderSyncMeta();
   }
 
+  async function handleManualLoadFromDrive() {
+    const result = await loadFromDrive();
+    applyDriveLoadObservation(result);
+  }
+
   async function handleManualSaveToDrive() {
     await saveCurrentStoreToDrive({ quiet: false, force: false, mode: "manual" });
   }
 
-  async function handleEnsureGoogleCalendar() {
+  async function ensureGoogleCalendarReady({
+    showSuccessStatus = true,
+    missingAuthMessage = "Connect Google first to sync Lifetree with Google."
+  } = {}) {
     if (!authState.authenticated) {
       const authenticated = await refreshAuthStatus({ suppressUnavailableError: false });
       if (!authenticated) {
-        setSyncStatus("Connect Google first to set up the Lifetree calendar.", "error");
-        return;
+        setSyncStatus(missingAuthMessage, "error");
+        return { ok: false, error: "Not authenticated" };
       }
     }
 
@@ -715,8 +722,6 @@ export function createNotificationSyncController({
     const currentUserTimeZone = typeof Intl !== "undefined"
       ? Intl.DateTimeFormat().resolvedOptions().timeZone || ""
       : "";
-    bootstrapGoogleCalendarButton.disabled = true;
-    bootstrapGoogleCalendarButton.textContent = current.calendarId ? "Checking…" : "Setting up…";
     try {
       const response = await fetch(`${apiBase}/api/google-calendar/bootstrap`, {
         method: "POST",
@@ -748,14 +753,24 @@ export function createNotificationSyncController({
         lastCalendarSyncToken: current.lastCalendarSyncToken || ""
       }, now);
       renderSyncMeta();
-      setSyncStatus(
-        payload.created
-          ? `Created the ${payload.calendarSummary || "Lifetree"} Google Calendar.`
-          : payload.updated
-            ? `Updated the ${payload.calendarSummary || "Lifetree"} Google Calendar to ${payload.calendarTimeZone || currentUserTimeZone || "your current timezone"}.`
-          : `Linked the existing ${payload.calendarSummary || "Lifetree"} Google Calendar.`,
-        "success"
-      );
+      if (showSuccessStatus) {
+        setSyncStatus(
+          payload.created
+            ? `Created the ${payload.calendarSummary || "Lifetree"} Google Calendar.`
+            : payload.updated
+              ? `Updated the ${payload.calendarSummary || "Lifetree"} Google Calendar to ${payload.calendarTimeZone || currentUserTimeZone || "your current timezone"}.`
+            : `Linked the existing ${payload.calendarSummary || "Lifetree"} Google Calendar.`,
+          "success"
+        );
+      }
+      return {
+        ok: true,
+        calendarId: payload.calendarId || "",
+        calendarSummary: payload.calendarSummary || current.calendarSummary || "Lifetree",
+        calendarTimeZone: payload.calendarTimeZone || "",
+        created: payload.created === true,
+        updated: payload.updated === true
+      };
     } catch (error) {
       const message = String(error?.message || "Calendar bootstrap failed");
       const now = Date.now();
@@ -766,34 +781,113 @@ export function createNotificationSyncController({
       }, now);
       renderSyncMeta();
       if (message.includes("insufficientPermissions") || message.includes("insufficient_scope")) {
-        setSyncStatus("Reconnect Google and grant Calendar access, then set up the Lifetree calendar again.", "error");
+        setSyncStatus("Reconnect Google and grant Calendar access, then run Google sync again.", "error");
       } else if (message === "Not authenticated") {
-        setSyncStatus("Connect Google first to set up the Lifetree calendar.", "error");
+        setSyncStatus(missingAuthMessage, "error");
       } else {
         setSyncStatus(`Lifetree calendar setup failed: ${message}`, "error");
       }
+      return { ok: false, error: message };
+    }
+  }
+
+  async function handleEnsureGoogleCalendar() {
+    try {
+      await ensureGoogleCalendarReady({
+        showSuccessStatus: true,
+        missingAuthMessage: "Connect Google first to sync Lifetree with Google."
+      });
     } finally {
       updateGoogleButtons();
     }
   }
 
-  async function handleSyncGoogleCalendarSchedule() {
-    if (!authState.authenticated) {
-      const authenticated = await refreshAuthStatus({ suppressUnavailableError: false });
-      if (!authenticated) {
-        setSyncStatus("Connect Google first to sync the Lifetree schedule.", "error");
-        return;
+  function setGoogleSyncInFlight(inFlight, phase = "") {
+    googleSyncState.inFlight = Boolean(inFlight);
+    googleSyncState.phase = googleSyncState.inFlight ? phase : "";
+    updateGoogleButtons();
+  }
+
+  async function reconcileDriveBeforeGoogleSync() {
+    const localStore = getStore();
+    const localUserUpdatedAt = localStore.userUpdatedAt || localStore.updatedAt || 0;
+    const localUserFingerprint = getCurrentUserFingerprint();
+    const remoteResult = await peekRemoteStore({ suppressAuthError: false });
+
+    if (!remoteResult?.ok) {
+      if (remoteResult?.error) {
+        setSyncStatus(`Google sync could not check Drive: ${remoteResult.error}`, "error");
       }
+      return { ok: false };
     }
 
+    if (!remoteResult.found) {
+      clearRemoteStoreState();
+      autosave.refreshSchedule();
+      renderSyncMeta();
+      return { ok: true, lead: "" };
+    }
+
+    observeRemoteStoreState({
+      updatedAt: remoteResult.remoteUpdatedAt,
+      fingerprint: remoteResult.remoteFingerprint,
+      savedAt: remoteResult.remoteSavedAt,
+      userUpdatedAt: remoteResult.remoteUserUpdatedAt,
+      userFingerprint: remoteResult.remoteUserFingerprint
+    });
+    renderSyncMeta();
+
+    const remoteUserUpdatedAt = remoteResult.remoteUserUpdatedAt || 0;
+    const remoteUserFingerprint = remoteResult.remoteUserFingerprint || "";
+    if (remoteUserFingerprint && remoteUserFingerprint === localUserFingerprint) {
+      setRemoteComparisonBase({
+        userUpdatedAt: remoteUserUpdatedAt,
+        userFingerprint: remoteUserFingerprint
+      });
+      announceRemoteStoreState();
+      return { ok: true, lead: "" };
+    }
+
+    if (localUserUpdatedAt > remoteUserUpdatedAt) {
+      const saveResult = await saveCurrentStoreToDrive({
+        quiet: false,
+        force: false,
+        mode: "google-sync"
+      });
+      if (saveResult?.cancelled) {
+        setSyncStatus("Google sync cancelled. Local changes were not sent to Drive.", "info");
+        return { ok: false, cancelled: true };
+      }
+      if (!saveResult?.success) {
+        return { ok: false };
+      }
+      return {
+        ok: true,
+        lead: saveResult.skipped ? "" : "Saved newer local Drive changes first. "
+      };
+    }
+
+    const loadResult = await loadFromDrive({
+      conflictStrategy: "remote"
+    });
+    applyDriveLoadObservation(loadResult);
+    if (loadResult?.cancelled) {
+      return { ok: false, cancelled: true };
+    }
+    if (!loadResult?.found || (!loadResult?.applied && !loadResult?.synced)) {
+      return { ok: false };
+    }
+    return {
+      ok: true,
+      lead: loadResult.applied ? "Loaded newer Drive changes first. " : ""
+    };
+  }
+
+  async function syncGoogleCalendarScheduleOnly({ lead = "" } = {}) {
     const googleCalendar = normalizeIntegrations(getStore().integrations).googleCalendar;
     if (!googleCalendar.calendarId) {
-      setSyncStatus("Set up the Lifetree calendar first, then sync the schedule.", "error");
-      return;
-    }
-
-    if (typeof finalizeStoreState === "function") {
-      finalizeStoreState();
+      setSyncStatus("Google sync could not find the dedicated Lifetree calendar.", "error");
+      return { ok: false, mirroredToDrive: false, upToDate: false };
     }
 
     const currentUserTimeZone = typeof Intl !== "undefined"
@@ -804,26 +898,19 @@ export function createNotificationSyncController({
     });
     if (syncRequest.tasks.length === 0 && (!Array.isArray(syncRequest.pendingDeletions) || syncRequest.pendingDeletions.length === 0)) {
       const now = Date.now();
+      const message = syncRequest.totalEligibleTasks > 0
+        ? "The Lifetree calendar schedule is already up to date."
+        : "No scheduled Lifetree tasks are ready for calendar sync.";
       persistGoogleCalendarState({
         lastCalendarSyncAt: now,
         lastCalendarSyncStatus: "success",
-        lastCalendarSyncMessage: syncRequest.totalEligibleTasks > 0
-          ? "The Lifetree calendar schedule is already up to date."
-          : "No scheduled Lifetree tasks are ready for calendar sync."
+        lastCalendarSyncMessage: message
       }, now);
       renderSyncMeta();
-      setSyncStatus(
-        syncRequest.totalEligibleTasks > 0
-          ? "The Lifetree calendar schedule is already up to date."
-          : "No scheduled Lifetree tasks are ready for calendar sync.",
-        "info"
-      );
-      updateGoogleButtons();
-      return;
+      setSyncStatus(`${lead}${message}`, "info");
+      return { ok: true, mirroredToDrive: false, upToDate: true };
     }
 
-    syncGoogleCalendarButton.disabled = true;
-    syncGoogleCalendarButton.textContent = "Syncing…";
     try {
       const response = await fetch(`${apiBase}/api/google-calendar/sync-schedule`, {
         method: "POST",
@@ -1002,11 +1089,16 @@ export function createNotificationSyncController({
         const firstError = results.find((entry) => entry?.ok === false)?.error
           || payload.deletionResults?.find((entry) => entry?.ok === false)?.error
           || payload.orphanDeletionResults?.find((entry) => entry?.ok === false)?.error
-          || "Calendar sync hit one or more Google errors.";
-        setSyncStatus(`Calendar sync checked ${appliedCount} task${appliedCount === 1 ? "" : "s"} (${changedCount} changed: ${pulledCount} pulled, ${pushedCount} pushed, ${statusMirroredCount} status mirrored, ${instanceOverrideAppliedCount} instance override${instanceOverrideAppliedCount === 1 ? "" : "s"} applied${summarySuffix}) and processed ${processedDeletionCount} deletion${processedDeletionCount === 1 ? "" : "s"} (${deletedEventCount} Google event${deletedEventCount === 1 ? "" : "s"} removed, ${duplicateDeletedCount} duplicate${duplicateDeletedCount === 1 ? "" : "s"} cleaned up, ${orphanDeletedCount} orphan${orphanDeletedCount === 1 ? "" : "s"} removed), but ${errorCount + deletionErrorCount + orphanDeletionErrorCount} failed: ${firstError}`, "error");
+          || "Google sync hit one or more Google errors.";
+        setSyncStatus(`${lead}Google sync checked ${appliedCount} task${appliedCount === 1 ? "" : "s"} (${changedCount} changed: ${pulledCount} pulled, ${pushedCount} pushed, ${statusMirroredCount} status mirrored, ${instanceOverrideAppliedCount} instance override${instanceOverrideAppliedCount === 1 ? "" : "s"} applied${summarySuffix}) and processed ${processedDeletionCount} deletion${processedDeletionCount === 1 ? "" : "s"} (${deletedEventCount} Google event${deletedEventCount === 1 ? "" : "s"} removed, ${duplicateDeletedCount} duplicate${duplicateDeletedCount === 1 ? "" : "s"} cleaned up, ${orphanDeletedCount} orphan${orphanDeletedCount === 1 ? "" : "s"} removed), but ${errorCount + deletionErrorCount + orphanDeletionErrorCount} failed: ${firstError}`, "error");
       } else {
-        setSyncStatus(`Calendar sync checked ${appliedCount} task${appliedCount === 1 ? "" : "s"} (${changedCount} changed: ${pulledCount} pulled, ${pushedCount} pushed, ${statusMirroredCount} status mirrored, ${instanceOverrideAppliedCount} instance override${instanceOverrideAppliedCount === 1 ? "" : "s"} applied${summarySuffix}) and processed ${processedDeletionCount} deletion${processedDeletionCount === 1 ? "" : "s"} (${deletedEventCount} Google event${deletedEventCount === 1 ? "" : "s"} removed, ${duplicateDeletedCount} duplicate${duplicateDeletedCount === 1 ? "" : "s"} cleaned up, ${orphanDeletedCount} orphan${orphanDeletedCount === 1 ? "" : "s"} removed) against ${nextCalendarSummary}.${mirroredToDrive ? " Mirrored the updated calendar state to Drive." : " Save to Drive if you want the links and pulled edits on other devices."}`, "success");
+        setSyncStatus(`${lead}Google sync checked ${appliedCount} task${appliedCount === 1 ? "" : "s"} (${changedCount} changed: ${pulledCount} pulled, ${pushedCount} pushed, ${statusMirroredCount} status mirrored, ${instanceOverrideAppliedCount} instance override${instanceOverrideAppliedCount === 1 ? "" : "s"} applied${summarySuffix}) and processed ${processedDeletionCount} deletion${processedDeletionCount === 1 ? "" : "s"} (${deletedEventCount} Google event${deletedEventCount === 1 ? "" : "s"} removed, ${duplicateDeletedCount} duplicate${duplicateDeletedCount === 1 ? "" : "s"} cleaned up, ${orphanDeletedCount} orphan${orphanDeletedCount === 1 ? "" : "s"} removed) against ${nextCalendarSummary}.${mirroredToDrive ? " Mirrored the updated Google state to Drive." : " Drive state was unchanged."}`, "success");
       }
+      return {
+        ok: errorCount + deletionErrorCount + orphanDeletionErrorCount === 0,
+        mirroredToDrive,
+        upToDate: false
+      };
     } catch (error) {
       const message = String(error?.message || "Calendar schedule sync failed");
       const now = Date.now();
@@ -1017,14 +1109,72 @@ export function createNotificationSyncController({
       }, now);
       renderSyncMeta();
       if (message.includes("insufficientPermissions") || message.includes("insufficient_scope")) {
-        setSyncStatus("Reconnect Google and grant Calendar access, then sync the Lifetree schedule again.", "error");
+        setSyncStatus("Reconnect Google and grant Calendar access, then sync Lifetree with Google again.", "error");
       } else if (message === "Not authenticated") {
-        setSyncStatus("Connect Google first to sync the Lifetree schedule.", "error");
+        setSyncStatus("Connect Google first to sync Lifetree with Google.", "error");
       } else {
-        setSyncStatus(`Lifetree schedule sync failed: ${message}`, "error");
+        setSyncStatus(`Google sync failed: ${message}`, "error");
+      }
+      return { ok: false, mirroredToDrive: false, upToDate: false };
+    }
+  }
+
+  async function handleSyncGoogleCalendarSchedule() {
+    if (!authState.authenticated) {
+      const authenticated = await refreshAuthStatus({ suppressUnavailableError: false });
+      if (!authenticated) {
+        setSyncStatus("Connect Google first to sync Lifetree with Google.", "error");
+        return;
+      }
+    }
+
+    if (typeof finalizeStoreState === "function") {
+      finalizeStoreState();
+    }
+
+    setGoogleSyncInFlight(true, "Syncing…");
+    try {
+      const driveResult = await reconcileDriveBeforeGoogleSync();
+      if (!driveResult?.ok) {
+        return;
+      }
+
+      const calendarResult = await ensureGoogleCalendarReady({
+        showSuccessStatus: false,
+        missingAuthMessage: "Connect Google first to sync Lifetree with Google."
+      });
+      if (!calendarResult?.ok) {
+        return;
+      }
+
+      const scheduleResult = await syncGoogleCalendarScheduleOnly({
+        lead: driveResult.lead || ""
+      });
+      if (!scheduleResult?.ok) {
+        return;
+      }
+
+      const needsDriveSave = !hasObservedRemoteDrift() && (
+        !syncState.remoteSavedAt
+        || !syncState.remoteUserFingerprint
+        || syncState.remoteUserFingerprint !== getCurrentUserFingerprint()
+      );
+      if (needsDriveSave) {
+        const driveSaveResult = await saveCurrentStoreToDrive({
+          quiet: true,
+          force: false,
+          mode: "google-sync"
+        });
+        if (
+          scheduleResult.upToDate
+          && driveSaveResult?.success
+          && !driveSaveResult.skipped
+        ) {
+          setSyncStatus(`${driveResult.lead || ""}The Lifetree calendar schedule was already up to date, and the current Lifetree state was saved to Drive.`, "success");
+        }
       }
     } finally {
-      updateGoogleButtons();
+      setGoogleSyncInFlight(false);
     }
   }
 
@@ -1351,8 +1501,8 @@ export function createNotificationSyncController({
       if (remoteDriftState.remoteChangedSinceBase) {
         setSyncStatus(
           hasUnresolvedRemoteConflict()
-            ? "Google Drive changed in another session while this tab also has local edits. Use Load from Drive or Save to Drive to resolve it before autosave runs again."
-            : "Google Drive changed in another session. Load from Drive to refresh, or keep editing and choose a conflict action when saving.",
+            ? "Google Drive changed in another session while this tab also has local edits. Run Google sync to resolve it before autosave runs again."
+            : "Google Drive changed in another session. Run Google sync to refresh, or keep editing until you're ready to merge.",
           hasUnresolvedRemoteConflict() ? "error" : "info"
         );
       }
@@ -1419,8 +1569,8 @@ export function createNotificationSyncController({
       if (remoteDriftState.remoteChangedSinceBase) {
         setSyncStatus(
           hasUnresolvedRemoteConflict()
-            ? "Another Lifetree tab saved newer Drive changes while this tab also has local edits. Resolve the conflict before autosave runs again."
-            : "Another Lifetree tab saved newer Drive changes. Load from Drive to refresh, or choose a conflict action when saving.",
+            ? "Another Lifetree tab saved newer Drive changes while this tab also has local edits. Run Google sync to resolve it before autosave runs again."
+            : "Another Lifetree tab saved newer Drive changes. Run Google sync to refresh before you keep editing here.",
           hasUnresolvedRemoteConflict() ? "error" : "info"
         );
       }
@@ -1494,24 +1644,20 @@ export function createNotificationSyncController({
 
   function updateGoogleButtons() {
     const saveInFlight = driveSaveState.inFlight;
-    googleSignInButton.disabled = authState.authenticated || saveInFlight;
-    googleSignOutButton.disabled = !authState.authenticated || saveInFlight;
-    loadDriveButton.disabled = !authState.authenticated || saveInFlight;
-    saveDriveButton.disabled = !authState.authenticated || saveInFlight;
+    const googleBusy = saveInFlight || googleSyncState.inFlight;
+    googleSignInButton.disabled = googleBusy;
+    googleSignInButton.textContent = authState.authenticated ? "Disconnect Google" : "Connect Google";
     const googleCalendar = normalizeIntegrations(getStore().integrations).googleCalendar;
-    bootstrapGoogleCalendarButton.disabled = !authState.authenticated || saveInFlight;
-    syncGoogleCalendarButton.disabled = !authState.authenticated || saveInFlight || !googleCalendar.calendarId;
+    syncGoogleCalendarButton.disabled = !authState.authenticated || googleBusy;
+    syncGoogleCalendarButton.dataset.state = googleBusy ? (driveSaveState.mode || "syncing") : "idle";
     if (copyGoogleCalendarDiagnosticsButton) {
       copyGoogleCalendarDiagnosticsButton.disabled = !authState.authenticated || !googleCalendar.calendarId;
     }
-    bootstrapGoogleCalendarButton.textContent = saveInFlight
-      ? "Waiting…"
-      : (googleCalendar.calendarId ? "Check Lifetree calendar" : "Setup Lifetree calendar");
-    syncGoogleCalendarButton.textContent = saveInFlight ? "Waiting…" : "Sync Lifetree schedule";
-    saveDriveButton.dataset.state = saveInFlight ? driveSaveState.mode || "saving" : "idle";
-    saveDriveButton.textContent = saveInFlight
-      ? (driveSaveState.mode === "autosave" ? "Autosaving…" : "Saving…")
-      : "Save to Drive";
+    syncGoogleCalendarButton.textContent = googleSyncState.inFlight
+      ? (googleSyncState.phase || "Syncing…")
+      : saveInFlight
+        ? (driveSaveState.mode === "autosave" ? "Autosaving…" : "Syncing…")
+        : "Google sync";
     clearDriveDataButton.disabled = !isDeveloperUser();
     clearWidgetDriveDataButton.disabled = !isDeveloperUser();
     downloadDriveDataButton.disabled = !isDeveloperUser();

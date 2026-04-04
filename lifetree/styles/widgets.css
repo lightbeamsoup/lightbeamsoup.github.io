@@ -1025,17 +1025,23 @@ h1 {
   border-color: rgba(37, 50, 67, 0.1);
 }
 
-#saveDrive[data-state="manual"],
-#saveDrive[data-state="autosave"],
-#saveDrive[data-state="saving"] {
+#syncGoogleCalendarSchedule[data-state="manual"],
+#syncGoogleCalendarSchedule[data-state="autosave"],
+#syncGoogleCalendarSchedule[data-state="saving"],
+#syncGoogleCalendarSchedule[data-state="google-sync"],
+#syncGoogleCalendarSchedule[data-state="calendar-sync"],
+#syncGoogleCalendarSchedule[data-state="syncing"] {
   background: rgba(243, 126, 76, 0.2);
   border-color: rgba(224, 118, 70, 0.4);
   color: var(--ink-strong, var(--ink));
 }
 
-body[data-theme="dark"] #saveDrive[data-state="manual"],
-body[data-theme="dark"] #saveDrive[data-state="autosave"],
-body[data-theme="dark"] #saveDrive[data-state="saving"] {
+body[data-theme="dark"] #syncGoogleCalendarSchedule[data-state="manual"],
+body[data-theme="dark"] #syncGoogleCalendarSchedule[data-state="autosave"],
+body[data-theme="dark"] #syncGoogleCalendarSchedule[data-state="saving"],
+body[data-theme="dark"] #syncGoogleCalendarSchedule[data-state="google-sync"],
+body[data-theme="dark"] #syncGoogleCalendarSchedule[data-state="calendar-sync"],
+body[data-theme="dark"] #syncGoogleCalendarSchedule[data-state="syncing"] {
   background: rgba(74, 96, 138, 0.92);
   border-color: rgba(136, 172, 232, 0.52);
   color: var(--ink);

@@ -379,10 +379,6 @@ const syncAutosaveValue = document.getElementById("syncAutosaveValue");
 const syncCalendarCard = document.getElementById("syncCalendarCard");
 const syncCalendarValue = document.getElementById("syncCalendarValue");
 const googleSignInButton = document.getElementById("googleSignIn");
-const googleSignOutButton = document.getElementById("googleSignOut");
-const loadDriveButton = document.getElementById("loadDrive");
-const saveDriveButton = document.getElementById("saveDrive");
-const bootstrapGoogleCalendarButton = document.getElementById("bootstrapGoogleCalendar");
 const syncGoogleCalendarButton = document.getElementById("syncGoogleCalendarSchedule");
 const openDeveloperButton = document.getElementById("openDeveloper");
 const developerModal = document.getElementById("developerModal");
@@ -1061,10 +1057,6 @@ notificationSyncController = createNotificationSyncController({
     syncAutosaveValue,
     syncCalendarValue,
     googleSignInButton,
-    googleSignOutButton,
-    loadDriveButton,
-    saveDriveButton,
-    bootstrapGoogleCalendarButton,
     syncGoogleCalendarButton,
     copyGoogleCalendarDiagnosticsButton,
     clearDriveDataButton,
@@ -1144,10 +1136,7 @@ const {
   getCurrentStoreFingerprint,
   getCurrentUserFingerprint,
   handleGoogleDisconnect,
-  handleEnsureGoogleCalendar,
   handleSyncGoogleCalendarSchedule,
-  handleManualLoadFromDrive,
-  handleManualSaveToDrive,
   handleNotificationsFormChange,
   handleNotificationsSubmit,
   handleSendNotificationReminder,
@@ -1353,11 +1342,13 @@ historyFilter.addEventListener("change", renderHistoryPanel);
 historyWidgetFilter.addEventListener("change", renderHistoryPanel);
 taskGrid.addEventListener("click", handleTaskGridClick);
 historyList.addEventListener("click", handleHistoryListClick);
-googleSignInButton.addEventListener("click", connectGoogle);
-googleSignOutButton.addEventListener("click", handleGoogleDisconnect);
-loadDriveButton.addEventListener("click", handleManualLoadFromDrive);
-saveDriveButton.addEventListener("click", handleManualSaveToDrive);
-bootstrapGoogleCalendarButton.addEventListener("click", handleEnsureGoogleCalendar);
+googleSignInButton.addEventListener("click", () => {
+  if (authState.authenticated) {
+    handleGoogleDisconnect();
+    return;
+  }
+  connectGoogle();
+});
 syncGoogleCalendarButton.addEventListener("click", handleSyncGoogleCalendarSchedule);
 clearDriveDataButton.addEventListener("click", clearDriveData);
 openDeveloperButton.addEventListener("click", openDeveloper);
@@ -2144,7 +2135,7 @@ function handleSubmit(event) {
   resetComposer();
   setActiveTaskDeskPane("tasks");
   renderAll();
-  setSyncStatus("Saved locally. Use Save to Drive when you want to sync.", "info");
+  setSyncStatus("Saved locally. Run Google sync when you want to update Drive and Calendar.", "info");
 }
 
 function handleQuickAddSubmit(event) {
@@ -2288,7 +2279,7 @@ function applyTaskEdit(formData) {
   clearEditState();
   setActiveTaskDeskPane("tasks");
   renderAll();
-  setSyncStatus("Saved locally. Use Save to Drive when you want to sync.", "info");
+  setSyncStatus("Saved locally. Run Google sync when you want to update Drive and Calendar.", "info");
 }
 
 function replaceTask(nextTask) {
@@ -3301,7 +3292,7 @@ function persistStore({ touchUpdatedAt = true, touchUserUpdatedAt = touchUpdated
   }
   if (hasUnresolvedRemoteConflict()) {
     setSyncStatus(
-      "Google Drive changed in another session while this tab also has local edits. Use Load from Drive or Save to Drive to resolve it before autosave runs again.",
+      "Google Drive changed in another session while this tab also has local edits. Run Google sync to resolve it before autosave runs again.",
       "error"
     );
   }
