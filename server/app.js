@@ -1539,9 +1539,14 @@ async function resolveGoogleCalendarTaskEvent(accessToken, calendarId, task, lin
     }
   }
 
-  const canonicalEvent = chooseCanonicalGoogleCalendarEvent(events, task, linkedEventId);
+  const uniqueEvents = Array.from(new Map(
+    events
+      .filter((event) => event && typeof event.id === "string" && event.id)
+      .map((event) => [event.id, event])
+  ).values());
+  const canonicalEvent = chooseCanonicalGoogleCalendarEvent(uniqueEvents, task, linkedEventId);
   const duplicateEvents = canonicalEvent
-    ? events.filter((event) => event?.id && event.id !== canonicalEvent.id)
+    ? uniqueEvents.filter((event) => event?.id && event.id !== canonicalEvent.id)
     : [];
   const duplicateDeletedEventIds = [];
   if (deleteDuplicates) {
@@ -1555,7 +1560,7 @@ async function resolveGoogleCalendarTaskEvent(accessToken, calendarId, task, lin
 
   return {
     canonicalEvent,
-    matchingEvents: events,
+    matchingEvents: uniqueEvents,
     duplicateEventIds: duplicateEvents.map((event) => event.id).filter(Boolean),
     duplicateDeletedEventIds,
     linkedEventMissing

@@ -3,6 +3,7 @@ import { normalizeGoogleCalendarIntegration } from "./googleCalendar.js";
 export const GOOGLE_CALENDAR_TASK_SCHEMA_VERSION = 1;
 export const GOOGLE_CALENDAR_TIME_ZONE_MODE_FLOATING = "floating-local";
 export const GOOGLE_CALENDAR_TIME_ZONE_MODE_FIXED = "fixed";
+const GOOGLE_CALENDAR_EVENT_PAYLOAD_VERSION = 2;
 
 const DEFAULT_LINK_SOURCE = "lifetree";
 const GOOGLE_WEEKDAY_CODES = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
@@ -97,6 +98,7 @@ export function buildGoogleCalendarTaskScheduleFingerprint(task) {
   const timeZoneMode = resolveGoogleCalendarTaskTimeZoneMode(task);
   const effectiveTimeZone = resolveGoogleCalendarTaskTimeZone(task, userTimeZone);
   return JSON.stringify(sortObjectKeys({
+    eventPayloadVersion: GOOGLE_CALENDAR_EVENT_PAYLOAD_VERSION,
     name: String(task?.name || ""),
     details: String(task?.details || ""),
     startDate: String(task?.startDate || ""),
@@ -576,11 +578,11 @@ function buildGoogleCalendarEventStartEnd(task, timeZone) {
   if (safeStartDate && safeDueDate && safeStartDate !== safeDueDate) {
     return {
       start: {
-        dateTime: `${safeStartDate}T${safeTime}:00`,
+        dateTime: buildGoogleCalendarDateTimeValue(safeStartDate, safeTime, timeZone),
         ...(timeZone ? { timeZone } : {})
       },
       end: {
-        dateTime: `${safeDueDate}T${safeTime}:00`,
+        dateTime: buildGoogleCalendarDateTimeValue(safeDueDate, safeTime, timeZone),
         ...(timeZone ? { timeZone } : {})
       }
     };
@@ -589,11 +591,11 @@ function buildGoogleCalendarEventStartEnd(task, timeZone) {
   const end = addMinutesToDateTimeString(safeDueDate || safeStartDate, safeTime, durationMinutes);
   return {
     start: {
-      dateTime: `${safeDueDate || safeStartDate}T${safeTime}:00`,
+      dateTime: buildGoogleCalendarDateTimeValue(safeDueDate || safeStartDate, safeTime, timeZone),
       ...(timeZone ? { timeZone } : {})
     },
     end: {
-      dateTime: end,
+      dateTime: buildGoogleCalendarDateTimeValue(end.slice(0, 10), end.slice(11, 16), timeZone),
       ...(timeZone ? { timeZone } : {})
     }
   };
@@ -823,6 +825,71 @@ function addMinutesToDateTimeString(dateString, timeString, minutes) {
   const date = new Date(`${dateString}T${timeString}:00`);
   date.setMinutes(date.getMinutes() + minutes);
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}T${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}:00`;
+}
+
+function buildGoogleCalendarDateTimeValue(dateString, timeString, timeZone = "") {
+  const safeDate = normalizeDateString(dateString);
+  const safeTime = normalizeTimeString(timeString) || "00:00";
+  const safeTimeZone = String(timeZone || "").trim();
+  if (!safeDate) {
+    return "";
+  }
+  if (!safeTimeZone) {
+    return `${safeDate}T${safeTime}:00`;
+  }
+  const offsetMinutes = resolveTimeZoneOffsetMinutes(safeDate, safeTime, safeTimeZone);
+  return `${safeDate}T${safeTime}:00${formatTimeZoneOffset(offsetMinutes)}`;
+}
+
+function resolveTimeZoneOffsetMinutes(dateString, timeString, timeZone) {
+  const [year, month, day] = dateString.split("-").map((value) => Number(value));
+  const [hour, minute] = timeString.split(":").map((value) => Number(value));
+  const baseUtc = Date.UTC(year, (month || 1) - 1, day || 1, hour || 0, minute || 0, 0);
+  let offsetMinutes = getTimeZoneOffsetMinutes(timeZone, baseUtc);
+  let candidateUtc = baseUtc - (offsetMinutes * 60_000);
+  const refinedOffsetMinutes = getTimeZoneOffsetMinutes(timeZone, candidateUtc);
+  if (refinedOffsetMinutes !== offsetMinutes) {
+    offsetMinutes = refinedOffsetMinutes;
+    candidateUtc = baseUtc - (offsetMinutes * 60_000);
+    offsetMinutes = getTimeZoneOffsetMinutes(timeZone, candidateUtc);
+  }
+  return offsetMinutes;
+}
+
+function getTimeZoneOffsetMinutes(timeZone, timestamp) {
+  const date = new Date(timestamp);
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23"
+  });
+  const parts = Object.fromEntries(
+    formatter.formatToParts(date)
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value])
+  );
+  const zonedUtc = Date.UTC(
+    Number(parts.year || 0),
+    Math.max(0, Number(parts.month || 1) - 1),
+    Number(parts.day || 1),
+    Number(parts.hour || 0),
+    Number(parts.minute || 0),
+    Number(parts.second || 0)
+  );
+  return Math.round((zonedUtc - timestamp) / 60_000);
+}
+
+function formatTimeZoneOffset(offsetMinutes) {
+  const sign = offsetMinutes >= 0 ? "+" : "-";
+  const absolute = Math.abs(offsetMinutes);
+  const hours = Math.floor(absolute / 60);
+  const minutes = absolute % 60;
+  return `${sign}${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
 }
 
 function sortObjectKeys(value) {

@@ -215,6 +215,7 @@ test("event payload builds recurrence, reminders, and metadata for recurring tas
     useDefault: false,
     overrides: [{ method: "popup", minutes: 30 }]
   });
+  assert.equal(payload.start.dateTime, "2026-04-05T07:00:00-07:00");
   assert.equal(payload.extendedProperties.private.lifetreeWidgetType, "energy");
   assert.equal(payload.extendedProperties.private.lifetreeTaskKind, "recurring-master");
 });
@@ -292,6 +293,34 @@ test("floating-local tasks use the current user timezone while fixed tasks keep 
   assert.equal(fixedPayload.extendedProperties.private.lifetreeTimeZoneMode, "fixed");
   assert.equal(syncPayload.tasks[0].scheduleFingerprint, buildGoogleCalendarTaskScheduleFingerprint(syncPayload.tasks[0]));
   assert.equal(syncPayload.tasks[1].scheduleFingerprint, buildGoogleCalendarTaskScheduleFingerprint(syncPayload.tasks[1]));
+});
+
+test("google event payload uses explicit timezone offsets for local wall-clock tasks", () => {
+  const payload = buildGoogleCalendarEventPayload({
+    taskId: "uk-eta",
+    name: "UK ETA",
+    details: "",
+    dueDate: "2026-04-04",
+    startDate: "2026-04-04",
+    timeOfDay: "19:01",
+    length: "medium",
+    recurrence: { type: "none" },
+    reminders: { enabled: false, dueSoonMinutes: 0, overdueMinutes: 0 },
+    importance: "medium",
+    categoryKey: "productivity",
+    lateGraceMinutes: 15,
+    widgetTaskMeta: {
+      timeZoneMode: "fixed",
+      timeZone: "America/Los_Angeles"
+    },
+    googleCalendar: {},
+    userTimeZone: "America/Los_Angeles"
+  }, {
+    calendarTimeZone: "America/Los_Angeles"
+  });
+
+  assert.equal(payload.start.dateTime, "2026-04-04T19:01:00-07:00");
+  assert.equal(payload.end.dateTime, "2026-04-04T20:01:00-07:00");
 });
 
 test("linked resolved tasks request status-only Google sync when lifecycle changed", () => {
