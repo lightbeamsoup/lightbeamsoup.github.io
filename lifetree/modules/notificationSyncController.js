@@ -243,7 +243,7 @@ export function createNotificationSyncController({
         updatedAt
       })
     });
-    persistStore();
+    persistStore({ touchUserUpdatedAt: false });
   }
 
   function buildSummarySendDraft(baseDraft, { frequencyOverride = "" } = {}) {

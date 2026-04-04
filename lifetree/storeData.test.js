@@ -252,3 +252,106 @@ test("drive conflict fixtures distinguish safe auto-merges from ambiguous ones",
   const ambiguousRemote = bindings.normalizeStore(fixtures.ambiguous.remote);
   assert.equal(bindings.canAutoMergeDriveConflict(ambiguousLocal, ambiguousRemote), false);
 });
+
+test("user content fingerprint ignores calendar linkage and travel live snapshot metadata", () => {
+  const bindings = createStoreDataTestBindings();
+  const baseStore = bindings.normalizeStore({
+    integrations: {
+      googleCalendar: {
+        connected: true,
+        calendarId: "lifetree-cal",
+        lastCalendarSyncAt: 100,
+        lastCalendarSyncStatus: "success",
+        lastCalendarSyncMessage: "Synced"
+      }
+    },
+    tasks: [
+      {
+        id: "task-1",
+        name: "Energy check-in",
+        dueDate: "2026-04-05",
+        startDate: "2026-04-05",
+        timeOfDay: "07:00",
+        recurrence: {
+          type: "daily",
+          interval: 1,
+          weekday: 0,
+          day: 1,
+          ordinal: "first",
+          endDate: "",
+          count: null,
+          forever: true
+        },
+        googleCalendar: {
+          calendarId: "lifetree-cal",
+          eventId: "event-a",
+          scheduleFingerprint: "fingerprint-a"
+        }
+      }
+    ],
+    widgets: [
+      {
+        id: "travel-widget",
+        type: "travel",
+        updatedAt: 100,
+        settings: {},
+        data: {
+          trips: [],
+          liveSnapshots: {
+            tripA: {
+              fetchedAt: 100,
+              flight: {
+                status: "ok",
+                flightLabel: "UA123"
+              }
+            }
+          }
+        }
+      }
+    ]
+  });
+  const metadataOnlyStore = bindings.normalizeStore({
+    ...baseStore,
+    integrations: {
+      googleCalendar: {
+        connected: true,
+        calendarId: "lifetree-cal",
+        lastCalendarSyncAt: 200,
+        lastCalendarSyncStatus: "success",
+        lastCalendarSyncMessage: "Updated again"
+      }
+    },
+    tasks: [
+      {
+        ...baseStore.tasks[0],
+        googleCalendar: {
+          calendarId: "lifetree-cal",
+          eventId: "event-b",
+          scheduleFingerprint: "fingerprint-b",
+          lastSeenGoogleUpdatedAt: "2026-04-04T20:00:00.000Z"
+        }
+      }
+    ],
+    widgets: [
+      {
+        ...baseStore.widgets[0],
+        updatedAt: 200,
+        data: {
+          ...baseStore.widgets[0].data,
+          liveSnapshots: {
+            tripA: {
+              fetchedAt: 200,
+              weather: {
+                status: "ok",
+                query: "Albuquerque, New Mexico"
+              }
+            }
+          }
+        }
+      }
+    ]
+  });
+
+  assert.notEqual(bindings.computeStoreFingerprint(baseStore), bindings.computeStoreFingerprint(metadataOnlyStore));
+  assert.equal(bindings.computeUserContentFingerprint(baseStore), bindings.computeUserContentFingerprint(metadataOnlyStore));
+});

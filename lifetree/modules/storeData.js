@@ -981,6 +981,42 @@ export function createStoreDataBindings(config = {}) {
     };
   }
 
+  function buildComparableUserStore(normalized) {
+    const comparable = buildComparableStore(normalized);
+    return {
+      ...comparable,
+      integrations: {},
+      tasks: comparable.tasks.map((task) => {
+        const { googleCalendar, createdAt, ...rest } = task;
+        return rest;
+      }),
+      widgets: comparable.widgets.map((widget) => {
+        const nextWidget = { ...widget };
+        delete nextWidget.createdAt;
+        delete nextWidget.updatedAt;
+        if (nextWidget.type === "travel" && nextWidget.data && typeof nextWidget.data === "object") {
+          nextWidget.data = {
+            ...nextWidget.data
+          };
+          delete nextWidget.data.liveSnapshots;
+        }
+        return sortObjectKeys(nextWidget);
+      }),
+      retiredWidgets: comparable.retiredWidgets.map((widget) => {
+        const nextWidget = { ...widget };
+        delete nextWidget.createdAt;
+        delete nextWidget.updatedAt;
+        if (nextWidget.type === "travel" && nextWidget.data && typeof nextWidget.data === "object") {
+          nextWidget.data = {
+            ...nextWidget.data
+          };
+          delete nextWidget.data.liveSnapshots;
+        }
+        return sortObjectKeys(nextWidget);
+      })
+    };
+  }
+
   function sortObjectKeys(value) {
     if (Array.isArray(value)) {
       return value.map((item) => sortObjectKeys(item));
@@ -1017,7 +1053,7 @@ export function createStoreDataBindings(config = {}) {
   }
 
   function computeUserContentFingerprintFromNormalized(normalized) {
-    return hashComparableStore(buildComparableStore(normalized));
+    return hashComparableStore(buildComparableUserStore(normalized));
   }
 
   function computeUserContentFingerprint(sourceStore) {
@@ -1027,6 +1063,7 @@ export function createStoreDataBindings(config = {}) {
 
   return {
     buildComparableStore,
+    buildComparableUserStore,
     buildComparableValueSignature,
     buildDeletionMarkerMaps,
     canAutoMergeDriveConflict,
