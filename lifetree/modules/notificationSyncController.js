@@ -17,6 +17,7 @@ export function createNotificationSyncController({
   normalizeGoogleCalendarTaskLink,
   buildGoogleCalendarScheduleSyncRequest,
   normalizeTask,
+  renderAll,
   normalizeNotifications,
   normalizeNotificationTimezone,
   normalizeRecipientEmail,
@@ -706,6 +707,9 @@ export function createNotificationSyncController({
     }
 
     const current = normalizeIntegrations(getStore().integrations).googleCalendar;
+    const currentUserTimeZone = typeof Intl !== "undefined"
+      ? Intl.DateTimeFormat().resolvedOptions().timeZone || ""
+      : "";
     bootstrapGoogleCalendarButton.disabled = true;
     bootstrapGoogleCalendarButton.textContent = current.calendarId ? "Checking…" : "Setting up…";
     try {
@@ -716,7 +720,8 @@ export function createNotificationSyncController({
         },
         credentials: fetchCredentials,
         body: JSON.stringify({
-          summary: current.calendarSummary || "Lifetree"
+          summary: current.calendarSummary || "Lifetree",
+          timeZone: currentUserTimeZone
         })
       });
       const payload = await response.json().catch(() => ({}));
@@ -741,6 +746,8 @@ export function createNotificationSyncController({
       setSyncStatus(
         payload.created
           ? `Created the ${payload.calendarSummary || "Lifetree"} Google Calendar.`
+          : payload.updated
+            ? `Updated the ${payload.calendarSummary || "Lifetree"} Google Calendar to ${payload.calendarTimeZone || currentUserTimeZone || "your current timezone"}.`
           : `Linked the existing ${payload.calendarSummary || "Lifetree"} Google Calendar.`,
         "success"
       );
@@ -780,7 +787,12 @@ export function createNotificationSyncController({
       return;
     }
 
-    const syncRequest = buildGoogleCalendarScheduleSyncRequest(getStore(), googleCalendar);
+    const currentUserTimeZone = typeof Intl !== "undefined"
+      ? Intl.DateTimeFormat().resolvedOptions().timeZone || ""
+      : "";
+    const syncRequest = buildGoogleCalendarScheduleSyncRequest(getStore(), googleCalendar, {
+      userTimeZone: currentUserTimeZone
+    });
     if (syncRequest.tasks.length === 0) {
       const now = Date.now();
       persistGoogleCalendarState({
@@ -882,6 +894,7 @@ export function createNotificationSyncController({
       }
       if (appliedCount > 0) {
         persistStore();
+        renderAll();
       }
 
       const errorCount = results.filter((entry) => entry?.ok === false).length;

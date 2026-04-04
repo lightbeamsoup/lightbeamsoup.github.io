@@ -73,6 +73,7 @@
 
 ### Integrations
 
+- 2026-04-04: Distinguish floating-local versus fixed-timezone tasks during Google Calendar sync and keep the dedicated `Lifetree` calendar aligned to the user's current timezone.
 - 2026-04-04: Add Google Calendar bootstrap support that creates or finds a dedicated `Lifetree` calendar through the existing Google auth flow.
 - 2026-04-04: Persist top-level Google Calendar integration state in Lifetree and surface calendar setup status in the shell sync panel.
 - 2026-04-04: Define and normalize per-task Google Calendar linkage fields plus schedule fingerprints in Lifetree task data.

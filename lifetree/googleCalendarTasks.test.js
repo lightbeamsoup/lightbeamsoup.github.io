@@ -162,6 +162,81 @@ test("event payload builds recurrence, reminders, and metadata for recurring tas
   assert.equal(payload.extendedProperties.private.lifetreeTaskKind, "recurring-master");
 });
 
+test("floating-local tasks use the current user timezone while fixed tasks keep their own timezone", () => {
+  const floatingTask = {
+    taskId: "energy-checkin",
+    name: "Energy check-in",
+    details: "",
+    dueDate: "2026-04-05",
+    startDate: "2026-04-05",
+    timeOfDay: "07:00",
+    length: "very-short",
+    recurrence: { type: "none" },
+    reminders: { enabled: true, dueSoonMinutes: 30, overdueMinutes: 15 },
+    importance: "medium",
+    categoryKey: "health",
+    lateGraceMinutes: 15,
+    ownerWidgetType: "energy",
+    ownerTaskKey: "energy-checkin",
+    widgetTaskKind: "check-in",
+    widgetTaskMeta: {
+      timeZoneMode: "floating-local"
+    },
+    googleCalendar: {},
+    userTimeZone: "America/New_York"
+  };
+  const fixedTask = {
+    ...floatingTask,
+    taskId: "flight-checkin",
+    name: "Flight check-in",
+    widgetTaskKind: "flight-checkin",
+    widgetTaskMeta: {
+      timeZoneMode: "fixed",
+      timeZone: "America/Denver"
+    }
+  };
+
+  const floatingPayload = buildGoogleCalendarEventPayload(floatingTask, {
+    calendarTimeZone: "UTC"
+  });
+  const fixedPayload = buildGoogleCalendarEventPayload(fixedTask, {
+    calendarTimeZone: "UTC"
+  });
+  const syncPayload = buildGoogleCalendarScheduleSyncRequest({
+    tasks: [
+      {
+        id: "energy-checkin",
+        ...floatingTask,
+        status: "open",
+        archived: false,
+        historyOnly: false,
+        templateId: ""
+      },
+      {
+        id: "flight-checkin",
+        ...fixedTask,
+        status: "open",
+        archived: false,
+        historyOnly: false,
+        templateId: ""
+      }
+    ]
+  }, {
+    calendarId: "lifetree-cal",
+    calendarSummary: "Lifetree",
+    calendarTimeZone: "UTC"
+  }, {
+    userTimeZone: "America/New_York"
+  });
+
+  assert.equal(floatingPayload.start.timeZone, "America/New_York");
+  assert.equal(floatingPayload.extendedProperties.private.lifetreeTimeZoneMode, "floating-local");
+  assert.equal(fixedPayload.start.timeZone, "America/Denver");
+  assert.equal(fixedPayload.extendedProperties.private.lifetreeTimeZoneMode, "fixed");
+  assert.equal(syncPayload.tasks[0].scheduleFingerprint, buildGoogleCalendarTaskScheduleFingerprint(syncPayload.tasks[0]));
+  assert.equal(syncPayload.tasks[1].scheduleFingerprint, buildGoogleCalendarTaskScheduleFingerprint(syncPayload.tasks[1]));
+});
+
 test("schedule patch parser reads Google event schedule fields back into Lifetree form", () => {
   const patch = buildGoogleCalendarTaskSchedulePatchFromEvent({
     summary: "Retinol",
@@ -188,6 +263,7 @@ test("schedule patch parser reads Google event schedule fields back into Lifetre
         lifetreeImportance: "medium",
         lifetreeCategoryKey: "health",
         lifetreeLateGraceMinutes: "15",
+        lifetreeTimeZoneMode: "fixed",
         lifetreeWidgetType: "travel",
         lifetreeWidgetTaskKind: "check-in"
       }

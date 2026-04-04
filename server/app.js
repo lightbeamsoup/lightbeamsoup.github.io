@@ -266,16 +266,18 @@ app.post("/api/google-calendar/bootstrap", async (req, res) => {
     const user = requireUser(req);
     const accessToken = await refreshAccessToken(user);
     const summary = sanitizeTravelText(req.body?.summary, 80) || LIFETREE_GOOGLE_CALENDAR_SUMMARY;
+    const requestedTimeZone = sanitizeTravelText(req.body?.timeZone, 80);
     const calendar = await ensureLifetreeCalendar(accessToken, {
       summary,
-      timeZone: typeof req.body?.timeZone === "string" ? req.body.timeZone.trim() : ""
+      timeZone: requestedTimeZone
     });
     res.json({
       ok: true,
       created: calendar.created === true,
+      updated: calendar.updated === true,
       calendarId: calendar.id || "",
       calendarSummary: calendar.summary || summary,
-      calendarTimeZone: calendar.timeZone || ""
+      calendarTimeZone: calendar.timeZone || requestedTimeZone || ""
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -294,11 +296,13 @@ app.post("/api/google-calendar/sync-schedule", async (req, res) => {
     });
     const calendarId = calendar.id || "";
     const calendarTimeZone = typeof calendar.timeZone === "string" ? calendar.timeZone : requestedTimeZone;
+    const userTimeZone = sanitizeTravelText(req.body?.userTimeZone, 80);
     const tasks = Array.isArray(req.body?.tasks)
       ? req.body.tasks
           .map((task) => normalizeGoogleCalendarSyncTask(task, {
             calendarId,
-            calendarTimeZone
+            calendarTimeZone,
+            userTimeZone
           }))
           .filter((task) => task.taskId && task.dueDate)
           .slice(0, 500)
@@ -323,7 +327,8 @@ app.post("/api/google-calendar/sync-schedule", async (req, res) => {
 
           if (remoteEvent.updated && remoteEvent.updated !== task.googleCalendar.lastSeenGoogleUpdatedAt) {
             const schedulePatch = buildGoogleCalendarTaskSchedulePatchFromEvent(remoteEvent, {
-              calendarTimeZone
+              calendarTimeZone,
+              userTimeZone
             });
             results.push({
               taskId: task.taskId,
@@ -1082,20 +1087,57 @@ async function createGoogleCalendar(accessToken, { summary = LIFETREE_GOOGLE_CAL
   return response.json();
 }
 
+async function patchGoogleCalendar(accessToken, calendarId, updates = {}) {
+  const response = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(updates)
+  });
+
+  if (!response.ok) {
+    throw new Error(await formatGoogleError(response, "Google Calendar update failed"));
+  }
+
+  return response.json();
+}
+
 async function ensureLifetreeCalendar(accessToken, { summary = LIFETREE_GOOGLE_CALENDAR_SUMMARY, timeZone = "" } = {}) {
   const calendars = await listOwnedCalendars(accessToken);
   const existing = findLifetreeCalendar(calendars, summary);
   if (existing) {
+    const requestedSummary = String(summary || LIFETREE_GOOGLE_CALENDAR_SUMMARY).trim();
+    const requestedTimeZone = String(timeZone || "").trim();
+    const existingSummary = String(existing.summary || "").trim();
+    const existingTimeZone = String(existing.timeZone || "").trim();
+    const shouldUpdateSummary = requestedSummary && requestedSummary !== existingSummary;
+    const shouldUpdateTimeZone = requestedTimeZone && requestedTimeZone !== existingTimeZone;
+    if (shouldUpdateSummary || shouldUpdateTimeZone) {
+      const updated = await patchGoogleCalendar(accessToken, existing.id, {
+        ...(shouldUpdateSummary ? { summary: requestedSummary } : {}),
+        ...(shouldUpdateTimeZone ? { timeZone: requestedTimeZone } : {}),
+        description: LIFETREE_GOOGLE_CALENDAR_DESCRIPTION
+      });
+      return {
+        ...updated,
+        created: false,
+        updated: true
+      };
+    }
     return {
       ...existing,
-      created: false
+      created: false,
+      updated: false
     };
   }
 
   const created = await createGoogleCalendar(accessToken, { summary, timeZone });
   return {
     ...created,
-    created: true
+    created: true,
+    updated: false
   };
 }
 

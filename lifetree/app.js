@@ -1086,6 +1086,7 @@ notificationSyncController = createNotificationSyncController({
   normalizeGoogleCalendarTaskLink,
   buildGoogleCalendarScheduleSyncRequest,
   normalizeTask,
+  renderAll: () => renderAll(),
   normalizeNotifications,
   normalizeNotificationTimezone,
   normalizeRecipientEmail,

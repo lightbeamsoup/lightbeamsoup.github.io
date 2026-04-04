@@ -49,6 +49,7 @@ store.integrations = {
 Notes:
 
 - `calendarId` is the stable Google calendar ID for the dedicated Lifetree calendar.
+- `calendarTimeZone` should follow the user's current browser timezone when the dedicated calendar is set up or refreshed.
 - `lastCalendarSyncToken` is for incremental event sync if the implementation uses Google sync tokens.
 - This block should be normalized with safe defaults so older stores still load.
 
@@ -78,6 +79,30 @@ Notes:
 - `statusMirroredAt` tracks when completion/skip metadata was last written back to Google.
 
 Unsheduled tasks should omit `task.googleCalendar` entirely or normalize it to empty values.
+
+## Timezone model
+
+Lifetree scheduled tasks should use one of two timezone modes:
+
+- `floating-local`: the task happens at the same local clock time for the user's current timezone, such as a `7:00 AM` Energy check-in
+- `fixed`: the task is anchored to a specific timezone, such as a flight check-in tied to the departure location
+
+Recommended local task representation:
+
+```js
+task.widgetTaskMeta = {
+  timeZoneMode: "floating-local|fixed",
+  timeZone: "" // only set for fixed-timezone tasks
+};
+```
+
+Google Calendar mapping rules:
+
+- always send an explicit event timezone
+- use the user's current browser timezone for `floating-local` tasks
+- use `widgetTaskMeta.timeZone` for `fixed` tasks
+- store `lifetreeTimeZoneMode` and `lifetreeEventTimeZone` in `extendedProperties.private`
+- when pulling Google edits back into Lifetree, only persist `widgetTaskMeta.timeZone` for `fixed` tasks
 
 ## Google event schema
 

@@ -1,4 +1,6 @@
 export const GOOGLE_CALENDAR_TASK_SCHEMA_VERSION = 1;
+export const GOOGLE_CALENDAR_TIME_ZONE_MODE_FLOATING = "floating-local";
+export const GOOGLE_CALENDAR_TIME_ZONE_MODE_FIXED = "fixed";
 
 const DEFAULT_LINK_SOURCE = "lifetree";
 const GOOGLE_WEEKDAY_CODES = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
@@ -62,6 +64,9 @@ export function isGoogleCalendarSchedulableTask(task) {
 }
 
 export function buildGoogleCalendarTaskScheduleFingerprint(task) {
+  const userTimeZone = String(task?.userTimeZone || "").trim();
+  const timeZoneMode = resolveGoogleCalendarTaskTimeZoneMode(task);
+  const effectiveTimeZone = resolveGoogleCalendarTaskTimeZone(task, userTimeZone);
   return JSON.stringify(sortObjectKeys({
     name: String(task?.name || ""),
     details: String(task?.details || ""),
@@ -76,12 +81,13 @@ export function buildGoogleCalendarTaskScheduleFingerprint(task) {
     lateGraceMinutes: Number.isFinite(Number(task?.lateGraceMinutes)) ? Number(task.lateGraceMinutes) : 0,
     ownerWidgetType: String(task?.ownerWidgetType || ""),
     widgetTaskKind: String(task?.widgetTaskKind || ""),
-    timeZone: resolveGoogleCalendarTaskTimeZone(task, ""),
+    timeZoneMode,
+    timeZone: effectiveTimeZone,
     location: resolveGoogleCalendarTaskLocation(task)
   }));
 }
 
-export function buildGoogleCalendarScheduleSyncRequest(store, googleCalendarIntegration) {
+export function buildGoogleCalendarScheduleSyncRequest(store, googleCalendarIntegration, { userTimeZone = "" } = {}) {
   const tasks = Array.isArray(store?.tasks) ? store.tasks : [];
   const calendar = googleCalendarIntegration && typeof googleCalendarIntegration === "object"
     ? googleCalendarIntegration
@@ -95,7 +101,14 @@ export function buildGoogleCalendarScheduleSyncRequest(store, googleCalendarInte
   const syncTasks = eligibleTasks
     .map((task) => {
       const googleCalendar = normalizeGoogleCalendarTaskLink(task.googleCalendar, { calendarId });
-      const scheduleFingerprint = buildGoogleCalendarTaskScheduleFingerprint(task);
+      const scheduleFingerprint = buildGoogleCalendarTaskScheduleFingerprint({
+        ...task,
+        userTimeZone
+      });
+      const timeZoneMode = resolveGoogleCalendarTaskTimeZoneMode({
+        ...task,
+        userTimeZone
+      });
       const needsPush = !googleCalendar.eventId
         || googleCalendar.calendarId !== calendarId
         || googleCalendar.scheduleFingerprint !== scheduleFingerprint;
@@ -117,6 +130,8 @@ export function buildGoogleCalendarScheduleSyncRequest(store, googleCalendarInte
         ownerTaskKey: String(task.ownerTaskKey || ""),
         widgetTaskKind: String(task.widgetTaskKind || ""),
         widgetTaskMeta: normalizeExportWidgetTaskMeta(task.widgetTaskMeta),
+        userTimeZone: String(userTimeZone || "").trim(),
+        timeZoneMode,
         googleCalendar,
         scheduleFingerprint
       };
@@ -126,12 +141,13 @@ export function buildGoogleCalendarScheduleSyncRequest(store, googleCalendarInte
     calendarId,
     calendarSummary,
     calendarTimeZone,
+    userTimeZone: String(userTimeZone || "").trim(),
     totalEligibleTasks: eligibleTasks.length,
     tasks: syncTasks
   };
 }
 
-export function normalizeGoogleCalendarSyncTask(value, { calendarId = "", calendarTimeZone = "" } = {}) {
+export function normalizeGoogleCalendarSyncTask(value, { calendarId = "", calendarTimeZone = "", userTimeZone = "" } = {}) {
   const source = value && typeof value === "object" ? value : {};
   const recurrence = normalizeExportRecurrence(source.recurrence);
   const widgetTaskMeta = normalizeExportWidgetTaskMeta(source.widgetTaskMeta);
@@ -153,11 +169,13 @@ export function normalizeGoogleCalendarSyncTask(value, { calendarId = "", calend
     widgetTaskKind: typeof source.widgetTaskKind === "string" ? source.widgetTaskKind : "",
     widgetTaskMeta,
     googleCalendar: normalizeGoogleCalendarTaskLink(source.googleCalendar, { calendarId }),
+    userTimeZone: String(source.userTimeZone || userTimeZone || "").trim(),
     scheduleFingerprint: typeof source.scheduleFingerprint === "string"
       ? source.scheduleFingerprint
       : buildGoogleCalendarTaskScheduleFingerprint(source)
   };
-  normalized.timeZone = resolveGoogleCalendarTaskTimeZone(normalized, calendarTimeZone);
+  normalized.timeZoneMode = resolveGoogleCalendarTaskTimeZoneMode(normalized);
+  normalized.timeZone = resolveGoogleCalendarTaskTimeZone(normalized, normalized.userTimeZone || calendarTimeZone);
   return normalized;
 }
 
@@ -189,7 +207,7 @@ export function buildGoogleCalendarEventPayload(task, { calendarTimeZone = "" } 
   };
 }
 
-export function buildGoogleCalendarTaskSchedulePatchFromEvent(event, { calendarTimeZone = "" } = {}) {
+export function buildGoogleCalendarTaskSchedulePatchFromEvent(event, { calendarTimeZone = "", userTimeZone = "" } = {}) {
   const start = parseGoogleCalendarEventStart(event, calendarTimeZone);
   const details = extractTaskDetailsFromGoogleDescription(event?.description);
   const recurrence = parseGoogleCalendarRecurrence(event?.recurrence);
@@ -197,7 +215,12 @@ export function buildGoogleCalendarTaskSchedulePatchFromEvent(event, { calendarT
   const privateProps = event?.extendedProperties?.private && typeof event.extendedProperties.private === "object"
     ? event.extendedProperties.private
     : {};
-  const widgetTimeZone = typeof start.timeZone === "string" && start.timeZone.trim() ? start.timeZone.trim() : "";
+  const timeZoneMode = normalizeGoogleCalendarTimeZoneMode(privateProps.lifetreeTimeZoneMode);
+  const widgetTimeZone = timeZoneMode === GOOGLE_CALENDAR_TIME_ZONE_MODE_FIXED
+    && typeof start.timeZone === "string"
+    && start.timeZone.trim()
+    ? start.timeZone.trim()
+    : "";
   const location = typeof event?.location === "string" ? event.location.trim() : "";
   const patch = {
     name: typeof event?.summary === "string" && event.summary.trim() ? event.summary.trim() : "Untitled task",
@@ -216,16 +239,23 @@ export function buildGoogleCalendarTaskSchedulePatchFromEvent(event, { calendarT
     widgetTaskMeta: {
       ...(widgetTimeZone ? { timeZone: widgetTimeZone } : {}),
       ...(location ? { googleCalendarLocation: location } : {})
-    }
+    },
+    timeZoneMode
   };
   return {
     ...patch,
-    scheduleFingerprint: buildGoogleCalendarTaskScheduleFingerprint(patch)
+    scheduleFingerprint: buildGoogleCalendarTaskScheduleFingerprint({
+      ...patch,
+      userTimeZone
+    })
   };
 }
 
 function normalizeExportRecurrence(value) {
   const source = value && typeof value === "object" ? value : {};
+  const recurrenceCount = source.count === null
+    ? null
+    : (Number.isFinite(Number(source.count)) ? Number(source.count) : null);
   return {
     type: typeof source.type === "string" ? source.type : "none",
     interval: Number.isFinite(Number(source.interval)) ? Number(source.interval) : 1,
@@ -234,7 +264,7 @@ function normalizeExportRecurrence(value) {
     ordinal: typeof source.ordinal === "string" ? source.ordinal : "first",
     sourceType: typeof source.sourceType === "string" ? source.sourceType : "",
     endDate: typeof source.endDate === "string" ? source.endDate : "",
-    count: Number.isFinite(Number(source.count)) ? Number(source.count) : null,
+    count: recurrenceCount,
     forever: source.forever === true
   };
 }
@@ -256,6 +286,9 @@ function normalizeExportWidgetTaskMeta(value) {
   if (typeof value.timeZone === "string" && value.timeZone.trim()) {
     normalized.timeZone = value.timeZone.trim();
   }
+  if (typeof value.timeZoneMode === "string" && value.timeZoneMode.trim()) {
+    normalized.timeZoneMode = normalizeGoogleCalendarTimeZoneMode(value.timeZoneMode);
+  }
   if (typeof value.location === "string" && value.location.trim()) {
     normalized.location = value.location.trim();
   }
@@ -265,9 +298,29 @@ function normalizeExportWidgetTaskMeta(value) {
   return normalized;
 }
 
+export function normalizeGoogleCalendarTimeZoneMode(value) {
+  return value === GOOGLE_CALENDAR_TIME_ZONE_MODE_FIXED
+    ? GOOGLE_CALENDAR_TIME_ZONE_MODE_FIXED
+    : GOOGLE_CALENDAR_TIME_ZONE_MODE_FLOATING;
+}
+
+export function resolveGoogleCalendarTaskTimeZoneMode(task) {
+  const configured = normalizeGoogleCalendarTimeZoneMode(task?.widgetTaskMeta?.timeZoneMode);
+  if (configured === GOOGLE_CALENDAR_TIME_ZONE_MODE_FIXED || configured === GOOGLE_CALENDAR_TIME_ZONE_MODE_FLOATING) {
+    if (task?.widgetTaskMeta && Object.prototype.hasOwnProperty.call(task.widgetTaskMeta, "timeZoneMode")) {
+      return configured;
+    }
+  }
+  const explicit = String(task?.widgetTaskMeta?.timeZone || "").trim();
+  return explicit ? GOOGLE_CALENDAR_TIME_ZONE_MODE_FIXED : GOOGLE_CALENDAR_TIME_ZONE_MODE_FLOATING;
+}
+
 function resolveGoogleCalendarTaskTimeZone(task, fallbackTimeZone = "") {
   const explicit = String(task?.widgetTaskMeta?.timeZone || "").trim();
-  return explicit || String(fallbackTimeZone || "").trim();
+  if (resolveGoogleCalendarTaskTimeZoneMode(task) === GOOGLE_CALENDAR_TIME_ZONE_MODE_FIXED) {
+    return explicit || String(fallbackTimeZone || "").trim();
+  }
+  return String(task?.userTimeZone || fallbackTimeZone || "").trim();
 }
 
 function resolveGoogleCalendarTaskLocation(task) {
@@ -315,6 +368,8 @@ function buildGoogleCalendarExtendedProperties(task) {
     lifetreeImportance: String(task.importance || "medium"),
     lifetreeLength: String(task.length || "medium"),
     lifetreeLateGraceMinutes: String(task.lateGraceMinutes || 0),
+    lifetreeTimeZoneMode: resolveGoogleCalendarTaskTimeZoneMode(task),
+    lifetreeEventTimeZone: String(task.timeZone || ""),
     lifetreeSchemaVersion: String(GOOGLE_CALENDAR_TASK_SCHEMA_VERSION)
   };
 }
