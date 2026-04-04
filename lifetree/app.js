@@ -17,10 +17,10 @@ import {
 } from "./logic.js";
 import {
   buildCanopyColumnsData,
-  getCanopyRecurringGroupKey,
   renderCanopyColumns,
   renderCanopyDetailContent
 } from "./modules/canopy.js";
+import { createCanopyController } from "./modules/canopyController.js";
 import { createAutosaveController } from "./modules/autosave.js";
 import { createDriveSyncController, resolveApiBase } from "./modules/driveSync.js";
 import {
@@ -82,6 +82,7 @@ import {
 } from "./modules/taskHistoryUi.js";
 import { createTaskHistoryController } from "./modules/taskHistoryController.js";
 import { createTaskComposerBindings } from "./modules/taskComposer.js";
+import { createWidgetController } from "./modules/widgetController.js";
 import { buildPointSummary, buildFruitDisplayState } from "./modules/treeState.js";
 import {
   buildAppliedTreeAppearance,
@@ -126,7 +127,6 @@ const MAX_ROLLING_SERIES_INSTANCES = 7;
 const MAX_WIDGETS = 5;
 const MAX_VISIBLE_HISTORY_ENTRIES = 25;
 const COMPLETED_ONE_OFF_DISMISS_MS = 5000;
-const ACTION_UNDO_MS = 3000;
 const DEV_EMAIL = "jbkallman@gmail.com";
 const DEFAULT_CATEGORY_COLOR = "#7dbf74";
 const DEFAULT_CATEGORY_KEY = "productivity";
@@ -430,23 +430,9 @@ const composerReminderState = {
   userTouched: false
 };
 
-const widgetMenuState = {
-  slotIndex: null,
-  selectedType: ""
-};
-
-const pendingActions = new Map();
 const widgetDetailState = {
   widgetId: "",
   cleanup: null
-};
-const canopyState = {
-  columns: [],
-  detail: {
-    kind: "",
-    columnKey: "",
-    groupKey: ""
-  }
 };
 const helpTooltipState = {
   timerId: 0,
@@ -719,7 +705,134 @@ const driveConflictState = {
   resolver: null
 };
 
-const taskHistoryController = createTaskHistoryController({
+const canopyController = createCanopyController({
+  refs: {
+    canopyModal: canopyDetailModal,
+    canopyColumns,
+    canopyDetailBody,
+    canopyDetailTitle,
+    canopyDetailSubtitle,
+    canopyDetailFooter
+  },
+  getStore: () => store,
+  getVisibleCards,
+  todayString,
+  getOpenTaskDeadlineState,
+  isBlocked,
+  describeCompletionGate,
+  formatTaskDisplayName,
+  normalizeProfile,
+  buildCanopyColumnsData,
+  renderCanopyColumns,
+  renderCanopyDetailContent,
+  formatDate,
+  formatPointsLabel,
+  escapeHtml,
+  renderPriorityIndicator,
+  getPendingActionForTask,
+  getPendingActionByKey,
+  markTaskOpen,
+  markTaskCompleted,
+  markTaskSkipped,
+  stagePendingAction,
+  undoPendingAction,
+  isBlockedTask: isBlocked,
+  describeBlockedTask,
+  clearPendingDelete,
+  beginEdit,
+  openTaskDesk: handleOpenTaskDesk,
+  persistStore,
+  renderAll,
+  reconcileRecurringSeries,
+  setSyncStatus,
+  resolveCategorySnapshot,
+  slugifyCategoryKey,
+  recordPointEntry,
+  removePointEntryById,
+  createId,
+  recurringBonusPoints: RECURRING_BONUS_POINTS,
+  defaultCategoryKey: DEFAULT_CATEGORY_KEY
+});
+const {
+  closeCanopyDetail,
+  handleCanopyAction,
+  handleCanopyChange,
+  isCanopyDetailOpen,
+  openCanopyDetail,
+  renderCanopy,
+  renderCanopyDetailIfOpen,
+  syncRecurringBonusState
+} = canopyController;
+let taskHistoryController = null;
+const widgetController = createWidgetController({
+  refs: {
+    widgetSlots,
+    widgetMenu,
+    widgetDetailBody,
+    widgetDetailTitle,
+    widgetDetailSubtitle
+  },
+  apiBase: API_BASE,
+  fetchCredentials: FETCH_CREDENTIALS,
+  getStore: () => store,
+  getWidgetDefinition,
+  listWidgetDefinitions,
+  ownerWidgetLabel,
+  findNextWidgetCompletionTask,
+  toDateString,
+  createId,
+  applyAutoSkipOwnedTask: shouldAutoSkipTask,
+  isBlocked,
+  markTaskCompleted: (...args) => taskHistoryController?.markTaskCompleted(...args),
+  markTaskOpen: (...args) => taskHistoryController?.markTaskOpen(...args),
+  markTaskSkipped: (...args) => taskHistoryController?.markTaskSkipped(...args),
+  pushHistory,
+  setSyncStatus,
+  renderAll,
+  persistStore,
+  reconcileRecurringSeries,
+  ensureWidgetIntegrity,
+  ensureWidgetTasks,
+  getRetiredWidgetByType,
+  removeRetiredWidgetByType,
+  rememberRetiredWidget,
+  rememberDeletedTask,
+  rememberDeletedSeries,
+  upsertArchivedSeriesRecord,
+  openTaskDesk: handleOpenTaskDesk,
+  openWidgetDetail,
+  resolveCategorySnapshot,
+  regenerateSeries,
+  retireWidgetOwnedSeries,
+  isDeveloperUser,
+  escapeHtml,
+  formatDate,
+  formatDateTime,
+  todayString
+});
+const {
+  applyAutoSkipRules,
+  clearPendingAction,
+  closeWidgetMenu,
+  commitPendingAction,
+  completeNextTaskFromWidget,
+  completeWidgetTaskById,
+  getPendingActionByKey,
+  getPendingActionForTask,
+  getPendingActionForWidget,
+  handleWidgetSlotClick,
+  handleWidgetSlotSubmit,
+  openWidgetMenu,
+  renderWidgetOrbit,
+  reopenWidgetTaskById,
+  shouldSkipTask,
+  skipWidgetTaskById,
+  stagePendingAction,
+  stageWidgetAction,
+  undoPendingAction
+} = widgetController;
+
+taskHistoryController = createTaskHistoryController({
   refs: {
     taskGrid,
     emptyState,
@@ -1055,7 +1168,6 @@ closeTaskDeskButton.addEventListener("click", closeTaskDesk);
 closeTaskDeskBackdrop.addEventListener("click", closeTaskDesk);
 taskDeskTabs.addEventListener("click", handleTaskDeskTabClick);
 closeWidgetMenuButton.addEventListener("click", closeWidgetMenu);
-widgetMenuOptions.addEventListener("click", handleWidgetMenuSelection);
 canopyColumns.addEventListener("click", handleCanopyAction);
 canopyDetailBody.addEventListener("click", handleCanopyAction);
 canopyDetailBody.addEventListener("change", handleCanopyChange);
@@ -1380,29 +1492,6 @@ function openQuickAdd() {
   quickAddModal.setAttribute("aria-hidden", "false");
   document.body.classList.add("quick-add-open");
   window.setTimeout(() => quickTaskNameInput.focus(), 0);
-}
-
-function openCanopyDetail(kind, columnKey, groupKey = "") {
-  canopyState.detail.kind = kind;
-  canopyState.detail.columnKey = columnKey;
-  canopyState.detail.groupKey = groupKey;
-  canopyDetailModal.classList.remove("hidden");
-  canopyDetailModal.setAttribute("aria-hidden", "false");
-  document.body.classList.add("canopy-detail-open");
-  renderCanopyDetailIfOpen();
-}
-
-function closeCanopyDetail() {
-  canopyState.detail.kind = "";
-  canopyState.detail.columnKey = "";
-  canopyState.detail.groupKey = "";
-  canopyDetailModal.classList.add("hidden");
-  canopyDetailModal.setAttribute("aria-hidden", "true");
-  document.body.classList.remove("canopy-detail-open");
-}
-
-function isCanopyDetailOpen() {
-  return !canopyDetailModal.classList.contains("hidden");
 }
 
 function buildDriveConflictCopy({ operation, localUserUpdatedAt, remoteUserUpdatedAt }) {
@@ -1820,119 +1909,6 @@ function handleHelpTooltipClick(event) {
   event.stopPropagation();
 }
 
-function handleWidgetSlotClick(event) {
-  const slot = event.currentTarget;
-  const slotIndex = Number(slot.getAttribute("data-slot-index"));
-  const actionTarget = event.target.closest("[data-widget-action]");
-
-  if (!actionTarget) {
-    if (!store.widgets.some((widget) => widget.slotIndex === slotIndex)) {
-      openWidgetMenu(slotIndex);
-    }
-    return;
-  }
-
-  const action = actionTarget.getAttribute("data-widget-action");
-  if (action === "add-widget") {
-    openWidgetMenu(slotIndex);
-    return;
-  }
-
-  if (action === "cancel-widget-menu") {
-    closeWidgetMenu();
-    return;
-  }
-
-  if (action === "choose-widget-type") {
-    addWidgetTypeToSelectedSlot(actionTarget.getAttribute("data-widget-type") || "");
-    return;
-  }
-
-  const widget = store.widgets.find((item) => item.slotIndex === slotIndex);
-  const definition = getWidgetDefinition(widget?.type);
-  if (widget && definition?.handleAction?.({
-    action,
-    actionTarget,
-    widget,
-    helpers: {
-      getStore: () => store,
-      createId,
-      applyAutoSkipRules,
-      completeNextTaskFromWidget,
-      completeWidgetTaskById,
-      reopenWidgetTaskById,
-      skipWidgetTaskById,
-      openWidgetDetail,
-      stageWidgetAction,
-      getPendingActionForWidget,
-      undoPendingAction,
-      reconcileRecurringSeries,
-      persistStore,
-      renderAll,
-      setSyncStatus
-    }
-  })) {
-    return;
-  }
-
-  if (action === "open-task-desk") {
-    handleOpenTaskDesk("tasks");
-    return;
-  }
-
-  if (action === "open-widget-detail") {
-    if (widget) {
-      openWidgetDetail(widget);
-    }
-    return;
-  }
-
-  if (action === "remove-widget") {
-    const widget = store.widgets.find((item) => item.slotIndex === slotIndex);
-    if (!widget) {
-      return;
-    }
-    removeWidget(widget);
-  }
-}
-
-function handleWidgetSlotSubmit(event) {
-  const slot = event.currentTarget;
-  const slotIndex = Number(slot.getAttribute("data-slot-index"));
-  const formTarget = event.target.closest("form");
-  if (!formTarget) {
-    return;
-  }
-
-  const widget = store.widgets.find((item) => item.slotIndex === slotIndex);
-  const definition = getWidgetDefinition(widget?.type);
-  if (!widget || !definition?.handleSubmit) {
-    return;
-  }
-
-  if (definition.handleSubmit({
-    form: formTarget,
-    widget,
-    helpers: {
-      getStore: () => store,
-      createId,
-      applyAutoSkipRules,
-      completeNextTaskFromWidget,
-      completeWidgetTaskById,
-      openWidgetDetail,
-      stageWidgetAction,
-      getPendingActionForWidget,
-      undoPendingAction,
-      reconcileRecurringSeries,
-      persistStore,
-      renderAll,
-      setSyncStatus
-    }
-  })) {
-    event.preventDefault();
-  }
-}
-
 function openWidgetDetail(widget) {
   widgetDetailState.widgetId = widget.id;
   openWidgetDetailModal();
@@ -2021,462 +1997,6 @@ function renderWidgetDetailIfOpen() {
       </article>
     `;
     widgetDetailState.cleanup = null;
-  }
-}
-
-function handleCanopyAction(event) {
-  const actionTarget = event.target.closest("[data-canopy-action]");
-  if (!actionTarget) {
-    return;
-  }
-
-  const action = actionTarget.getAttribute("data-canopy-action");
-  if (action === "show-column") {
-    const columnKey = actionTarget.getAttribute("data-column-key") || "today";
-    openCanopyDetail("column", columnKey);
-    return;
-  }
-
-  if (action === "open-group") {
-    const columnKey = actionTarget.getAttribute("data-column-key") || "today";
-    const groupKey = actionTarget.getAttribute("data-group-key") || "";
-    openCanopyDetail("group", columnKey, groupKey);
-    return;
-  }
-
-  if (action === "collect-group-bonus") {
-    const columnKey = actionTarget.getAttribute("data-column-key") || "today";
-    const groupKey = actionTarget.getAttribute("data-group-key") || "";
-    const group = findCanopyRecurringGroup(columnKey, groupKey);
-    if (!group) {
-      return;
-    }
-    collectRecurringGroupBonus(group);
-    return;
-  }
-
-  if (action === "undo-group-bonus") {
-    const pendingKey = actionTarget.getAttribute("data-pending-key") || "";
-    if (pendingKey) {
-      undoPendingAction(pendingKey, "Undid the pending recurring bonus collection.");
-    }
-    return;
-  }
-
-  if (action === "undo") {
-    const pendingKey = actionTarget.getAttribute("data-pending-key");
-    if (pendingKey) {
-      undoPendingAction(pendingKey, "Undid the pending canopy action.");
-    }
-    return;
-  }
-
-  const taskId = actionTarget.getAttribute("data-task-id");
-  const task = store.tasks.find((item) => item.id === taskId);
-  if (!task || task.archived) {
-    return;
-  }
-  const pendingAction = getPendingActionForTask(taskId);
-
-  if (pendingAction) {
-    return;
-  }
-
-  if (action === "reopen-group-task") {
-    if (task.status !== "done" && task.status !== "skipped") {
-      return;
-    }
-    markTaskOpen(task);
-    reconcileRecurringSeries();
-    persistStore();
-    renderAll();
-    setSyncStatus(`Marked ${task.name} incomplete for this period.`, "info");
-    return;
-  }
-
-  if (action === "complete-group-task") {
-    if (task.status !== "open") {
-      return;
-    }
-    if (isBlocked(task)) {
-      setSyncStatus(describeBlockedTask(task), "error");
-      return;
-    }
-    stagePendingAction({
-      key: `complete:${task.id}`,
-      taskId: task.id,
-      description: `Pending completion for ${task.name}. Click undo within 3 seconds to cancel.`,
-      commit: () => {
-        const nextTask = store.tasks.find((item) => item.id === task.id);
-        if (!nextTask || nextTask.archived || nextTask.status !== "open" || isBlocked(nextTask)) {
-          return false;
-        }
-        markTaskCompleted(nextTask);
-        return { message: `Completed ${nextTask.name} from the canopy.`, tone: "info" };
-      }
-    });
-    return;
-  }
-
-  if (action === "skip-group-task") {
-    if (task.status !== "open") {
-      return;
-    }
-    stagePendingAction({
-      key: `skip:${task.id}`,
-      taskId: task.id,
-      description: `Pending skip for ${task.name}. Click undo within 3 seconds to cancel.`,
-      commit: () => {
-        const nextTask = store.tasks.find((item) => item.id === task.id);
-        if (!nextTask || nextTask.archived || nextTask.status !== "open") {
-          return false;
-        }
-        markTaskSkipped(nextTask);
-        return { message: `Skipped ${nextTask.name} for this period.`, tone: "info" };
-      }
-    });
-    return;
-  }
-
-  if (task.status !== "open") {
-    return;
-  }
-
-  clearPendingDelete();
-
-  if (action === "complete") {
-    if (isBlocked(task)) {
-      setSyncStatus("That task is blocked by unfinished prerequisites.", "error");
-      return;
-    }
-    stagePendingAction({
-      key: `complete:${task.id}`,
-      taskId: task.id,
-      description: `Pending completion for ${task.name}. Click undo within 3 seconds to cancel.`,
-      commit: () => {
-        const nextTask = store.tasks.find((item) => item.id === task.id);
-        if (!nextTask || nextTask.archived || nextTask.status !== "open" || isBlocked(nextTask)) {
-          return false;
-        }
-        markTaskCompleted(nextTask);
-        return { message: `Completed ${nextTask.name} from the canopy.`, tone: "info" };
-      }
-    });
-    return;
-  }
-
-  if (action === "edit") {
-    closeCanopyDetail();
-    beginEdit(task, "single");
-    handleOpenTaskDesk("composer");
-    setSyncStatus(`Editing ${task.name} in Task Desk.`, "info");
-    return;
-  }
-
-  if (action === "skip") {
-    stagePendingAction({
-      key: `skip:${task.id}`,
-      taskId: task.id,
-      description: `Pending skip for ${task.name}. Click undo within 3 seconds to cancel.`,
-      commit: () => {
-        const nextTask = store.tasks.find((item) => item.id === task.id);
-        if (!nextTask || nextTask.archived || nextTask.status !== "open") {
-          return false;
-        }
-        markTaskSkipped(nextTask);
-        return { message: `Skipped ${nextTask.name} from the canopy.`, tone: "info" };
-      }
-    });
-  }
-}
-
-function handleCanopyChange(event) {
-  const selection = event.target.closest("[data-canopy-bonus-select]");
-  if (!selection) {
-    return;
-  }
-
-  const columnKey = selection.getAttribute("data-column-key") || "today";
-  const groupKey = selection.getAttribute("data-group-key") || "";
-  const group = findCanopyRecurringGroup(columnKey, groupKey);
-  if (!group?.bonus) {
-    return;
-  }
-
-  const categoryKey = String(selection.value || "");
-  if (!group.bonus.allowedCategories.some((category) => category.key === categoryKey)) {
-    return;
-  }
-
-  if (setRecurringBonusSelection(group.bonus.key, categoryKey)) {
-    persistStore();
-    renderAll();
-  }
-}
-
-function findCanopyRecurringGroup(columnKey, groupKey) {
-  return canopyState.columns
-    .find((column) => column.key === columnKey)
-    ?.recurringGroups.find((group) => group.key === groupKey) || null;
-}
-
-function findCanopyRecurringGroupByBonusKey(bonusKey) {
-  for (const column of canopyState.columns) {
-    const match = column.recurringGroups.find((group) => group.bonus?.key === bonusKey);
-    if (match) {
-      return match;
-    }
-  }
-  return null;
-}
-
-function collectRecurringGroupBonus(group) {
-  const bonus = group?.bonus;
-  if (!bonus) {
-    return;
-  }
-
-  if (bonus.pendingAction) {
-    return;
-  }
-
-  if (bonus.claimed) {
-    setSyncStatus(`${group.label} bonus has already been collected for this ${bonus.periodLabel}.`, "info");
-    return;
-  }
-
-  if (!bonus.collectible) {
-    setSyncStatus(`Complete every ${group.label.toLowerCase()} task in this ${bonus.periodLabel} before collecting the bonus.`, "error");
-    return;
-  }
-
-  const category = bonus.selectedCategory || bonus.allowedCategories[0] || null;
-  if (!category) {
-    setSyncStatus("No eligible bonus category is available for that recurring group.", "error");
-    return;
-  }
-
-  stagePendingAction({
-    key: `collect-bonus:${bonus.key}`,
-    description: `Pending ${group.label.toLowerCase()} bonus collection in ${category.label}. Click undo within 3 seconds to cancel.`,
-    commit: () => {
-      const currentGroup = findCanopyRecurringGroupByBonusKey(bonus.key);
-      const currentBonus = currentGroup?.bonus || null;
-      if (!currentGroup || !currentBonus || currentBonus.claimed || !currentBonus.collectible) {
-        return false;
-      }
-
-      const currentCategory = currentBonus.selectedCategory || currentBonus.allowedCategories[0] || null;
-      if (!currentCategory) {
-        return false;
-      }
-
-      recordPointEntry({
-        id: createId(),
-        taskId: "",
-        taskName: `${currentGroup.label} bonus`,
-        at: Date.now(),
-        points: currentBonus.points,
-        categoryKey: currentCategory.key,
-        categoryLabel: currentCategory.label,
-        categoryColor: currentCategory.color,
-        dueDate: "",
-        timeOfDay: "",
-        sourceKey: `recurring-bonus:${currentBonus.key}`,
-        sourceType: "recurring-bonus",
-        sourceLabel: `${currentGroup.label} completion bonus`
-      });
-
-      return {
-        message: `Collected ${formatPointsLabel(currentBonus.points)} in ${currentCategory.label} from ${currentGroup.label}.`,
-        tone: "info"
-      };
-    }
-  });
-}
-
-function openWidgetMenu(slotIndex) {
-  widgetMenuState.slotIndex = slotIndex;
-  widgetMenuState.selectedType = "";
-  widgetMenu.classList.add("hidden");
-  renderWidgetOrbit();
-}
-
-function closeWidgetMenu() {
-  widgetMenuState.slotIndex = null;
-  widgetMenuState.selectedType = "";
-  widgetMenu.classList.add("hidden");
-  renderWidgetOrbit();
-}
-
-function handleWidgetMenuSelection(event) {
-  const button = event.target.closest("[data-widget-type]");
-  if (!button) {
-    return;
-  }
-  addWidgetTypeToSelectedSlot(button.getAttribute("data-widget-type"));
-}
-
-function renderWidgetMenuOptions() {
-  widgetMenuOptions.innerHTML = listWidgetDefinitions().map((definition) => {
-    const disabled = definition.singleton && store.widgets.some((widget) => widget.type === definition.type);
-    return `
-      <button
-        type="button"
-        class="primary-button"
-        data-widget-type="${definition.type}"
-        ${disabled ? "disabled" : ""}
-      >
-        ${definition.menuLabel}
-      </button>
-    `;
-  }).join("");
-}
-
-function addWidgetTypeToSelectedSlot(type) {
-  const targetSlotIndex = widgetMenuState.slotIndex;
-  if (targetSlotIndex === null) {
-    return;
-  }
-
-  const definition = getWidgetDefinition(type);
-  if (!definition) {
-    setSyncStatus("That widget type is not registered yet.", "error");
-    closeWidgetMenu();
-    return;
-  }
-
-  const existingWidget = store.widgets.find((widget) => widget.type === definition.type);
-  if (definition.singleton && existingWidget) {
-    if (existingWidget.slotIndex === widgetMenuState.slotIndex) {
-      closeWidgetMenu();
-      setSyncStatus(`${definition.title} is already in this slot.`, "info");
-      return;
-    }
-
-    if (widgetMenuState.selectedType !== type) {
-      widgetMenuState.selectedType = type;
-      renderWidgetOrbit();
-      setSyncStatus(`${definition.title} is already deployed. Click again to move it here.`, "info");
-      return;
-    }
-
-    existingWidget.slotIndex = targetSlotIndex;
-    existingWidget.updatedAt = Date.now();
-    persistStore();
-    closeWidgetMenu();
-    renderAll();
-    setSyncStatus(`Moved ${definition.title} to slot ${targetSlotIndex + 1}.`, "info");
-    return;
-  }
-
-  const retired = getRetiredWidgetByType(definition.type);
-  const widget = definition.createWidget({
-    slotIndex: targetSlotIndex,
-    retiredWidget: retired,
-    createId,
-    now: Date.now()
-  });
-
-  store.widgets.push(widget);
-  removeRetiredWidgetByType(widget.type);
-  ensureWidgetIntegrity();
-  ensureWidgetTasks();
-  persistStore();
-  renderAll();
-  closeWidgetMenu();
-  setSyncStatus(
-    retired
-      ? `Added ${definition.title} back and restored its prior widget data.`
-      : `Added ${definition.title}.`,
-    "info"
-  );
-}
-
-function removeWidget(widget) {
-  const widgetLabel = ownerWidgetLabel({ ownerWidgetType: widget.type });
-  if (!window.confirm(`Remove the ${widgetLabel} from this Lifetree? Future widget tasks will be removed.`)) {
-    return;
-  }
-
-  const removeHistory = window.confirm(
-    "Press OK to remove all history from this widget too. Press Cancel to keep its past records so a future version of the widget can inherit them."
-  );
-
-  removeWidgetTasks(widget, { removeHistory });
-  store.widgets = store.widgets.filter((item) => item.id !== widget.id);
-
-  if (removeHistory) {
-    removeRetiredWidgetByType(widget.type);
-  } else {
-    rememberRetiredWidget(widget);
-  }
-
-  persistStore();
-  renderAll();
-  setSyncStatus(
-    removeHistory
-      ? `Removed the ${widgetLabel} and cleared its history.`
-      : `Removed the ${widgetLabel} and kept its history for later reuse.`,
-    "info"
-  );
-}
-
-function removeWidgetTasks(widget, { removeHistory }) {
-  const removedIds = new Set();
-
-  for (const task of [...store.tasks]) {
-    if (task.ownerWidgetId !== widget.id) {
-      continue;
-    }
-
-    const isTemplate = !task.templateId && task.recurrence.type !== "none";
-    const hasHistory = Array.isArray(task.history) && task.history.length > 0;
-
-    if (removeHistory) {
-      if (isTemplate) {
-        rememberDeletedSeries(task.id);
-      } else {
-        rememberDeletedTask(task);
-      }
-      removedIds.add(task.id);
-      continue;
-    }
-
-    if (isTemplate) {
-      rememberDeletedSeries(task.id);
-      removedIds.add(task.id);
-      if (task.status !== "open" || hasHistory) {
-        upsertArchivedSeriesRecord({ ...task, archived: true });
-      }
-      continue;
-    }
-
-    if (task.status === "open" && !hasHistory) {
-      rememberDeletedTask(task);
-      removedIds.add(task.id);
-      continue;
-    }
-
-    task.archived = true;
-  }
-
-  store.tasks = store.tasks.filter((task) => {
-    if (removedIds.has(task.id)) {
-      return false;
-    }
-    if (!removeHistory && task.templateId && removedIds.has(task.templateId)) {
-      if (task.status === "open" && (!Array.isArray(task.history) || task.history.length === 0)) {
-        return false;
-      }
-      task.archived = true;
-      return true;
-    }
-    return true;
-  });
-
-  for (const task of store.tasks) {
-    task.dependencies = task.dependencies.filter((dependencyId) => !removedIds.has(dependencyId));
   }
 }
 
@@ -2876,261 +2396,6 @@ function removePointEntryById(entryId) {
   return changed;
 }
 
-function renderCanopy() {
-  const today = todayString();
-  const standardCards = getVisibleCards()
-    .filter((card) => shouldSurfaceCanopyStandardCard(card, today))
-    .map((card) => ({
-      ...card,
-      surfacedRecurringGroup: getSurfacedCanopyRecurringGroup(card.task, today),
-      deadlineState: getOpenTaskDeadlineState(card.task),
-      blocked: isBlocked(card.task),
-      blockedNote: describeCompletionGate(card.task)
-    }));
-  const recurringEntries = buildRecurringCanopyEntries();
-
-  canopyState.columns = enrichCanopyColumnsWithRecurringBonuses(buildCanopyColumnsData({
-    standardCards,
-    recurringEntries,
-    today
-  }), today);
-
-  renderCanopyColumns(canopyColumns, {
-    columns: canopyState.columns,
-    escapeHtml,
-    formatDate,
-    formatPointsLabel,
-    getPendingActionForTask,
-    renderPriorityIndicator
-  });
-}
-
-function shouldSurfaceCanopyStandardCard(card, today = todayString()) {
-  if (!card || card.task.archived || card.status !== "open") {
-    return false;
-  }
-  if (card.task.recurrence.type === "none") {
-    return true;
-  }
-  if (card.task.ownerWidgetType) {
-    return false;
-  }
-  if (card.kind !== "series") {
-    return false;
-  }
-  return Boolean(getSurfacedCanopyRecurringGroup(card.task, today));
-}
-
-function getSurfacedCanopyRecurringGroup(task, today = todayString()) {
-  const taskDate = task?.dueDate || task?.startDate || "";
-  if (!taskDate) {
-    return "";
-  }
-  const recurringGroup = getCanopyRecurringGroupKey(task);
-  const weekStart = startOfWeekString(today);
-  const weekEnd = addDaysToDateString(weekStart, 6);
-
-  if (recurringGroup === "weekly") {
-    return taskDate >= weekStart && taskDate <= today ? "weekly" : "";
-  }
-  if (recurringGroup === "monthly") {
-    return taskDate.slice(0, 7) === today.slice(0, 7) && taskDate <= weekEnd ? "monthly" : "";
-  }
-  return "";
-}
-
-function getCanopyRecurringGroup(task) {
-  return getCanopyRecurringGroupKey(task);
-}
-
-function buildRecurringCanopyEntries() {
-  return store.tasks
-    .filter((task) => !task.archived && !task.historyOnly && task.recurrence.type !== "none" && (task.status === "open" || task.status === "done" || task.status === "skipped"))
-    .map((task) => ({
-      key: task.id,
-      task,
-      displayName: formatTaskDisplayName(task),
-      deadlineState: getOpenTaskDeadlineState(task),
-      blocked: isBlocked(task),
-      blockedNote: describeCompletionGate(task)
-    }));
-}
-
-function enrichCanopyColumnsWithRecurringBonuses(columns, today = todayString()) {
-  return columns.map((column) => ({
-    ...column,
-    recurringGroups: column.recurringGroups.map((group) => ({
-      ...group,
-      bonus: buildRecurringGroupBonusState(group, today)
-    }))
-  }));
-}
-
-function buildRecurringGroupBonusState(group, today = todayString()) {
-  const points = RECURRING_BONUS_POINTS[group?.key] || 0;
-  if (!group || !points || !Array.isArray(group.tasks) || group.tasks.length === 0) {
-    return null;
-  }
-
-  const periodKey = buildRecurringBonusPeriodKey(group.key, today);
-  const key = `${group.key}:${periodKey}`;
-  const allowedCategories = collectRecurringBonusCategories(group.tasks);
-  const selectedCategoryKey = getRecurringBonusSelection(key) || allowedCategories[0]?.key || "";
-  const selectedCategory = allowedCategories.find((category) => category.key === selectedCategoryKey) || allowedCategories[0] || null;
-  const claimedEntry = store.pointLedger.find((entry) => entry.sourceKey === `recurring-bonus:${key}`) || null;
-  const pendingAction = getPendingActionByKey(`collect-bonus:${key}`);
-  const completedAll = group.tasks.every((entry) => entry.task.status === "done");
-
-  return {
-    key,
-    periodKey,
-    periodLabel: group.periodLabel,
-    points,
-    allowedCategories,
-    selectedCategoryKey,
-    selectedCategory,
-    claimed: Boolean(claimedEntry),
-    claimedEntryId: claimedEntry?.id || "",
-    claimedCategoryLabel: claimedEntry?.categoryLabel || "",
-    pendingAction,
-    completedAll,
-    collectible: completedAll && !claimedEntry && Boolean(selectedCategory)
-  };
-}
-
-function buildRecurringBonusPeriodKey(groupKey, today = todayString()) {
-  if (groupKey === "daily") {
-    return today;
-  }
-  if (groupKey === "weekly") {
-    const start = startOfWeekString(today);
-    return `${start}:${addDaysToDateString(start, 6)}`;
-  }
-  if (groupKey === "monthly") {
-    return today.slice(0, 7);
-  }
-  return today;
-}
-
-function collectRecurringBonusCategories(entries = []) {
-  const categories = new Map();
-  for (const entry of entries) {
-    const category = resolveCategorySnapshot(entry.task.categoryKey || DEFAULT_CATEGORY_KEY, entry.task);
-    if (!categories.has(category.key)) {
-      categories.set(category.key, category);
-    }
-  }
-  return Array.from(categories.values()).sort((left, right) => left.label.localeCompare(right.label));
-}
-
-function getRecurringBonusSelection(key) {
-  return store.recurringBonusSelections.find((entry) => entry.key === key)?.selectedCategoryKey || "";
-}
-
-function setRecurringBonusSelection(key, categoryKey) {
-  const nextKey = slugifyCategoryKey(categoryKey || "");
-  const current = store.recurringBonusSelections.find((entry) => entry.key === key) || null;
-  if (!nextKey) {
-    if (!current) {
-      return false;
-    }
-    store.recurringBonusSelections = store.recurringBonusSelections.filter((entry) => entry.key !== key);
-    return true;
-  }
-  if (current?.selectedCategoryKey === nextKey) {
-    return false;
-  }
-  const nextRecord = {
-    key,
-    selectedCategoryKey: nextKey,
-    updatedAt: Date.now()
-  };
-  store.recurringBonusSelections = [
-    ...store.recurringBonusSelections.filter((entry) => entry.key !== key),
-    nextRecord
-  ].sort((left, right) => left.key.localeCompare(right.key));
-  return true;
-}
-
-function pruneRecurringBonusSelections(activeKeys = new Set()) {
-  const nextSelections = store.recurringBonusSelections.filter((entry) => activeKeys.has(entry.key));
-  if (nextSelections.length === store.recurringBonusSelections.length) {
-    return false;
-  }
-  store.recurringBonusSelections = nextSelections;
-  return true;
-}
-
-function syncRecurringBonusState(today = todayString()) {
-  const recurringEntries = buildRecurringCanopyEntries();
-  const columns = enrichCanopyColumnsWithRecurringBonuses(buildCanopyColumnsData({
-    standardCards: [],
-    recurringEntries,
-    today
-  }), today);
-
-  const activeKeys = new Set();
-  let changed = false;
-
-  for (const column of columns) {
-    for (const group of column.recurringGroups) {
-      const bonus = group.bonus;
-      if (!bonus) {
-        continue;
-      }
-      activeKeys.add(bonus.key);
-      if (bonus.claimedEntryId && (!bonus.completedAll || !bonus.allowedCategories.some((category) => category.key === (store.pointLedger.find((entry) => entry.id === bonus.claimedEntryId)?.categoryKey || "")))) {
-        changed = removePointEntryById(bonus.claimedEntryId) || changed;
-      }
-    }
-  }
-
-  if (pruneRecurringBonusSelections(activeKeys)) {
-    changed = true;
-  }
-
-  return changed;
-}
-
-function startOfWeekString(value) {
-  const date = new Date(`${value}T12:00:00`);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  date.setDate(date.getDate() - date.getDay());
-  return toDateString(date);
-}
-
-function addDaysToDateString(value, days) {
-  const date = new Date(`${value}T12:00:00`);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  date.setDate(date.getDate() + days);
-  return toDateString(date);
-}
-
-function renderCanopyDetailIfOpen() {
-  if (!isCanopyDetailOpen()) {
-    return;
-  }
-
-  const detail = renderCanopyDetailContent(canopyDetailBody, {
-    detail: canopyState.detail,
-    columns: canopyState.columns,
-    escapeHtml,
-    formatDate,
-    formatPointsLabel,
-    showHelpText: normalizeProfile(store.profile).helpTextEnabled,
-    getPendingActionForTask,
-    renderPriorityIndicator
-  });
-  canopyDetailTitle.textContent = detail.title;
-  canopyDetailSubtitle.textContent = detail.subtitle;
-  canopyDetailFooter.textContent = detail.footerNote;
-  canopyDetailFooter.classList.toggle("hidden", !detail.footerNote);
-}
-
 function renderTemporalUi(now = new Date()) {
   applyTheme(now);
   renderHeroStatus(now);
@@ -3367,309 +2632,6 @@ function handleCategoryListClick(event) {
   persistStore();
   renderAll();
   setSyncStatus(`Removed ${category.label} from future task choices. Existing tasks keep their category snapshot.`, "info");
-}
-
-function renderWidgetOrbit() {
-  for (const slot of widgetSlots) {
-    const slotIndex = Number(slot.getAttribute("data-slot-index"));
-    const widget = store.widgets.find((item) => item.slotIndex === slotIndex);
-    slot.classList.remove("empty", "filled", "widget-slot-chooser");
-
-    if (!widget) {
-      const chooserOpen = widgetMenuState.slotIndex === slotIndex;
-      slot.classList.add("empty");
-      if (!chooserOpen) {
-        slot.innerHTML = `
-          <div class="plus">+</div>
-          <strong>Empty slot</strong>
-          <p>Add a Lifetree widget here.</p>
-          <button type="button" class="ghost-button" data-widget-action="add-widget">Choose widget</button>
-        `;
-        continue;
-      }
-
-      slot.classList.add("widget-slot-chooser");
-      slot.innerHTML = `
-        <div class="widget-slot-header">
-          <div>
-            <h3>Choose widget</h3>
-            <p>Pick an available widget, or move an existing one here.</p>
-          </div>
-          <span class="widget-badge">Slot ${slotIndex + 1}</span>
-        </div>
-        <div class="widget-slot-picker">
-          ${listWidgetDefinitions().map((definition) => {
-            const deployedWidget = store.widgets.find((item) => item.type === definition.type);
-            const deployed = Boolean(definition.singleton && deployedWidget);
-            const moveConfirm = deployed && widgetMenuState.selectedType === definition.type;
-            return `
-              <button
-                type="button"
-                class="widget-slot-choice ${deployed ? "deployed" : "available"} ${moveConfirm ? "confirm" : ""}"
-                data-widget-action="choose-widget-type"
-                data-widget-type="${definition.type}"
-                data-deployed="${deployed ? "true" : "false"}"
-              >
-                <strong>${escapeHtml(moveConfirm ? "Move here?" : definition.title)}</strong>
-                <span>${escapeHtml(
-                  moveConfirm
-                    ? "Tap again to move the deployed widget into this slot."
-                    : (deployed ? "Already deployed elsewhere." : (definition.menuDescription || "Add this widget to Lifetree."))
-                )}</span>
-              </button>
-            `;
-          }).join("")}
-        </div>
-        <div class="widget-actions">
-          <button type="button" class="ghost-button" data-widget-action="cancel-widget-menu">Cancel</button>
-        </div>
-      `;
-      continue;
-    }
-
-    const definition = getWidgetDefinition(widget.type);
-    if (definition?.render) {
-      slot.classList.add("filled");
-      try {
-        slot.innerHTML = `
-          <button
-            type="button"
-            class="widget-shell-remove"
-            data-widget-action="remove-widget"
-            aria-label="Remove widget"
-            data-help="Remove this widget from the shell. Its owned tasks and history will retire."
-          >
-            <span aria-hidden="true">×</span>
-          </button>
-          ${definition.render({
-            widget,
-            tasks: store.tasks,
-            escapeHtml,
-            formatDateTime,
-            getPendingActionForWidget
-          })}
-        `;
-        if (definition.hydrateShell) {
-          Promise.resolve(definition.hydrateShell({
-            widget,
-            tasks: store.tasks,
-            root: slot,
-            apiBase: API_BASE,
-            fetchCredentials: FETCH_CREDENTIALS,
-            persistStore,
-            setSyncStatus
-          })).catch((error) => {
-            console.error(`Widget shell hydration failed for ${widget.type}:`, error);
-          });
-        }
-      } catch (error) {
-        console.error(`Widget shell render failed for ${widget.type}:`, error);
-        slot.innerHTML = `
-          <button
-            type="button"
-            class="widget-shell-remove"
-            data-widget-action="remove-widget"
-            aria-label="Remove widget"
-          >
-            <span aria-hidden="true">×</span>
-          </button>
-          <div class="widget-slot-header">
-            <h3>${escapeHtml(definition.title || "Widget")}</h3>
-            <span class="widget-badge">Error</span>
-          </div>
-          <p>This widget shell could not render from the current saved data.</p>
-        `;
-      }
-      continue;
-    }
-
-    slot.classList.add("filled");
-    slot.innerHTML = `
-      <div class="widget-slot-header">
-        <h3>Unknown widget</h3>
-        <span class="widget-badge">Stub</span>
-      </div>
-      <p>This widget type is not rendered yet.</p>
-    `;
-  }
-}
-
-function completeNextTaskFromWidget(widget, mechanism, at = Date.now()) {
-  const definition = getWidgetDefinition(widget.type);
-  const candidateTasks = store.tasks.filter((task) => !isBlocked(task));
-  const nextTask = definition?.findCompletionTask?.({
-    tasks: candidateTasks,
-    widget,
-    mechanism,
-    at
-  }) || findNextWidgetCompletionTask(
-    candidateTasks,
-    widget.id,
-    mechanism,
-    toDateString(new Date(at))
-  );
-  if (!nextTask) {
-    return null;
-  }
-
-  nextTask.status = "done";
-  pushHistory(nextTask, "completed");
-  return nextTask;
-}
-
-function completeWidgetTaskById(taskId, at = Date.now()) {
-  const task = store.tasks.find((item) => item.id === taskId);
-  if (!task || task.archived || task.status !== "open" || isBlocked(task)) {
-    return null;
-  }
-  markTaskCompleted(task, at);
-  return task;
-}
-
-function reopenWidgetTaskById(taskId, at = Date.now()) {
-  const task = store.tasks.find((item) => item.id === taskId);
-  if (!task || task.archived || task.status === "open") {
-    return null;
-  }
-  markTaskOpen(task, at);
-  return task;
-}
-
-function skipWidgetTaskById(taskId, at = Date.now()) {
-  const task = store.tasks.find((item) => item.id === taskId);
-  if (!task || task.archived || task.status !== "open") {
-    return null;
-  }
-  markTaskSkipped(task, at);
-  return task;
-}
-
-function stageWidgetAction(widget, actionType, metadata) {
-  const key = `widget:${widget.id}:${actionType}`;
-  stagePendingAction({
-    key,
-    widgetId: widget.id,
-    description: metadata.description,
-    commit: () => metadata.commit(),
-    ...metadata
-  });
-}
-
-function getPendingActionForWidget(widgetId, actionType = "") {
-  const prefix = actionType ? `widget:${widgetId}:${actionType}` : `widget:${widgetId}:`;
-  for (const [key, value] of pendingActions.entries()) {
-    if (key.startsWith(prefix)) {
-      return value;
-    }
-  }
-  return null;
-}
-
-function getPendingActionForTask(taskId) {
-  for (const value of pendingActions.values()) {
-    if (value.taskId === taskId) {
-      return value;
-    }
-  }
-  return null;
-}
-
-function getPendingActionByKey(key) {
-  return pendingActions.get(key) || null;
-}
-
-function stagePendingAction({ key, taskId = "", widgetId = "", description, commit, ...metadata }) {
-  clearPendingAction(key);
-  const timerId = window.setTimeout(() => {
-    commitPendingAction(key);
-  }, ACTION_UNDO_MS);
-  pendingActions.set(key, { key, taskId, widgetId, description, commit, timerId, ...metadata });
-  renderAll();
-  if (description) {
-    setSyncStatus(description, "info");
-  }
-}
-
-function clearPendingAction(key) {
-  const existing = pendingActions.get(key);
-  if (!existing) {
-    return;
-  }
-  window.clearTimeout(existing.timerId);
-  pendingActions.delete(key);
-}
-
-function undoPendingAction(key, message = "Undid the pending action.") {
-  if (!pendingActions.has(key)) {
-    return;
-  }
-  clearPendingAction(key);
-  renderAll();
-  setSyncStatus(message, "info");
-}
-
-function commitPendingAction(key) {
-  const pending = pendingActions.get(key);
-  if (!pending) {
-    return;
-  }
-
-  pendingActions.delete(key);
-  window.clearTimeout(pending.timerId);
-  let result = null;
-  try {
-    result = pending.commit?.();
-  } catch (error) {
-    console.error("Pending action failed", error);
-    renderAll();
-    setSyncStatus("That pending action failed before it could finish.", "error");
-    return;
-  }
-  if (!result) {
-    renderAll();
-    return;
-  }
-
-  reconcileRecurringSeries();
-  persistStore();
-  renderAll();
-  if (result.message) {
-    setSyncStatus(result.message, result.tone || "info");
-  }
-}
-
-function applyAutoSkipRules(now = new Date()) {
-  let changed = false;
-
-  for (const task of store.tasks) {
-    if (shouldSkipTask(task, now)) {
-      markTaskSkipped(task, now.getTime(), { reason: "auto-skip" });
-      changed = true;
-    }
-  }
-
-  return changed;
-}
-
-function shouldSkipTask(task, now = new Date()) {
-  if (!task || task.status !== "open" || task.archived) {
-    return false;
-  }
-
-  if (shouldAutoSkipTask(task, now)) {
-    return true;
-  }
-
-  if (task.skipRule?.type === "widget-lockout") {
-    return shouldSkipWidgetLockoutTask(task, now);
-  }
-
-  return false;
-}
-
-function shouldSkipWidgetLockoutTask(task, now = new Date()) {
-  const definition = getWidgetDefinition(task.ownerWidgetType);
-  return definition?.shouldAutoSkipOwnedTask?.({ task, now, store }) || false;
 }
 
 function renderDependencyOptions() {

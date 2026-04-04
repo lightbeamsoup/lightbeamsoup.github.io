@@ -37,6 +37,8 @@
 
 ### Codebase Maintenance
 
+- 2026-04-03: Extract canopy detail modal state, canopy actions, and recurring bonus logic out of `app.js` into `lifetree/modules/canopyController.js`.
+- 2026-04-03: Extract widget shell/menu orchestration, pending-action flow, and widget autoskip helpers out of `app.js` into `lifetree/modules/widgetController.js`.
 - 2026-04-03: Extract Task Desk filtering, history actions, lifecycle/status repair, and pending-delete controller logic out of `app.js` into `lifetree/modules/taskHistoryController.js`.
 - 2026-04-01: Extract notification modal flow, Drive sync-state UI, remote-drift checks, and notification send helpers out of `app.js` into `lifetree/modules/notificationSyncController.js`.
 - 2026-04-01: Extract store normalization, category/task merge, deletion-marker handling, and comparable-signature logic out of `app.js` into `lifetree/modules/storeData.js`.
