@@ -83,6 +83,7 @@ import {
 } from "./modules/taskHistoryUi.js";
 import { createTaskHistoryController } from "./modules/taskHistoryController.js";
 import { createTaskComposerBindings } from "./modules/taskComposer.js";
+import { createDeveloperController } from "./modules/developerController.js";
 import { createWidgetController } from "./modules/widgetController.js";
 import { buildPointSummary, buildFruitDisplayState } from "./modules/treeState.js";
 import {
@@ -707,6 +708,7 @@ const driveConflictState = {
 };
 let taskHistoryController = null;
 let widgetController = null;
+let developerController = null;
 
 const canopyController = createCanopyController({
   refs: {
@@ -1080,7 +1082,7 @@ notificationSyncController = createNotificationSyncController({
   createId,
   escapeHtml,
   setSyncStatus,
-  renderDeveloperPanel,
+  renderDeveloperPanel: () => developerController?.renderDeveloperPanel(),
   isDeveloperUser,
   isSettingsOpen,
   closeSettings,
@@ -1140,6 +1142,81 @@ autosaveController = createAutosaveController({
   canAutosave: () => getAutosavePermission(),
   saveToDrive: (options) => saveCurrentStoreToDrive({ ...options, mode: "autosave" })
 });
+
+developerController = createDeveloperController({
+  refs: {
+    openDeveloperButton,
+    developerModal,
+    developerPanel,
+    developerEmail,
+    developerWidgetType,
+    developerMaxTaskPoints,
+    developerMaxPointHistoryEntries,
+    developerInjectCategory,
+    developerInjectPoints,
+    developerInjectSource,
+    developerFruitCategory,
+    developerFruitDelta,
+    developerBankedCategory,
+    developerBankedDelta,
+    developerTreeSkin,
+    grantTreeSkinButton,
+    removeTreeSkinButton,
+    copyNotificationDiagnosticsButton,
+    downloadLocalDataButton,
+    importDriveDataButton,
+    sendDeveloperNotificationTestButton,
+    sendDeveloperDailySummaryButton,
+    sendDeveloperDailyAgendaButton,
+    developerFruitSummary,
+    developerPointsSummary,
+    taskPointsInput
+  },
+  authState,
+  notificationSendState,
+  getStore: () => store,
+  isDeveloperUser,
+  listWidgetDefinitions,
+  getSelectableCategories,
+  defaultCategoryKey: DEFAULT_CATEGORY_KEY,
+  listPurchasableTreeSkins,
+  getTreeStylePartLabel,
+  normalizeTreeStyleState,
+  normalizeDevSettings,
+  normalizePointHistory,
+  normalizeTreeState,
+  normalizeTaskPoints,
+  parsePositiveNumber,
+  defaultMaxTaskPoints: DEFAULT_MAX_TASK_POINTS,
+  defaultMaxPointHistoryEntries: DEFAULT_MAX_POINT_HISTORY_ENTRIES,
+  formatPointsLabel,
+  renderDeveloperFruitSummary,
+  renderDeveloperPointsSummary,
+  getTreeDisplayState,
+  getPointLedgerSummary,
+  resolveCategorySnapshot,
+  slugifyCategoryKey,
+  escapeHtml,
+  recordPointEntry,
+  createId,
+  persistStore,
+  renderAll,
+  renderTreeDetailIfOpen,
+  setSyncStatus,
+  syncTaskPointsDefault
+});
+const {
+  adjustDeveloperBankedPoints,
+  adjustDeveloperFruitGrowth,
+  closeDeveloper,
+  injectDeveloperPoints,
+  isDeveloperOpen,
+  openDeveloper,
+  renderDeveloperPanel,
+  resetDeveloperFruitGrowth,
+  updateMaxPointHistoryEntriesSetting,
+  updateMaxTaskPointsSetting
+} = developerController;
 
 updateRecurrenceVisibility();
 updateSkipVisibility();
@@ -1477,16 +1554,6 @@ function handleGlobalKeydown(event) {
   }
 }
 
-function openDeveloper() {
-  if (!isDeveloperUser()) {
-    return;
-  }
-  developerModal.classList.remove("hidden");
-  developerModal.setAttribute("aria-hidden", "false");
-  document.body.classList.add("developer-open");
-  renderDeveloperPanel();
-}
-
 function openQuickAdd() {
   closeCanopyDetail();
   resetQuickAddForm();
@@ -1602,16 +1669,6 @@ function closeSettings() {
 
 function isSettingsOpen() {
   return !settingsModal.classList.contains("hidden");
-}
-
-function closeDeveloper() {
-  developerModal.classList.add("hidden");
-  developerModal.setAttribute("aria-hidden", "true");
-  document.body.classList.remove("developer-open");
-}
-
-function isDeveloperOpen() {
-  return !developerModal.classList.contains("hidden");
 }
 
 function applyTaskDeskPaneState() {
@@ -3241,233 +3298,6 @@ function describeMergeResult(localStore, remoteStore) {
 function setSyncStatus(message, tone) {
   syncStatus.textContent = message;
   syncStatus.dataset.tone = tone;
-}
-
-function renderDeveloperPanel() {
-  const visible = isDeveloperUser();
-  openDeveloperButton.classList.toggle("hidden", !visible);
-  developerPanel.classList.toggle("hidden", !visible);
-  if (!visible) {
-    closeDeveloper();
-    developerFruitSummary.innerHTML = "";
-    developerPointsSummary.innerHTML = "";
-    return;
-  }
-
-  developerEmail.textContent = authState.user.email;
-
-  const currentWidgetValue = developerWidgetType.value || "";
-  developerWidgetType.innerHTML = listWidgetDefinitions().map((definition) => `
-    <option value="${definition.type}">${escapeHtml(definition.title)}</option>
-  `).join("");
-  developerWidgetType.value = Array.from(developerWidgetType.options).some((option) => option.value === currentWidgetValue)
-    ? currentWidgetValue
-    : (developerWidgetType.options[0]?.value || "");
-
-  const categories = getSelectableCategories();
-  const currentCategoryValue = developerInjectCategory.value || "";
-  developerInjectCategory.innerHTML = categories.map((category) => `
-    <option value="${category.key}">${escapeHtml(category.label)}</option>
-  `).join("");
-  developerInjectCategory.value = Array.from(developerInjectCategory.options).some((option) => option.value === currentCategoryValue)
-    ? currentCategoryValue
-    : (categories[0]?.key || DEFAULT_CATEGORY_KEY);
-  const currentFruitCategoryValue = developerFruitCategory.value || "";
-  developerFruitCategory.innerHTML = categories.map((category) => `
-    <option value="${category.key}">${escapeHtml(category.label)}</option>
-  `).join("");
-  developerFruitCategory.value = Array.from(developerFruitCategory.options).some((option) => option.value === currentFruitCategoryValue)
-    ? currentFruitCategoryValue
-    : (categories[0]?.key || DEFAULT_CATEGORY_KEY);
-  const currentBankedCategoryValue = developerBankedCategory.value || "";
-  developerBankedCategory.innerHTML = categories.map((category) => `
-    <option value="${category.key}">${escapeHtml(category.label)}</option>
-  `).join("");
-  developerBankedCategory.value = Array.from(developerBankedCategory.options).some((option) => option.value === currentBankedCategoryValue)
-    ? currentBankedCategoryValue
-    : (categories[0]?.key || DEFAULT_CATEGORY_KEY);
-
-  const currentTreeSkinValue = developerTreeSkin.value || "";
-  const purchasableSkins = listPurchasableTreeSkins();
-  developerTreeSkin.innerHTML = purchasableSkins.map((skin) => {
-    const partLabel = getTreeStylePartLabel(skin.part);
-    const owned = normalizeTreeStyleState(store.treeState?.styleState).ownedSkinIds.includes(skin.id);
-    return `<option value="${skin.id}">${escapeHtml(`${partLabel} · ${skin.label}${owned ? " (owned)" : ""}`)}</option>`;
-  }).join("");
-  developerTreeSkin.value = Array.from(developerTreeSkin.options).some((option) => option.value === currentTreeSkinValue)
-    ? currentTreeSkinValue
-    : (purchasableSkins[0]?.id || "");
-  const hasSkins = purchasableSkins.length > 0;
-  developerTreeSkin.disabled = !hasSkins;
-  grantTreeSkinButton.disabled = !hasSkins;
-  removeTreeSkinButton.disabled = !hasSkins;
-  downloadLocalDataButton.disabled = !visible;
-  importDriveDataButton.disabled = !visible;
-  const notificationsBusy = !authState.authenticated || notificationSendState.inFlight;
-  copyNotificationDiagnosticsButton.disabled = !authState.authenticated;
-  sendDeveloperNotificationTestButton.disabled = notificationsBusy;
-  sendDeveloperDailySummaryButton.disabled = notificationsBusy;
-  sendDeveloperDailyAgendaButton.disabled = notificationsBusy;
-  sendDeveloperNotificationTestButton.textContent = notificationSendState.inFlight && notificationSendState.kind === "test"
-    ? "Sending…"
-    : "Send test notification email";
-  sendDeveloperDailySummaryButton.textContent = notificationSendState.inFlight && notificationSendState.kind === "summary"
-    ? "Sending…"
-    : "Send daily summary email";
-  sendDeveloperDailyAgendaButton.textContent = notificationSendState.inFlight && notificationSendState.kind === "reminder"
-    ? "Sending…"
-    : "Send daily agenda email";
-
-  const devSettings = normalizeDevSettings(store.devSettings);
-  developerMaxTaskPoints.value = String(devSettings.maxTaskPoints);
-  developerMaxPointHistoryEntries.value = String(devSettings.maxPointHistoryEntries);
-  taskPointsInput.max = String(devSettings.maxTaskPoints);
-  developerFruitSummary.innerHTML = renderDeveloperFruitSummary(getTreeDisplayState());
-  developerPointsSummary.innerHTML = renderDeveloperPointsSummary(getPointLedgerSummary());
-}
-
-function updateMaxTaskPointsSetting() {
-  const nextValue = Math.max(1, Math.min(50, parsePositiveNumber(developerMaxTaskPoints.value) || DEFAULT_MAX_TASK_POINTS));
-  store.devSettings = normalizeDevSettings({
-    ...store.devSettings,
-    maxTaskPoints: nextValue
-  });
-  developerMaxTaskPoints.value = String(nextValue);
-  syncTaskPointsDefault();
-  persistStore();
-  renderDeveloperPanel();
-  setSyncStatus(`Max task points updated to ${nextValue}. Future task edits use this cap.`, "info");
-}
-
-function updateMaxPointHistoryEntriesSetting() {
-  const nextValue = Math.max(1, Math.min(DEFAULT_MAX_POINT_HISTORY_ENTRIES, parsePositiveNumber(developerMaxPointHistoryEntries.value) || DEFAULT_MAX_POINT_HISTORY_ENTRIES));
-  store.devSettings = normalizeDevSettings({
-    ...store.devSettings,
-    maxPointHistoryEntries: nextValue
-  });
-  store.pointHistory = normalizePointHistory(store.pointHistory, store.devSettings);
-  developerMaxPointHistoryEntries.value = String(nextValue);
-  persistStore();
-  renderDeveloperPanel();
-  renderTreeDetailIfOpen();
-  setSyncStatus(`Recent point history is now capped at ${nextValue} entries over the last 7 days.`, "info");
-}
-
-function injectDeveloperPoints() {
-  if (!isDeveloperUser()) {
-    return;
-  }
-
-  const category = resolveCategorySnapshot(developerInjectCategory.value || DEFAULT_CATEGORY_KEY);
-  const points = normalizeTaskPoints(developerInjectPoints.value, 1, 1000);
-  const source = String(developerInjectSource.value || "").trim() || "Developer injection";
-  if (points <= 0) {
-    setSyncStatus("Injected points must be at least 1.", "error");
-    return;
-  }
-
-  recordPointEntry({
-    id: createId(),
-    taskId: "",
-    taskName: "",
-    at: Date.now(),
-    points,
-    categoryKey: category.key,
-    categoryLabel: category.label,
-    categoryColor: category.color,
-    dueDate: "",
-    timeOfDay: "",
-    sourceKey: `developer:${slugifyCategoryKey(source) || "injection"}`,
-    sourceType: "developer",
-    sourceLabel: source
-  });
-
-  persistStore();
-  renderDeveloperPanel();
-  renderTreeDetailIfOpen();
-  setSyncStatus(`Injected ${formatPointsLabel(points)} into ${category.label}.`, "info");
-}
-
-function adjustDeveloperFruitGrowth(direction) {
-  if (!isDeveloperUser()) {
-    return;
-  }
-
-  const category = resolveCategorySnapshot(developerFruitCategory.value || DEFAULT_CATEGORY_KEY);
-  const delta = normalizeTaskPoints(developerFruitDelta.value, 1, 75);
-  if (delta <= 0) {
-    setSyncStatus("Fruit growth changes must be at least 1 point.", "error");
-    return;
-  }
-
-  const treeState = normalizeTreeState(store.treeState);
-  const nextValue = (treeState.devFruitPoints[category.key] || 0) + (direction * delta);
-  const nextFruitPoints = { ...treeState.devFruitPoints };
-  if (nextValue === 0) {
-    delete nextFruitPoints[category.key];
-  } else {
-    nextFruitPoints[category.key] = nextValue;
-  }
-
-  store.treeState = normalizeTreeState({
-    ...treeState,
-    devFruitPoints: nextFruitPoints,
-    updatedAt: Date.now()
-  });
-  persistStore();
-  renderAll();
-  setSyncStatus(
-    `${direction > 0 ? "Added" : "Removed"} ${formatPointsLabel(delta)} of test fruit growth for ${category.label}.`,
-    "info"
-  );
-}
-
-function adjustDeveloperBankedPoints(direction) {
-  if (!isDeveloperUser()) {
-    return;
-  }
-
-  const category = resolveCategorySnapshot(developerBankedCategory.value || DEFAULT_CATEGORY_KEY);
-  const delta = normalizeTaskPoints(developerBankedDelta.value, 1, 1000);
-  if (delta <= 0) {
-    setSyncStatus("Banked point changes must be at least 1 point.", "error");
-    return;
-  }
-
-  const treeState = normalizeTreeState(store.treeState);
-  const nextValue = Math.max(0, (treeState.harvestedByCategory[category.key] || 0) + (direction * delta));
-  const nextHarvested = { ...treeState.harvestedByCategory };
-  if (nextValue === 0) {
-    delete nextHarvested[category.key];
-  } else {
-    nextHarvested[category.key] = nextValue;
-  }
-
-  store.treeState = normalizeTreeState({
-    ...treeState,
-    harvestedByCategory: nextHarvested,
-    updatedAt: Date.now()
-  });
-  persistStore();
-  renderAll();
-  setSyncStatus(
-    `${direction > 0 ? "Added" : "Removed"} ${formatPointsLabel(delta)} of banked fruit points for ${category.label}.`,
-    "info"
-  );
-}
-
-function resetDeveloperFruitGrowth() {
-  if (!isDeveloperUser()) {
-    return;
-  }
-  store.treeState = normalizeTreeState({
-    ...store.treeState,
-    devFruitPoints: {},
-    updatedAt: Date.now()
-  });
-  persistStore();
-  renderAll();
-  setSyncStatus("Cleared developer fruit-growth adjustments.", "info");
 }
 
 function getReturnToTarget() {
