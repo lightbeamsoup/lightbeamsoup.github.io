@@ -254,18 +254,6 @@ body.developer-open {
   gap: 10px;
 }
 
-.canopy-group-heading {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-}
-
-.canopy-group-heading-copy {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-
 .canopy-task-footer {
   display: flex;
   justify-content: space-between;
@@ -306,13 +294,6 @@ body.developer-open {
   font-size: 1.15rem;
   line-height: 1;
   padding: 0;
-}
-
-.canopy-group-toggle {
-  width: 32px;
-  height: 32px;
-  flex: 0 0 32px;
-  font-size: 1rem;
 }
 
 .canopy-task-icon.complete {
@@ -476,6 +457,19 @@ body.developer-open {
   width: 100%;
 }
 
+.canopy-group-summary {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
 .canopy-group-card strong {
   font-size: 0.88rem;
 }
@@ -491,13 +485,28 @@ body.developer-open {
 
 .canopy-group-preview-item {
   display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.canopy-group-preview-copy {
+  display: grid;
   gap: 2px;
+  min-width: 0;
 }
 
 .canopy-group-preview-item strong {
   font-size: 0.77rem;
   font-weight: 700;
   line-height: 1.2;
+}
+
+.canopy-group-toggle {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  font-size: 1rem;
 }
 
 .canopy-group-preview-item span,
@@ -590,7 +599,6 @@ body.developer-open {
 }
 
 .canopy-task-main > span,
-.canopy-group-heading-copy > span,
 .canopy-empty,
 .canopy-note {
   color: var(--muted);

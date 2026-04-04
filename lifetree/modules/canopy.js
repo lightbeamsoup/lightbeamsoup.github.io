@@ -227,23 +227,27 @@ function renderRecurringGroupRow(column, escapeHtml, formatPointsLabel) {
     <div class="canopy-recurring-row">
       ${column.recurringGroups.map((group) => `
         <div class="canopy-group-entry">
-          <button
-            type="button"
+          <div
             class="canopy-group-card${group.bonus?.collectible ? " ready" : ""}${group.bonus?.claimed ? " claimed" : ""}"
-            data-canopy-action="open-group"
-            data-column-key="${column.key}"
-            data-group-key="${group.key}"
             ${group.bonus ? `style="--canopy-bonus-color: ${escapeHtml(group.bonus.selectedCategory?.color || "#f4c95d")}"` : ""}
           >
-            <strong>${escapeHtml(group.label)}</strong>
-            <span>${escapeHtml(buildRecurringGroupSummaryLabel(group))}</span>
+            <button
+              type="button"
+              class="canopy-group-summary"
+              data-canopy-action="open-group"
+              data-column-key="${column.key}"
+              data-group-key="${group.key}"
+            >
+              <strong>${escapeHtml(group.label)}</strong>
+              <span>${escapeHtml(buildRecurringGroupSummaryLabel(group))}</span>
+            </button>
             ${group.bonus?.claimed ? `
               <span class="canopy-group-bonus-state claimed">Bonus claimed in ${escapeHtml(group.bonus.claimedCategoryLabel || group.bonus.selectedCategory?.label || "selected type")}</span>
             ` : group.bonus?.collectible ? `
               <span class="canopy-group-bonus-state ready">Bonus ready: collect ${escapeHtml(formatPointsLabel(group.bonus.points))}</span>
             ` : ""}
             ${renderRecurringGroupPreview(group, escapeHtml)}
-          </button>
+          </div>
           ${group.bonus?.pendingAction ? `
             <button
               type="button"
@@ -296,8 +300,11 @@ function renderRecurringGroupPreview(group, escapeHtml) {
     <div class="canopy-group-preview">
       ${previewItems.map((series) => `
         <div class="canopy-group-preview-item">
-          <strong>${escapeHtml(series.displayName)}</strong>
-          <span>${escapeHtml(buildRecurringPreviewMeta(series, group.key))}</span>
+          <div class="canopy-group-preview-copy">
+            <strong>${escapeHtml(series.displayName)}</strong>
+            <span>${escapeHtml(buildRecurringPreviewMeta(series, group.key))}</span>
+          </div>
+          ${renderRecurringSeriesPreviewToggle(series, escapeHtml)}
         </div>
       `).join("")}
       ${(group.seriesCards || []).filter((series) => Boolean(series.nextOpenTaskId)).length > previewItems.length ? `
@@ -462,17 +469,16 @@ function renderRecurringDetailSeriesCard(series, formatDate, escapeHtml, getPend
     return `
       <article class="canopy-group-task pending" style="--canopy-category-color: ${taskColor}">
         <div class="canopy-group-main">
-          ${renderRecurringSeriesHeading(series, escapeHtml)}
+          <strong>${escapeHtml(series.displayName)}</strong>
+          <span>${escapeHtml(series.progressLabel)}</span>
           ${renderCanopyMeta(task, escapeHtml, renderPriorityIndicator)}
           <span class="canopy-task-status">${escapeHtml(series.statusLabel)}</span>
         </div>
         <div class="canopy-task-footer">
           <span class="canopy-task-status">${escapeHtml(pendingAction.description || "Pending action")}</span>
-          ${series.pendingQuickComplete ? "" : `
-            <button type="button" class="canopy-task-undo" data-canopy-action="undo" data-task-id="${pendingEntry.task.id}" data-pending-key="${pendingAction.key}">
-              Undo
-            </button>
-          `}
+          <button type="button" class="canopy-task-undo" data-canopy-action="undo" data-task-id="${pendingEntry.task.id}" data-pending-key="${pendingAction.key}">
+            Undo
+          </button>
         </div>
       </article>
     `;
@@ -481,14 +487,15 @@ function renderRecurringDetailSeriesCard(series, formatDate, escapeHtml, getPend
   return `
     <article class="canopy-group-task${series.completedCount === series.totalCount ? " done" : ""}${series.skippedCount === series.totalCount ? " skipped" : ""}${blocked ? " blocked" : ""}${series.deadlineState ? ` deadline-${series.deadlineState}` : ""}" style="--canopy-category-color: ${taskColor}">
       <div class="canopy-group-main">
-        ${renderRecurringSeriesHeading(series, escapeHtml)}
+        <strong>${escapeHtml(series.displayName)}</strong>
+        <span>${escapeHtml(series.progressLabel)}</span>
         ${renderCanopyMeta(task, escapeHtml, renderPriorityIndicator)}
         <span class="canopy-task-status">${escapeHtml(series.statusLabel)}</span>
-        ${series.isWidgetManaged && !series.shellQuickCompleteEligible
+        ${series.isWidgetManaged
           ? `<span class="canopy-note">${escapeHtml(series.lockedNote)}</span>`
           : (blocked ? `<span class="canopy-note">${escapeHtml(series.blockedNote || "Blocked")}</span>` : "")}
       </div>
-      <div class="canopy-task-footer${series.isWidgetManaged && !series.shellQuickCompleteEligible ? " locked" : ""}">
+      <div class="canopy-task-footer${series.isWidgetManaged ? " locked" : ""}">
         <span class="canopy-task-status">${escapeHtml(series.footerLabel)}</span>
         <div class="canopy-task-actions">
           ${renderRecurringSeriesActions(series, escapeHtml)}
@@ -680,19 +687,7 @@ function buildRecurringSeriesStatusLabel({
   return "Ready for the next completion in this period.";
 }
 
-function renderRecurringSeriesHeading(series, escapeHtml) {
-  return `
-    <div class="canopy-group-heading">
-      ${renderRecurringSeriesToggle(series, escapeHtml)}
-      <div class="canopy-group-heading-copy">
-        <strong>${escapeHtml(series.displayName)}</strong>
-        <span>${escapeHtml(series.progressLabel)}</span>
-      </div>
-    </div>
-  `;
-}
-
-function renderRecurringSeriesToggle(series, escapeHtml) {
+function renderRecurringSeriesPreviewToggle(series, escapeHtml) {
   const toggle = series.shellQuickToggle;
   if (!toggle) {
     return "";
@@ -715,9 +710,6 @@ function renderRecurringSeriesToggle(series, escapeHtml) {
 
 function renderRecurringSeriesActions(series, escapeHtml) {
   if (series.isWidgetManaged) {
-    if (series.shellQuickCompleteEligible) {
-      return "";
-    }
     return `
       <button type="button" class="canopy-task-icon complete" title="Managed by widget" aria-label="Managed by widget" data-help="${escapeHtml(`Complete ${series.displayName} from its widget.`)}" disabled>✓</button>
       <button type="button" class="canopy-task-icon skip" title="Managed by widget" aria-label="Managed by widget" data-help="${escapeHtml(`Skip ${series.displayName} from its widget.`)}" disabled>×</button>
@@ -757,18 +749,16 @@ function renderRecurringSeriesActions(series, escapeHtml) {
         : null);
 
   return `
-    ${series.shellQuickCompleteEligible ? "" : `
-      <button
-        type="button"
-        class="canopy-task-icon complete${completeAction?.active ? " is-active" : ""}"
-        data-canopy-action="${completeAction?.action || "complete-group-task"}"
-        data-task-id="${escapeHtml(completeAction?.taskId || "")}"
-        data-help="${escapeHtml(completeAction?.active ? `Mark ${series.displayName} incomplete for this period.` : `Complete the next ${series.displayName} instance.`)}"
-        aria-label="${escapeHtml(completeAction?.active ? `Mark ${series.displayName} incomplete` : `Complete ${series.displayName}`)}"
-        title="${escapeHtml(completeAction?.active ? "Mark incomplete" : "Complete")}"
-        ${!completeAction || completeAction.disabled ? "disabled" : ""}
-      >✓</button>
-    `}
+    <button
+      type="button"
+      class="canopy-task-icon complete${completeAction?.active ? " is-active" : ""}"
+      data-canopy-action="${completeAction?.action || "complete-group-task"}"
+      data-task-id="${escapeHtml(completeAction?.taskId || "")}"
+      data-help="${escapeHtml(completeAction?.active ? `Mark ${series.displayName} incomplete for this period.` : `Complete the next ${series.displayName} instance.`)}"
+      aria-label="${escapeHtml(completeAction?.active ? `Mark ${series.displayName} incomplete` : `Complete ${series.displayName}`)}"
+      title="${escapeHtml(completeAction?.active ? "Mark incomplete" : "Complete")}"
+      ${!completeAction || completeAction.disabled ? "disabled" : ""}
+    >✓</button>
     ${skipAction ? `
       <button
         type="button"

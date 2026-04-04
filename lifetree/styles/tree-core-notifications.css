@@ -26,6 +26,7 @@
   padding: 0;
   font-size: 1.1rem;
   font-weight: 800;
+  color: #2d8746;
 }
 
 .canopy-group-toggle.is-complete {
@@ -856,4 +857,3 @@
   font-size: 0.85rem;
   color: var(--muted);
 }
-

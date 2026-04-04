@@ -510,7 +510,7 @@ export function createCanopyController(config = {}) {
         active: false,
         pending: false,
         disabled: !nextActionTask,
-        label: "□",
+        label: "✓",
         title: "Quick complete",
         help: nextActionTask
           ? `Quick-complete ${series.displayName}.`
@@ -534,11 +534,7 @@ export function createCanopyController(config = {}) {
       ...series,
       shellQuickCompleteEligible,
       pendingQuickComplete,
-      shellQuickToggle,
-      lockedNote: shellQuickCompleteEligible ? "" : series.lockedNote,
-      statusLabel: shellQuickCompleteEligible && series.isWidgetManaged && series.nextOpenTaskId
-        ? "Quick complete is available here or from the widget."
-        : series.statusLabel
+      shellQuickToggle
     };
   }
 
