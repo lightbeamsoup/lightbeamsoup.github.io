@@ -464,8 +464,7 @@ export function createWidgetController(config = {}) {
       return null;
     }
 
-    nextTask.status = "done";
-    pushHistory(nextTask, "completed");
+    markTaskCompleted(nextTask, at);
     return nextTask;
   }
 

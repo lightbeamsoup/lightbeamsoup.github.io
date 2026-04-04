@@ -60,6 +60,9 @@ export function isGoogleCalendarSchedulableTask(task) {
   if (task.templateId && recurrenceType !== "none") {
     return false;
   }
+  if (recurrenceType !== "none") {
+    return true;
+  }
   return task.status === "open";
 }
 
@@ -78,6 +81,9 @@ function isGoogleCalendarStatusMirrorableTask(task) {
     return false;
   }
   if (task.templateId && recurrenceType !== "none") {
+    return false;
+  }
+  if (recurrenceType !== "none") {
     return false;
   }
   const googleCalendar = normalizeGoogleCalendarTaskLink(task.googleCalendar);

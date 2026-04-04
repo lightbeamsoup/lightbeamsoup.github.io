@@ -282,6 +282,59 @@ test("linked resolved tasks request status-only Google sync when lifecycle chang
   assert.equal(payload.tasks[0].statusMirrorVersion, 200);
 });
 
+test("closed recurring templates still stay schedulable for Google Calendar export", () => {
+  const recurringTemplate = {
+    id: "energy-reminder-0",
+    name: "Energy check-in",
+    details: "Created by the Energy widget.",
+    dueDate: "2026-04-05",
+    startDate: "2026-04-05",
+    timeOfDay: "07:00",
+    length: "very-short",
+    recurrence: {
+      type: "daily",
+      interval: 1,
+      weekday: 0,
+      day: 1,
+      ordinal: "first",
+      endDate: "",
+      count: null,
+      forever: true
+    },
+    reminders: { enabled: true, dueSoonMinutes: 30, overdueMinutes: 15 },
+    importance: "medium",
+    categoryKey: "health",
+    lateGraceMinutes: 60,
+    ownerWidgetType: "energy",
+    ownerTaskKey: "energy-reminder-0",
+    widgetTaskKind: "energy-checkin",
+    widgetTaskMeta: {
+      timeZoneMode: "floating-local"
+    },
+    status: "done",
+    archived: false,
+    historyOnly: false,
+    templateId: "",
+    googleCalendar: {}
+  };
+
+  const payload = buildGoogleCalendarScheduleSyncRequest({
+    tasks: [recurringTemplate]
+  }, {
+    calendarId: "lifetree-cal",
+    calendarSummary: "Lifetree",
+    calendarTimeZone: "America/Los_Angeles"
+  }, {
+    userTimeZone: "America/Los_Angeles"
+  });
+
+  assert.equal(payload.totalEligibleTasks, 1);
+  assert.equal(payload.tasks.length, 1);
+  assert.equal(payload.tasks[0].taskId, "energy-reminder-0");
+  assert.equal(payload.tasks[0].needsPush, true);
+  assert.equal(payload.tasks[0].needsStatusPush, false);
+});
+
 test("event payload mirrors lifecycle state into the Google description footer and private metadata", () => {
   const payload = buildGoogleCalendarEventPayload({
     taskId: "pack-trip",
