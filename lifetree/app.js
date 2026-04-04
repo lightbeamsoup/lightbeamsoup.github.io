@@ -78,14 +78,9 @@ import {
 } from "./modules/profile.js";
 import { createTaskDeskController } from "./modules/taskDesk.js";
 import {
-  renderHistoryPanel as renderHistoryPanelShared,
-  renderHistorySourceOptions as renderHistorySourceOptionsShared,
   renderPriorityIndicator as renderPriorityIndicatorShared,
-  renderTaskActions as renderTaskActionsShared,
-  renderTaskDependencies as renderTaskDependenciesShared,
-  renderTaskGrid as renderTaskGridShared,
-  renderTaskHistorySummary as renderTaskHistorySummaryShared
 } from "./modules/taskHistoryUi.js";
+import { createTaskHistoryController } from "./modules/taskHistoryController.js";
 import { createTaskComposerBindings } from "./modules/taskComposer.js";
 import { buildPointSummary, buildFruitDisplayState } from "./modules/treeState.js";
 import {
@@ -440,10 +435,6 @@ const widgetMenuState = {
   selectedType: ""
 };
 
-const pendingDeleteState = {
-  taskId: "",
-  scope: "single"
-};
 const pendingActions = new Map();
 const widgetDetailState = {
   widgetId: "",
@@ -727,6 +718,118 @@ const syncChannelState = {
 const driveConflictState = {
   resolver: null
 };
+
+const taskHistoryController = createTaskHistoryController({
+  refs: {
+    taskGrid,
+    emptyState,
+    openCount,
+    doneCount,
+    recurringCount,
+    historyList,
+    historyEmpty,
+    historyWidgetFilter,
+    statusFilter,
+    lengthFilter,
+    sortBy,
+    searchQuery,
+    historySort,
+    historyFilter,
+    form,
+    taskNameInput,
+    taskDetailsInput,
+    startDateInput,
+    dueDateInput,
+    timeOfDayInput,
+    lateGraceMinutesInput,
+    taskPointsInput,
+    taskLengthInput,
+    taskCategoryInput,
+    taskImportanceInput,
+    skipRuleTypeInput,
+    skipGraceMinutesInput,
+    recurrenceTypeInput: recurrenceType,
+    recurrenceForeverInput,
+    dependenciesSelect
+  },
+  getStore: () => store,
+  editState,
+  composerReminderState,
+  defaultCategoryKey: DEFAULT_CATEGORY_KEY,
+  defaultCategoryColor: DEFAULT_CATEGORY_COLOR,
+  defaultImportance: DEFAULT_IMPORTANCE,
+  defaultLateGraceMinutes: DEFAULT_LATE_GRACE_MINUTES,
+  completedOneOffDismissMs: COMPLETED_ONE_OFF_DISMISS_MS,
+  importanceDefinitions: IMPORTANCE_DEFINITIONS,
+  lengthOrder: LENGTH_ORDER,
+  buildHistoryFeed,
+  getLatestLifecycleEntry,
+  formatTaskDisplayName,
+  formatDate,
+  formatDateTime,
+  formatPointsLabel,
+  humanizeLength,
+  ownerWidgetLabel,
+  describeRecurrence,
+  cardSummary,
+  normalizeImportance,
+  getOpenTaskDeadlineState,
+  isBlocked,
+  describeBlockedTask,
+  formatTaskAvailability,
+  getTaskDependencyIds,
+  getPendingActionForTask,
+  stagePendingAction,
+  shouldSkipTask,
+  compareDateish,
+  computeOccurrenceDate,
+  deriveRecurringInstanceNotBeforeAt,
+  awardPointsForTask,
+  revokePointsForTask,
+  pushHistory,
+  touchTask,
+  rememberDeletedTaskKey,
+  rememberDeletedTask,
+  rememberDeletedSeries,
+  reconcileRecurringSeries,
+  persistStore,
+  renderAll,
+  setSyncStatus,
+  setActiveTaskDeskPane,
+  setTaskPointsInput,
+  setTaskReminderFormValues,
+  renderDailyInstanceTimes,
+  setWeeklyDaySelection,
+  syncTaskReminderInputs,
+  updateSkipVisibility,
+  updateRecurrenceVisibility,
+  syncEditPanel,
+  deleteTask,
+  beginEdit,
+  escapeHtml,
+  defaultPointsForLength,
+  undoPendingAction
+});
+const {
+  applyCompletedTaskHistoryOnly,
+  clearAllHistory,
+  clearPendingDelete,
+  clearSelectedHistorySource,
+  getSeriesInstances,
+  getVisibleCards,
+  handleHistoryListClick,
+  handleTaskGridClick,
+  markTaskCompleted,
+  markTaskOpen,
+  markTaskSkipped,
+  populateComposerFromHistory,
+  pruneHistoryOnlyTasksWithoutHistory,
+  renderHistoryPanel,
+  renderHistorySourceOptions,
+  renderSummary,
+  renderTaskGrid,
+  repairTaskStatusFromHistory
+} = taskHistoryController;
 
 const taskDeskController = createTaskDeskController({
   taskDeskModal,
@@ -3589,48 +3692,6 @@ function getDependencyCandidates() {
   return store.tasks.filter((task) => !task.templateId && !task.archived && task.status === "open");
 }
 
-function renderSummary() {
-  const visible = getVisibleCards().filter((card) => !card.task.archived);
-  openCount.textContent = String(visible.filter((card) => card.status === "open").length);
-  doneCount.textContent = String(visible.filter((card) => card.status === "done").length);
-  recurringCount.textContent = String(visible.filter((card) => card.kind === "series").length);
-}
-
-function renderTaskGrid() {
-  const cards = sortCards(filterCards(getVisibleCards()));
-  const tasksById = new Map(store.tasks.map((task) => [task.id, task]));
-  renderTaskGridShared(taskGrid, cards, {
-    emptyState,
-    escapeHtml,
-    defaultCategoryColor: DEFAULT_CATEGORY_COLOR,
-    defaultImportance: DEFAULT_IMPORTANCE,
-    formatDate,
-    formatPointsLabel,
-    humanizeLength,
-    ownerWidgetLabel,
-    describeRecurrence,
-    cardSummary,
-    normalizeImportance,
-    importanceDefinitions: IMPORTANCE_DEFINITIONS,
-    getOpenTaskDeadlineState,
-    isBlocked,
-    renderTaskDependencies: (task) => renderTaskDependenciesShared(task, {
-      tasksById,
-      formatTaskAvailability,
-      getTaskDependencyIds,
-      formatTaskDisplayName,
-      escapeHtml
-    }),
-    renderTaskHistorySummary: (task) => renderTaskHistorySummaryShared(task, { formatDate }),
-    renderTaskActions: (cardData) => renderTaskActionsShared(cardData, {
-      escapeHtml,
-      getPendingActionForTask,
-      isWidgetProtectedTask,
-      isDeletePending
-    })
-  });
-}
-
 function renderPriorityIndicator(importance, variant = "task") {
   return renderPriorityIndicatorShared(importance, variant, {
     defaultImportance: DEFAULT_IMPORTANCE,
@@ -3638,678 +3699,6 @@ function renderPriorityIndicator(importance, variant = "task") {
     importanceDefinitions: IMPORTANCE_DEFINITIONS,
     escapeHtml
   });
-}
-
-function handleTaskGridClick(event) {
-  const button = event.target.closest("[data-action]");
-  if (!button || !taskGrid.contains(button)) {
-    return;
-  }
-  handleTaskAction({ currentTarget: button });
-}
-
-function renderHistoryPanel() {
-  const feed = getVisibleHistoryFeed();
-  const tasksById = new Map(store.tasks.map((task) => [task.id, task]));
-  renderHistoryPanelShared(historyList, feed, {
-    historyEmpty,
-    tasksById,
-    canRestoreHistoryTask,
-    escapeHtml,
-    formatDateTime,
-    ownerWidgetLabel
-  });
-}
-
-function getVisibleHistoryFeed() {
-  const source = historyWidgetFilter.value;
-  return buildHistoryFeed(store.tasks, historySort.value, historyFilter.value).filter((item) => {
-    if (source === "manual") {
-      return !item.ownerWidgetType;
-    }
-    if (source === "all") {
-      return true;
-    }
-    return item.ownerWidgetType === source;
-  });
-}
-
-function renderHistorySourceOptions() {
-  const currentValue = historyWidgetFilter.value || "all";
-  const widgetTypes = Array.from(new Set(store.tasks.map((task) => task.ownerWidgetType).filter(Boolean))).sort();
-  renderHistorySourceOptionsShared(historyWidgetFilter, widgetTypes, {
-    currentValue,
-    escapeHtml,
-    ownerWidgetLabel
-  });
-}
-
-function handleHistoryListClick(event) {
-  const button = event.target.closest("[data-history-action]");
-  if (!button || !historyList.contains(button)) {
-    return;
-  }
-  handleHistoryAction({ currentTarget: button });
-}
-
-function handleHistoryAction(event) {
-  const taskId = event.currentTarget.getAttribute("data-task-id");
-  const action = event.currentTarget.getAttribute("data-history-action");
-  const task = store.tasks.find((item) => item.id === taskId);
-  if ((action === "reuse" || action === "restore") && !task) {
-    return;
-  }
-
-  if (action === "reuse") {
-    populateComposerFromHistory(task);
-    setSyncStatus(`Loaded ${task.name} into the new task form.`, "info");
-    return;
-  }
-
-  if (action === "restore") {
-    const historyId = event.currentTarget.getAttribute("data-history-id") || "";
-    if (!canRestoreHistoryTask(task, historyId)) {
-      setSyncStatus("That skipped task can no longer be restored from history.", "error");
-      return;
-    }
-    markTaskOpen(task);
-    reconcileRecurringSeries();
-    persistStore();
-    renderAll();
-    setSyncStatus(`Restored ${task.name}.`, "info");
-    return;
-  }
-
-  if (action === "delete") {
-    const historyId = event.currentTarget.getAttribute("data-history-id");
-    if (!historyId) {
-      return;
-    }
-    const changed = removeHistoryEntriesById(new Set([historyId]));
-    if (!changed) {
-      setSyncStatus("That history record could not be found.", "error");
-      return;
-    }
-    pruneHistoryOnlyTasksWithoutHistory();
-    persistStore();
-    renderAll();
-    setSyncStatus("Deleted that history record.", "info");
-  }
-}
-
-function canRestoreHistoryTask(task, historyId, now = new Date()) {
-  if (!task || task.archived || task.status !== "skipped" || !historyId) {
-    return false;
-  }
-
-  const latestLifecycle = getLatestLifecycleEntry(task);
-  if (!latestLifecycle || latestLifecycle.type !== "skipped" || latestLifecycle.id !== historyId) {
-    return false;
-  }
-
-  return !shouldSkipTask({
-    ...task,
-    archived: false,
-    status: "open"
-  }, now);
-}
-
-function clearSelectedHistorySource() {
-  const source = historyWidgetFilter.value;
-  const historyIds = collectHistoryIdsForTasks((task) => matchesHistorySource(task, source));
-  const changed = removeHistoryEntriesById(historyIds);
-
-  if (!changed) {
-    setSyncStatus("No matching history records were found to clear.", "info");
-    return;
-  }
-
-  pruneHistoryOnlyTasksWithoutHistory();
-  persistStore();
-  renderAll();
-  setSyncStatus(source === "all" ? "Cleared all visible history sources." : "Cleared history for the selected source.", "info");
-}
-
-function clearAllHistory() {
-  const historyIds = collectHistoryIdsForTasks(() => true);
-  const changed = removeHistoryEntriesById(historyIds);
-
-  if (!changed) {
-    setSyncStatus("There was no history to clear.", "info");
-    return;
-  }
-
-  pruneHistoryOnlyTasksWithoutHistory();
-  persistStore();
-  renderAll();
-  setSyncStatus("Cleared all task history.", "info");
-}
-
-function collectHistoryIdsForTasks(predicate) {
-  const historyIds = new Set();
-
-  for (const task of store.tasks) {
-    if (!predicate(task)) {
-      continue;
-    }
-    for (const item of Array.isArray(task.history) ? task.history : []) {
-      if (item?.type === "edited" || !item?.id) {
-        continue;
-      }
-      historyIds.add(item.id);
-    }
-  }
-
-  return historyIds;
-}
-
-function matchesHistorySource(task, source) {
-  if (source === "manual") {
-    return !task.ownerWidgetType;
-  }
-  if (source === "all") {
-    return true;
-  }
-  return task.ownerWidgetType === source;
-}
-
-function removeHistoryEntriesById(historyIds) {
-  if (!historyIds || historyIds.size === 0) {
-    return false;
-  }
-
-  let changed = false;
-  const recurringTemplatesToAdvance = new Set();
-  const removedTaskIds = new Set();
-
-  for (const task of store.tasks) {
-    const currentHistory = Array.isArray(task.history) ? task.history : [];
-    const nextHistory = currentHistory.filter((item) => !historyIds.has(item.id));
-    if (nextHistory.length !== currentHistory.length) {
-      const wasClosed = task.status !== "open";
-      task.history = nextHistory;
-      touchTask(task);
-      changed = true;
-
-      if ((Array.isArray(task.history) ? task.history.length : 0) === 0 && wasClosed) {
-        if (isAdvanceableRecurringTemplate(task)) {
-          rememberDeletedTaskKey(task);
-          recurringTemplatesToAdvance.add(task.id);
-          continue;
-        }
-
-        revokePointsForTask(task);
-        if (task.recurrence?.type !== "archived-series") {
-          rememberDeletedTask(task);
-        }
-        removedTaskIds.add(task.id);
-        continue;
-      }
-
-      if (syncTaskStatusWithLifecycle(task)) {
-        changed = true;
-      }
-
-      if ((Array.isArray(task.history) ? task.history.length : 0) > 0 || task.status === "open") {
-        continue;
-      }
-
-      revokePointsForTask(task);
-      if (task.recurrence?.type !== "archived-series") {
-        rememberDeletedTask(task);
-      }
-      removedTaskIds.add(task.id);
-    }
-  }
-
-  if (removedTaskIds.size > 0) {
-    store.tasks = store.tasks.filter((task) => !removedTaskIds.has(task.id));
-    for (const task of store.tasks) {
-      task.dependencies = task.dependencies.filter((dependencyId) => !removedTaskIds.has(dependencyId));
-    }
-  }
-
-  for (const templateId of recurringTemplatesToAdvance) {
-    const template = store.tasks.find((task) => task.id === templateId);
-    if (!template) {
-      continue;
-    }
-    if (advanceRecurringTemplateAfterHistoryRemoval(template)) {
-      changed = true;
-    }
-  }
-
-  return changed;
-}
-
-function repairTaskStatusFromHistory() {
-  let changed = false;
-
-  for (const task of store.tasks) {
-    const latest = getLatestLifecycleEntry(task);
-    if (!latest) {
-      continue;
-    }
-
-    const nextStatus = latest.type === "completed"
-      ? "done"
-      : latest.type === "skipped"
-        ? "skipped"
-        : "open";
-
-    if (task.status !== nextStatus) {
-      task.status = nextStatus;
-      task.historyOnly = false;
-      task.hideAfterAt = 0;
-      touchTask(task);
-      changed = true;
-    }
-
-    const hadPoints = Boolean(task.pointsEntryId);
-    syncTaskPointAward(task);
-    if (hadPoints !== Boolean(task.pointsEntryId)) {
-      changed = true;
-    }
-  }
-
-  return changed;
-}
-
-function syncTaskStatusWithLifecycle(task) {
-  const latest = getLatestLifecycleEntry(task);
-  const nextStatus = latest
-    ? (latest.type === "completed" ? "done" : latest.type === "skipped" ? "skipped" : "open")
-    : "open";
-
-  let changed = false;
-  if (task.status !== nextStatus) {
-    task.status = nextStatus;
-    task.historyOnly = false;
-    task.hideAfterAt = 0;
-    touchTask(task);
-    changed = true;
-  }
-
-  const hadPoints = Boolean(task.pointsEntryId);
-  syncTaskPointAward(task);
-  if (hadPoints !== Boolean(task.pointsEntryId)) {
-    changed = true;
-  }
-
-  return changed;
-}
-
-function isAdvanceableRecurringTemplate(task) {
-  return Boolean(
-    task
-    && !task.templateId
-    && task.recurrence
-    && task.recurrence.type !== "none"
-    && task.recurrence.type !== "generated"
-    && task.recurrence.type !== "archived-series"
-  );
-}
-
-function advanceRecurringTemplateAfterHistoryRemoval(task) {
-  const currentStart = task.startDate || task.dueDate || "";
-  const currentDue = task.dueDate || task.startDate || "";
-  const nextStart = currentStart ? computeOccurrenceDate(currentStart, task.recurrence, 1) : "";
-  const nextDue = currentDue ? computeOccurrenceDate(currentDue, task.recurrence, 1) : "";
-
-  if (!nextStart && !nextDue) {
-    revokePointsForTask(task);
-    rememberDeletedSeries(task.id);
-    store.tasks = store.tasks.filter((item) => item.id !== task.id && item.templateId !== task.id);
-    for (const item of store.tasks) {
-      item.dependencies = item.dependencies.filter((dependencyId) => dependencyId !== task.id);
-    }
-    return true;
-  }
-
-  revokePointsForTask(task);
-  task.startDate = nextStart || currentStart;
-  task.dueDate = nextDue || nextStart || currentDue;
-  task.notBeforeAt = deriveRecurringInstanceNotBeforeAt(task.recurrence, task.dueDate || task.startDate);
-  task.status = "open";
-  task.archived = false;
-  task.historyOnly = false;
-  task.hideAfterAt = 0;
-  task.history = [];
-  touchTask(task);
-  regenerateSeries(task.id, { preserveClosed: true });
-  return true;
-}
-
-function getVisibleCards() {
-  const cards = [];
-  for (const task of store.tasks) {
-    if (task.templateId || task.historyOnly) {
-      continue;
-    }
-
-    if (task.recurrence.type === "none") {
-      cards.push({
-        key: task.id,
-        kind: "single",
-        task,
-        template: null,
-        status: task.status,
-        displayName: formatTaskDisplayName(task)
-      });
-      continue;
-    }
-
-    const seriesInstances = getSeriesInstances(task);
-    const active = seriesInstances.find((item) => item.status === "open") || seriesInstances[seriesInstances.length - 1] || task;
-    cards.push({
-      key: task.id,
-      kind: "series",
-      task: active,
-      template: task,
-      status: active.status,
-      displayName: formatTaskDisplayName(active)
-    });
-  }
-  return cards;
-}
-
-function getSeriesInstances(template) {
-  return [template, ...store.tasks.filter((task) => task.templateId === template.id)].sort((left, right) => {
-    if (left.occurrenceIndex !== right.occurrenceIndex) {
-      return left.occurrenceIndex - right.occurrenceIndex;
-    }
-    return compareDateish(left.dueDate, right.dueDate);
-  });
-}
-
-function filterCards(cards) {
-  const status = statusFilter.value;
-  const length = lengthFilter.value;
-  const query = searchQuery.value.trim().toLowerCase();
-
-  return cards.filter((card) => {
-    if (status === "archived") {
-      if (!card.task.archived) {
-        return false;
-      }
-    } else if (card.task.archived) {
-      return false;
-    }
-    if (length !== "all" && card.task.length !== length) {
-      return false;
-    }
-    if (status === "open" && card.status !== "open") {
-      return false;
-    }
-    if (status === "done" && card.status !== "done") {
-      return false;
-    }
-    if (status === "skipped" && card.status !== "skipped") {
-      return false;
-    }
-    if (status === "archived" && !card.task.archived) {
-      return false;
-    }
-    if (status === "blocked" && !isBlocked(card.task)) {
-      return false;
-    }
-    if (status === "recurring" && card.kind !== "series") {
-      return false;
-    }
-    if (!query) {
-      return true;
-    }
-    return `${card.displayName} ${card.task.details} ${card.task.categoryLabel} ${card.task.importance} ${ownerWidgetLabel(card.task)}`.toLowerCase().includes(query);
-  });
-}
-
-function sortCards(cards) {
-  const mode = sortBy.value;
-  const sorted = [...cards];
-  sorted.sort((left, right) => {
-    if (mode === "name") {
-      return left.displayName.localeCompare(right.displayName);
-    }
-    if (mode === "length") {
-      return LENGTH_ORDER[left.task.length] - LENGTH_ORDER[right.task.length];
-    }
-    if (mode === "created-at") {
-      return right.task.createdAt - left.task.createdAt;
-    }
-    if (mode === "start-date") {
-      return compareDateish(left.task.startDate, right.task.startDate);
-    }
-    return compareDateish(left.task.dueDate, right.task.dueDate);
-  });
-  return sorted;
-}
-
-function handleTaskAction(event) {
-  const action = event.currentTarget.getAttribute("data-action");
-  const id = event.currentTarget.getAttribute("data-id");
-  const scope = event.currentTarget.getAttribute("data-scope") || "single";
-  const task = store.tasks.find((item) => item.id === id);
-  if (!task) {
-    return;
-  }
-  const pendingAction = getPendingActionForTask(id);
-
-  if (action === "undo") {
-    const pendingKey = event.currentTarget.getAttribute("data-pending-key");
-    if (pendingKey) {
-      undoPendingAction(pendingKey, "Undid the pending task action.");
-    }
-    return;
-  }
-
-  if (pendingAction) {
-    return;
-  }
-
-  if (action !== "delete") {
-    clearPendingDelete();
-  }
-
-  if (action === "toggle") {
-    if (task.status === "open" && isBlocked(task)) {
-      setSyncStatus(describeBlockedTask(task), "error");
-      return;
-    }
-    if (task.status === "done") {
-      markTaskOpen(task);
-    } else {
-      stagePendingAction({
-        key: `complete:${task.id}`,
-        taskId: task.id,
-        description: `Pending completion for ${task.name}. Click undo within 3 seconds to cancel.`,
-        commit: () => {
-          const nextTask = store.tasks.find((item) => item.id === task.id);
-          if (!nextTask || nextTask.archived || nextTask.status !== "open" || isBlocked(nextTask)) {
-            return false;
-          }
-          markTaskCompleted(nextTask);
-          return { message: `Completed ${nextTask.name}.`, tone: "info" };
-        }
-      });
-      return;
-    }
-  }
-
-  if (action === "skip") {
-    stagePendingAction({
-      key: `skip:${task.id}`,
-      taskId: task.id,
-      description: `Pending skip for ${task.name}. Click undo within 3 seconds to cancel.`,
-      commit: () => {
-        const nextTask = store.tasks.find((item) => item.id === task.id);
-        if (!nextTask || nextTask.archived || nextTask.status !== "open") {
-          return false;
-        }
-        markTaskSkipped(nextTask);
-        return { message: `Skipped ${nextTask.name}.`, tone: "info" };
-      }
-    });
-    return;
-  }
-
-  if (action === "delete") {
-    if (isWidgetProtectedTask(task)) {
-      setSyncStatus("That task belongs to an active widget. Remove the widget to remove its protected tasks.", "error");
-      return;
-    }
-    if (!isDeletePending(task.id, scope)) {
-      setPendingDelete(task.id, scope);
-      renderTaskGrid();
-      setSyncStatus("Delete is armed for this card. Click delete again on the card to confirm.", "info");
-      return;
-    }
-    stagePendingAction({
-      key: `delete:${scope}:${task.id}`,
-      taskId: task.id,
-      description: `Pending delete for ${task.name}. Click undo within 3 seconds to cancel.`,
-      commit: () => {
-        const nextTask = store.tasks.find((item) => item.id === task.id);
-        if (!nextTask) {
-          return false;
-        }
-        deleteTask(nextTask, scope);
-        clearPendingDelete();
-        return {
-          message: scope === "series" ? `Deleted the ${nextTask.name} series.` : `Deleted ${nextTask.name}.`,
-          tone: "info"
-        };
-      }
-    });
-    clearPendingDelete();
-    renderAll();
-    return;
-  }
-
-  if (action === "archive") {
-    task.archived = true;
-    touchTask(task);
-  }
-
-  if (action === "restore") {
-    task.archived = false;
-    touchTask(task);
-  }
-
-  if (action === "edit") {
-    beginEdit(task, scope);
-    return;
-  }
-
-  reconcileRecurringSeries();
-  persistStore();
-  renderAll();
-  setSyncStatus("Saved locally. Sync to Drive when ready.", "info");
-}
-
-function isWidgetProtectedTask(task) {
-  if (!task.ownerWidgetId || !task.ownerWidgetType) {
-    return false;
-  }
-  return store.widgets.some((widget) => widget.id === task.ownerWidgetId && widget.type === task.ownerWidgetType);
-}
-
-function isDeletePending(taskId, scope) {
-  return pendingDeleteState.taskId === taskId && pendingDeleteState.scope === scope;
-}
-
-function setPendingDelete(taskId, scope) {
-  pendingDeleteState.taskId = taskId;
-  pendingDeleteState.scope = scope;
-}
-
-function clearPendingDelete() {
-  pendingDeleteState.taskId = "";
-  pendingDeleteState.scope = "single";
-}
-
-function markTaskCompleted(task, at = Date.now()) {
-  task.status = "done";
-  task.historyOnly = false;
-  task.hideAfterAt = isAutoDismissTask(task) ? at + COMPLETED_ONE_OFF_DISMISS_MS : 0;
-  awardPointsForTask(task, at);
-  pushHistory(task, "completed", at);
-  touchTask(task, at);
-}
-
-function markTaskSkipped(task, at = Date.now(), metadata = null) {
-  task.status = "skipped";
-  task.historyOnly = false;
-  task.hideAfterAt = 0;
-  pushHistory(task, "skipped", at, metadata);
-  touchTask(task, at);
-}
-
-function markTaskOpen(task, at = Date.now()) {
-  task.status = "open";
-  task.historyOnly = false;
-  task.hideAfterAt = 0;
-  revokePointsForTask(task);
-  pushHistory(task, "reopened", at);
-  touchTask(task, at);
-}
-
-function isAutoDismissTask(task) {
-  return !task.templateId && task.recurrence.type === "none" && !task.ownerWidgetType;
-}
-
-function applyCompletedTaskHistoryOnly(now = Date.now()) {
-  let changed = false;
-  for (const task of store.tasks) {
-    if (!task.historyOnly && task.status === "done" && isAutoDismissTask(task) && task.hideAfterAt && task.hideAfterAt <= now) {
-      task.historyOnly = true;
-      task.hideAfterAt = 0;
-      touchTask(task, now);
-      changed = true;
-    }
-  }
-  return changed;
-}
-
-function populateComposerFromHistory(task) {
-  clearPendingDelete();
-  editState.taskId = "";
-  editState.scope = "single";
-  editState.linkedGroupId = "";
-  setActiveTaskDeskPane("composer");
-  form.reset();
-  taskNameInput.value = task.name;
-  taskDetailsInput.value = task.details || "";
-  startDateInput.value = "";
-  dueDateInput.value = "";
-  timeOfDayInput.value = "";
-  lateGraceMinutesInput.value = String(task.lateGraceMinutes ?? DEFAULT_LATE_GRACE_MINUTES);
-  setTaskPointsInput(task.pointsValue ?? defaultPointsForLength(task.length));
-  taskLengthInput.value = task.length;
-  taskCategoryInput.value = task.categoryKey || DEFAULT_CATEGORY_KEY;
-  taskImportanceInput.value = normalizeImportance(task.importance || DEFAULT_IMPORTANCE);
-  setTaskReminderFormValues(task.reminders, {
-    importance: task.importance || DEFAULT_IMPORTANCE,
-    lateGraceMinutes: task.lateGraceMinutes ?? DEFAULT_LATE_GRACE_MINUTES,
-    treatAsUserTouched: true
-  });
-  skipRuleTypeInput.value = "none";
-  skipGraceMinutesInput.value = 15;
-  recurrenceType.value = "none";
-  recurrenceForeverInput.checked = false;
-  renderDailyInstanceTimes([]);
-  setWeeklyDaySelection([0]);
-  Array.from(dependenciesSelect.options).forEach((option) => {
-    option.selected = false;
-  });
-  updateSkipVisibility();
-  syncTaskReminderInputs();
-  updateRecurrenceVisibility();
-  syncEditPanel();
-  taskNameInput.focus();
-}
-
-function pruneHistoryOnlyTasksWithoutHistory() {
-  store.tasks = store.tasks.filter((task) => !task.historyOnly || (Array.isArray(task.history) && task.history.length > 0));
 }
 
 function deleteTask(task, scope) {
