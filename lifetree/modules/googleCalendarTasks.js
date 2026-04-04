@@ -231,6 +231,70 @@ export function getGoogleCalendarEventTaskId(event) {
   return typeof privateProps.lifetreeTaskId === "string" ? privateProps.lifetreeTaskId : "";
 }
 
+function getGoogleCalendarEventUpdatedAt(event) {
+  const parsed = Date.parse(String(event?.updated || ""));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+export function isGoogleCalendarRecurringInstanceOverrideEvent(event) {
+  return typeof event?.recurringEventId === "string" && event.recurringEventId.trim().length > 0;
+}
+
+export function chooseCanonicalGoogleCalendarTaskEvent(events, task, linkedEventId = "") {
+  const uniqueEvents = Array.from(new Map(
+    (Array.isArray(events) ? events : [])
+      .filter((event) => event && typeof event.id === "string" && event.id)
+      .map((event) => [event.id, event])
+  ).values());
+  if (uniqueEvents.length === 0) {
+    return null;
+  }
+  const recurrenceType = String(task?.recurrence?.type || "none");
+  const isRecurringTask = recurrenceType !== "none";
+  const preferred = [...uniqueEvents].sort((left, right) => {
+    if (linkedEventId) {
+      if (left.id === linkedEventId && right.id !== linkedEventId) {
+        return -1;
+      }
+      if (right.id === linkedEventId && left.id !== linkedEventId) {
+        return 1;
+      }
+    }
+    if (isRecurringTask) {
+      const leftIsMaster = !isGoogleCalendarRecurringInstanceOverrideEvent(left);
+      const rightIsMaster = !isGoogleCalendarRecurringInstanceOverrideEvent(right);
+      if (leftIsMaster !== rightIsMaster) {
+        return leftIsMaster ? -1 : 1;
+      }
+    }
+    return getGoogleCalendarEventUpdatedAt(right) - getGoogleCalendarEventUpdatedAt(left);
+  });
+  return preferred[0] || null;
+}
+
+export function splitGoogleCalendarTaskEvents(events, task, linkedEventId = "") {
+  const uniqueEvents = Array.from(new Map(
+    (Array.isArray(events) ? events : [])
+      .filter((event) => event && typeof event.id === "string" && event.id)
+      .map((event) => [event.id, event])
+  ).values());
+  const canonicalEvent = chooseCanonicalGoogleCalendarTaskEvent(uniqueEvents, task, linkedEventId);
+  const recurrenceType = String(task?.recurrence?.type || "none");
+  const instanceOverrideEvents = recurrenceType !== "none"
+    ? uniqueEvents.filter((event) => event?.id && event.id !== canonicalEvent?.id && isGoogleCalendarRecurringInstanceOverrideEvent(event))
+    : [];
+  const instanceOverrideIds = new Set(instanceOverrideEvents.map((event) => event.id));
+  const duplicateEvents = canonicalEvent
+    ? uniqueEvents.filter((event) => event?.id && event.id !== canonicalEvent.id && !instanceOverrideIds.has(event.id))
+    : [];
+  return {
+    uniqueEvents,
+    canonicalEvent,
+    instanceOverrideEvents,
+    duplicateEvents
+  };
+}
+
 export function findOrphanedGoogleCalendarTaskEvents(events, tasks) {
   const taskIds = new Set(
     (Array.isArray(tasks) ? tasks : [])
@@ -627,8 +691,10 @@ function buildGoogleCalendarEventStartEnd(task, timeZone) {
   };
 }
 
-function parseGoogleCalendarEventStart(event, calendarTimeZone) {
-  const start = event?.start && typeof event.start === "object" ? event.start : {};
+export function parseGoogleCalendarEventStart(event, calendarTimeZone) {
+  const start = event?.start && typeof event.start === "object"
+    ? event.start
+    : (event && typeof event === "object" && (typeof event.date === "string" || typeof event.dateTime === "string") ? event : {});
   const end = event?.end && typeof event.end === "object" ? event.end : {};
   const eventTimeZone = typeof start.timeZone === "string" && start.timeZone.trim()
     ? start.timeZone.trim()

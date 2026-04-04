@@ -181,6 +181,7 @@ Rules:
 - one Lifetree template/series -> one recurring Google event
 - edited single occurrences become Google instance overrides
 - Lifetree should keep enough local linkage to map exceptions back to the parent series
+- when a Google instance override can be matched back to a generated Lifetree occurrence by its original scheduled start, Lifetree should pull that override into the generated local occurrence instead of treating it as a duplicate recurring master
 
 ### Widget-owned scheduled tasks
 

@@ -5,9 +5,13 @@ import {
   buildGoogleCalendarEventPayload,
   buildGoogleCalendarScheduleSyncRequest,
   buildGoogleCalendarTaskScheduleFingerprint,
+  chooseCanonicalGoogleCalendarTaskEvent,
   findOrphanedGoogleCalendarTaskEvents,
+  isGoogleCalendarRecurringInstanceOverrideEvent,
   normalizeGoogleCalendarTaskLink,
-  normalizeGoogleCalendarSyncTask
+  normalizeGoogleCalendarSyncTask,
+  parseGoogleCalendarEventStart,
+  splitGoogleCalendarTaskEvents
 } from "./modules/googleCalendarTasks.js";
 
 test("schedule sync request includes eligible linked tasks and marks whether they need a push", () => {
@@ -207,6 +211,52 @@ test("orphaned google calendar task events are detected by missing lifetree task
   ]);
 
   assert.deepEqual(orphans.map((event) => event.id), ["event-orphan"]);
+});
+
+test("recurring Google instance overrides are not treated as duplicate series events", () => {
+  const task = {
+    taskId: "energy-template",
+    recurrence: {
+      type: "daily",
+      interval: 1,
+      weekday: 0,
+      day: 1,
+      ordinal: "first",
+      endDate: "",
+      count: null,
+      forever: true
+    }
+  };
+  const master = {
+    id: "master-event",
+    updated: "2026-04-04T20:00:00.000Z",
+    recurringEventId: ""
+  };
+  const override = {
+    id: "override-event",
+    updated: "2026-04-04T21:00:00.000Z",
+    recurringEventId: "master-event",
+    originalStartTime: {
+      dateTime: "2026-04-05T12:00:00-07:00",
+      timeZone: "America/Los_Angeles"
+    },
+    start: {
+      dateTime: "2026-04-05T13:00:00-07:00",
+      timeZone: "America/Los_Angeles"
+    }
+  };
+
+  assert.equal(isGoogleCalendarRecurringInstanceOverrideEvent(override), true);
+  assert.equal(chooseCanonicalGoogleCalendarTaskEvent([override, master], task, "").id, "master-event");
+
+  const split = splitGoogleCalendarTaskEvents([override, master], task, "");
+  assert.equal(split.canonicalEvent?.id, "master-event");
+  assert.deepEqual(split.instanceOverrideEvents.map((event) => event.id), ["override-event"]);
+  assert.deepEqual(split.duplicateEvents.map((event) => event.id), []);
+
+  const originalStart = parseGoogleCalendarEventStart(override.originalStartTime, "America/Los_Angeles");
+  assert.equal(originalStart.startDate, "2026-04-05");
+  assert.equal(originalStart.timeOfDay, "12:00");
 });
 
 test("event payload builds recurrence, reminders, and metadata for recurring tasks", () => {

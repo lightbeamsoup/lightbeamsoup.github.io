@@ -29,7 +29,9 @@ import {
   buildGoogleCalendarTaskSchedulePatchFromEvent,
   findOrphanedGoogleCalendarTaskEvents,
   getGoogleCalendarEventTaskId,
-  normalizeGoogleCalendarSyncTask
+  normalizeGoogleCalendarSyncTask,
+  parseGoogleCalendarEventStart,
+  splitGoogleCalendarTaskEvents
 } from "../lifetree/modules/googleCalendarTasks.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -399,6 +401,22 @@ app.post("/api/google-calendar/sync-schedule", async (req, res) => {
             calendarTimeZone,
             userTimeZone
           });
+          const instanceOverrides = (Array.isArray(resolved.instanceOverrideEvents) ? resolved.instanceOverrideEvents : []).map((event) => {
+            const originalStart = parseGoogleCalendarEventStart(event?.originalStartTime || {}, calendarTimeZone);
+            const overridePatch = buildGoogleCalendarTaskSchedulePatchFromEvent(event, {
+              calendarTimeZone,
+              userTimeZone
+            });
+            return {
+              eventId: typeof event?.id === "string" ? event.id : "",
+              recurringEventId: typeof event?.recurringEventId === "string" ? event.recurringEventId : "",
+              updated: typeof event?.updated === "string" ? event.updated : "",
+              htmlLink: typeof event?.htmlLink === "string" ? event.htmlLink : "",
+              originalStartDate: originalStart.startDate || "",
+              originalTimeOfDay: originalStart.timeOfDay || "",
+              schedulePatch: overridePatch
+            };
+          });
           results.push({
             taskId: task.taskId,
             ok: true,
@@ -411,6 +429,7 @@ app.post("/api/google-calendar/sync-schedule", async (req, res) => {
             lastSeenGoogleUpdatedAt: typeof canonicalEvent.updated === "string" ? canonicalEvent.updated : "",
             scheduleFingerprint: schedulePatch.scheduleFingerprint,
             schedulePatch,
+            instanceOverrides,
             relinked,
             duplicateDeletedCount: resolved.duplicateDeletedEventIds.length
           });
@@ -429,6 +448,22 @@ app.post("/api/google-calendar/sync-schedule", async (req, res) => {
             linkedAt: task.googleCalendar.linkedAt || Date.now(),
             lastSeenGoogleUpdatedAt: canonicalEvent?.updated || task.googleCalendar.lastSeenGoogleUpdatedAt || "",
             scheduleFingerprint: task.scheduleFingerprint,
+            instanceOverrides: (Array.isArray(resolved.instanceOverrideEvents) ? resolved.instanceOverrideEvents : []).map((event) => {
+              const originalStart = parseGoogleCalendarEventStart(event?.originalStartTime || {}, calendarTimeZone);
+              const overridePatch = buildGoogleCalendarTaskSchedulePatchFromEvent(event, {
+                calendarTimeZone,
+                userTimeZone
+              });
+              return {
+                eventId: typeof event?.id === "string" ? event.id : "",
+                recurringEventId: typeof event?.recurringEventId === "string" ? event.recurringEventId : "",
+                updated: typeof event?.updated === "string" ? event.updated : "",
+                htmlLink: typeof event?.htmlLink === "string" ? event.htmlLink : "",
+                originalStartDate: originalStart.startDate || "",
+                originalTimeOfDay: originalStart.timeOfDay || "",
+                schedulePatch: overridePatch
+              };
+            }),
             relinked,
             duplicateDeletedCount: resolved.duplicateDeletedEventIds.length
           });
@@ -460,6 +495,7 @@ app.post("/api/google-calendar/sync-schedule", async (req, res) => {
           lastSeenGoogleUpdatedAt: typeof event.updated === "string" ? event.updated : "",
           scheduleFingerprint: task.scheduleFingerprint,
           statusMirroredAt: task.statusMirrorVersion || 0,
+          instanceOverrides: [],
           relinked,
           duplicateDeletedCount: resolved.duplicateDeletedEventIds.length
         });
@@ -538,6 +574,8 @@ app.post("/api/google-calendar/diagnostics", async (req, res) => {
     let relinkCandidateCount = 0;
     let duplicateTaskCount = 0;
     let duplicateEventCount = 0;
+    let instanceOverrideTaskCount = 0;
+    let instanceOverrideEventCount = 0;
 
     for (const task of tasks) {
       const linkedEventId = task.googleCalendar.eventId || "";
@@ -549,6 +587,7 @@ app.post("/api/google-calendar/diagnostics", async (req, res) => {
       const relinkCandidate = Boolean(canonicalEvent && canonicalEvent.id !== linkedEventId);
       const linkedEventExists = Boolean(!linkedEventId || canonicalEvent?.id === linkedEventId);
       const duplicateEventIds = Array.isArray(resolved.duplicateEventIds) ? resolved.duplicateEventIds : [];
+      const instanceOverrideEvents = Array.isArray(resolved.instanceOverrideEvents) ? resolved.instanceOverrideEvents : [];
       if (linkedEventId) {
         linkedTaskCount += 1;
       } else {
@@ -567,6 +606,10 @@ app.post("/api/google-calendar/diagnostics", async (req, res) => {
         duplicateTaskCount += 1;
         duplicateEventCount += duplicateEventIds.length;
       }
+      if (instanceOverrideEvents.length > 0) {
+        instanceOverrideTaskCount += 1;
+        instanceOverrideEventCount += instanceOverrideEvents.length;
+      }
 
       taskDiagnostics.push({
         taskId: task.taskId,
@@ -584,15 +627,31 @@ app.post("/api/google-calendar/diagnostics", async (req, res) => {
         canonicalEventId: canonicalEvent?.id || "",
         relinkCandidate,
         duplicateEventIds,
+        instanceOverrideCount: instanceOverrideEvents.length,
         needsPush: task.needsPush === true,
         needsStatusPush: task.needsStatusPush === true,
         scheduleFingerprint: task.scheduleFingerprint,
         statusMirrorVersion: task.statusMirrorVersion || 0,
+        instanceOverrides: instanceOverrideEvents.map((event) => {
+          const originalStart = parseGoogleCalendarEventStart(event?.originalStartTime || {}, calendarTimeZone);
+          return {
+            id: typeof event?.id === "string" ? event.id : "",
+            updated: typeof event?.updated === "string" ? event.updated : "",
+            status: typeof event?.status === "string" ? event.status : "",
+            recurringEventId: typeof event?.recurringEventId === "string" ? event.recurringEventId : "",
+            summary: typeof event?.summary === "string" ? event.summary : "",
+            start: event?.start?.dateTime || event?.start?.date || "",
+            originalStartDate: originalStart.startDate || "",
+            originalTimeOfDay: originalStart.timeOfDay || "",
+            htmlLink: typeof event?.htmlLink === "string" ? event.htmlLink : ""
+          };
+        }),
         googleEvents: (Array.isArray(resolved.matchingEvents) ? resolved.matchingEvents : []).map((event) => ({
           id: typeof event?.id === "string" ? event.id : "",
           updated: typeof event?.updated === "string" ? event.updated : "",
           status: typeof event?.status === "string" ? event.status : "",
           recurringEventId: typeof event?.recurringEventId === "string" ? event.recurringEventId : "",
+          originalStart: event?.originalStartTime?.dateTime || event?.originalStartTime?.date || "",
           summary: typeof event?.summary === "string" ? event.summary : "",
           start: event?.start?.dateTime || event?.start?.date || "",
           htmlLink: typeof event?.htmlLink === "string" ? event.htmlLink : ""
@@ -616,6 +675,8 @@ app.post("/api/google-calendar/diagnostics", async (req, res) => {
         relinkCandidateCount,
         duplicateTaskCount,
         duplicateEventCount,
+        instanceOverrideTaskCount,
+        instanceOverrideEventCount,
         orphanEventCount: orphanEvents.length
       },
       orphanEvents: orphanEvents.map((event) => ({
@@ -1367,7 +1428,7 @@ async function ensureLifetreeCalendar(accessToken, { summary = LIFETREE_GOOGLE_C
 
 async function insertGoogleCalendarEvent(accessToken, calendarId, eventPayload) {
   const response = await fetch(
-    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?fields=id,updated,htmlLink,recurringEventId,status,summary`,
+    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?fields=id,updated,htmlLink,recurringEventId,originalStartTime,status,summary`,
     {
       method: "POST",
       headers: {
@@ -1390,7 +1451,7 @@ async function insertGoogleCalendarEvent(accessToken, calendarId, eventPayload) 
 
 async function updateGoogleCalendarEvent(accessToken, calendarId, eventId, eventPayload) {
   const response = await fetch(
-    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}?fields=id,updated,htmlLink,recurringEventId,status,summary`,
+    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}?fields=id,updated,htmlLink,recurringEventId,originalStartTime,status,summary`,
     {
       method: "PUT",
       headers: {
@@ -1424,7 +1485,7 @@ async function upsertGoogleCalendarEvent(accessToken, calendarId, eventId, event
 
 async function getGoogleCalendarEvent(accessToken, calendarId, eventId) {
   const response = await fetch(
-    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}?fields=id,updated,htmlLink,recurringEventId,status,summary,description,location,start,end,recurrence,reminders,extendedProperties`,
+    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}?fields=id,updated,htmlLink,recurringEventId,originalStartTime,status,summary,description,location,start,end,recurrence,reminders,extendedProperties`,
     {
       headers: {
         Authorization: `Bearer ${accessToken}`
@@ -1511,7 +1572,7 @@ async function listGoogleCalendarEventsByTaskId(accessToken, calendarId, taskId)
     maxResults: "20",
     singleEvents: "false",
     privateExtendedProperty: `lifetreeTaskId=${taskId}`,
-    fields: "items(id,updated,htmlLink,recurringEventId,status,summary,description,location,start,end,recurrence,reminders,extendedProperties)"
+    fields: "items(id,updated,htmlLink,recurringEventId,originalStartTime,status,summary,description,location,start,end,recurrence,reminders,extendedProperties)"
   });
   const response = await fetch(
     `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?${params.toString()}`,
@@ -1539,7 +1600,7 @@ async function listGoogleCalendarTaskTaggedEvents(accessToken, calendarId) {
       maxResults: "250",
       singleEvents: "false",
       showDeleted: "false",
-      fields: "nextPageToken,items(id,updated,htmlLink,recurringEventId,status,summary,description,location,start,end,recurrence,reminders,extendedProperties)"
+      fields: "nextPageToken,items(id,updated,htmlLink,recurringEventId,originalStartTime,status,summary,description,location,start,end,recurrence,reminders,extendedProperties)"
     });
     if (pageToken) {
       params.set("pageToken", pageToken);
@@ -1575,43 +1636,6 @@ async function listGoogleCalendarTaskTaggedEvents(accessToken, calendarId) {
   return events;
 }
 
-function getGoogleCalendarEventUpdatedAt(event) {
-  const parsed = Date.parse(String(event?.updated || ""));
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function chooseCanonicalGoogleCalendarEvent(events, task, linkedEventId = "") {
-  const uniqueEvents = Array.from(new Map(
-    (Array.isArray(events) ? events : [])
-      .filter((event) => event && typeof event.id === "string" && event.id)
-      .map((event) => [event.id, event])
-  ).values());
-  if (uniqueEvents.length === 0) {
-    return null;
-  }
-  const recurrenceType = String(task?.recurrence?.type || "none");
-  const isRecurringTask = recurrenceType !== "none";
-  const preferred = [...uniqueEvents].sort((left, right) => {
-    if (linkedEventId) {
-      if (left.id === linkedEventId && right.id !== linkedEventId) {
-        return -1;
-      }
-      if (right.id === linkedEventId && left.id !== linkedEventId) {
-        return 1;
-      }
-    }
-    if (isRecurringTask) {
-      const leftIsMaster = !left.recurringEventId;
-      const rightIsMaster = !right.recurringEventId;
-      if (leftIsMaster !== rightIsMaster) {
-        return leftIsMaster ? -1 : 1;
-      }
-    }
-    return getGoogleCalendarEventUpdatedAt(right) - getGoogleCalendarEventUpdatedAt(left);
-  });
-  return preferred[0] || null;
-}
-
 async function resolveGoogleCalendarTaskEvent(accessToken, calendarId, task, linkedEventId = "", { deleteDuplicates = true } = {}) {
   const recurrenceType = String(task?.recurrence?.type || "none");
   const shouldListByTaskId = !linkedEventId || recurrenceType !== "none";
@@ -1633,15 +1657,12 @@ async function resolveGoogleCalendarTaskEvent(accessToken, calendarId, task, lin
     }
   }
 
-  const uniqueEvents = Array.from(new Map(
-    events
-      .filter((event) => event && typeof event.id === "string" && event.id)
-      .map((event) => [event.id, event])
-  ).values());
-  const canonicalEvent = chooseCanonicalGoogleCalendarEvent(uniqueEvents, task, linkedEventId);
-  const duplicateEvents = canonicalEvent
-    ? uniqueEvents.filter((event) => event?.id && event.id !== canonicalEvent.id)
-    : [];
+  const {
+    uniqueEvents,
+    canonicalEvent,
+    instanceOverrideEvents,
+    duplicateEvents
+  } = splitGoogleCalendarTaskEvents(events, task, linkedEventId);
   const duplicateDeletedEventIds = [];
   if (deleteDuplicates) {
     for (const duplicate of duplicateEvents) {
@@ -1655,6 +1676,8 @@ async function resolveGoogleCalendarTaskEvent(accessToken, calendarId, task, lin
   return {
     canonicalEvent,
     matchingEvents: uniqueEvents,
+    instanceOverrideEvents,
+    instanceOverrideEventIds: instanceOverrideEvents.map((event) => event.id).filter(Boolean),
     duplicateEventIds: duplicateEvents.map((event) => event.id).filter(Boolean),
     duplicateDeletedEventIds,
     linkedEventMissing

@@ -858,6 +858,7 @@ export function createNotificationSyncController({
       let pulledCount = 0;
       let pushedCount = 0;
       let statusMirroredCount = 0;
+      let instanceOverrideAppliedCount = 0;
       let relinkedCount = 0;
       let duplicateDeletedCount = 0;
       for (const task of store.tasks) {
@@ -916,6 +917,10 @@ export function createNotificationSyncController({
             checkedCount += 1;
           }
         }
+        const appliedOverrides = applyRecurringInstanceOverrides(store, task, result, result.calendarId || googleCalendar.calendarId, now);
+        if (appliedOverrides > 0) {
+          instanceOverrideAppliedCount += appliedOverrides;
+        }
         if (result.relinked === true) {
           relinkedCount += 1;
         }
@@ -924,7 +929,8 @@ export function createNotificationSyncController({
         }
         appliedCount += 1;
       }
-      if (appliedCount > 0) {
+      const localTaskChangeCount = pulledCount + pushedCount + statusMirroredCount + instanceOverrideAppliedCount + relinkedCount;
+      if (localTaskChangeCount > 0) {
         persistStore();
         renderAll();
       }
@@ -955,7 +961,7 @@ export function createNotificationSyncController({
       if (
         errorCount + deletionErrorCount + orphanDeletionErrorCount === 0
         && !hasObservedRemoteDrift()
-        && (appliedCount > 0 || processedDeletionCount > 0 || orphanDeletedCount > 0 || relinkedCount > 0 || duplicateDeletedCount > 0)
+        && (localTaskChangeCount > 0 || processedDeletionCount > 0 || orphanDeletedCount > 0 || duplicateDeletedCount > 0)
       ) {
         const driveResult = await saveCurrentStoreToDrive({
           quiet: true,
@@ -965,15 +971,15 @@ export function createNotificationSyncController({
         mirroredToDrive = driveResult?.success === true;
       }
       renderSyncMeta();
-      const changedCount = pulledCount + pushedCount + statusMirroredCount;
+      const changedCount = pulledCount + pushedCount + statusMirroredCount + instanceOverrideAppliedCount;
       if (errorCount + deletionErrorCount + orphanDeletionErrorCount > 0) {
         const firstError = results.find((entry) => entry?.ok === false)?.error
           || payload.deletionResults?.find((entry) => entry?.ok === false)?.error
           || payload.orphanDeletionResults?.find((entry) => entry?.ok === false)?.error
           || "Calendar sync hit one or more Google errors.";
-        setSyncStatus(`Calendar sync checked ${appliedCount} task${appliedCount === 1 ? "" : "s"} (${changedCount} changed: ${pulledCount} pulled, ${pushedCount} pushed, ${statusMirroredCount} status mirrored; ${checkedCount} already up to date; ${relinkedCount} relinked) and processed ${processedDeletionCount} deletion${processedDeletionCount === 1 ? "" : "s"} (${deletedEventCount} Google event${deletedEventCount === 1 ? "" : "s"} removed, ${duplicateDeletedCount} duplicate${duplicateDeletedCount === 1 ? "" : "s"} cleaned up, ${orphanDeletedCount} orphan${orphanDeletedCount === 1 ? "" : "s"} removed), but ${errorCount + deletionErrorCount + orphanDeletionErrorCount} failed: ${firstError}`, "error");
+        setSyncStatus(`Calendar sync checked ${appliedCount} task${appliedCount === 1 ? "" : "s"} (${changedCount} changed: ${pulledCount} pulled, ${pushedCount} pushed, ${statusMirroredCount} status mirrored, ${instanceOverrideAppliedCount} instance override${instanceOverrideAppliedCount === 1 ? "" : "s"} applied; ${checkedCount} already up to date; ${relinkedCount} relinked) and processed ${processedDeletionCount} deletion${processedDeletionCount === 1 ? "" : "s"} (${deletedEventCount} Google event${deletedEventCount === 1 ? "" : "s"} removed, ${duplicateDeletedCount} duplicate${duplicateDeletedCount === 1 ? "" : "s"} cleaned up, ${orphanDeletedCount} orphan${orphanDeletedCount === 1 ? "" : "s"} removed), but ${errorCount + deletionErrorCount + orphanDeletionErrorCount} failed: ${firstError}`, "error");
       } else {
-        setSyncStatus(`Calendar sync checked ${appliedCount} task${appliedCount === 1 ? "" : "s"} (${changedCount} changed: ${pulledCount} pulled, ${pushedCount} pushed, ${statusMirroredCount} status mirrored; ${checkedCount} already up to date; ${relinkedCount} relinked) and processed ${processedDeletionCount} deletion${processedDeletionCount === 1 ? "" : "s"} (${deletedEventCount} Google event${deletedEventCount === 1 ? "" : "s"} removed, ${duplicateDeletedCount} duplicate${duplicateDeletedCount === 1 ? "" : "s"} cleaned up, ${orphanDeletedCount} orphan${orphanDeletedCount === 1 ? "" : "s"} removed) against ${nextCalendarSummary}.${mirroredToDrive ? " Mirrored the updated calendar state to Drive." : " Save to Drive if you want the links and pulled edits on other devices."}`, "success");
+        setSyncStatus(`Calendar sync checked ${appliedCount} task${appliedCount === 1 ? "" : "s"} (${changedCount} changed: ${pulledCount} pulled, ${pushedCount} pushed, ${statusMirroredCount} status mirrored, ${instanceOverrideAppliedCount} instance override${instanceOverrideAppliedCount === 1 ? "" : "s"} applied; ${checkedCount} already up to date; ${relinkedCount} relinked) and processed ${processedDeletionCount} deletion${processedDeletionCount === 1 ? "" : "s"} (${deletedEventCount} Google event${deletedEventCount === 1 ? "" : "s"} removed, ${duplicateDeletedCount} duplicate${duplicateDeletedCount === 1 ? "" : "s"} cleaned up, ${orphanDeletedCount} orphan${orphanDeletedCount === 1 ? "" : "s"} removed) against ${nextCalendarSummary}.${mirroredToDrive ? " Mirrored the updated calendar state to Drive." : " Save to Drive if you want the links and pulled edits on other devices."}`, "success");
       }
     } catch (error) {
       const message = String(error?.message || "Calendar schedule sync failed");
@@ -994,6 +1000,71 @@ export function createNotificationSyncController({
     } finally {
       updateGoogleButtons();
     }
+  }
+
+  function applyRecurringInstanceOverrides(store, templateTask, result, calendarId, now) {
+    if (!templateTask || String(templateTask.recurrence?.type || "none") === "none") {
+      return 0;
+    }
+    const overrides = Array.isArray(result?.instanceOverrides) ? result.instanceOverrides : [];
+    let appliedCount = 0;
+    for (const override of overrides) {
+      const schedulePatch = override?.schedulePatch && typeof override.schedulePatch === "object"
+        ? override.schedulePatch
+        : null;
+      const originalStartDate = typeof override?.originalStartDate === "string" ? override.originalStartDate : "";
+      const originalTimeOfDay = typeof override?.originalTimeOfDay === "string" ? override.originalTimeOfDay : "";
+      if (!schedulePatch || !originalStartDate) {
+        continue;
+      }
+      const instanceTask = store.tasks.find((candidate) => (
+        !candidate.archived
+        && candidate.templateId === templateTask.id
+        && (candidate.dueDate || candidate.startDate || "") === originalStartDate
+        && (!originalTimeOfDay || (candidate.timeOfDay || "") === originalTimeOfDay)
+      ));
+      if (!instanceTask) {
+        continue;
+      }
+      const currentLink = normalizeGoogleCalendarTaskLink(instanceTask.googleCalendar, {
+        calendarId
+      });
+      const nextTask = normalizeTask({
+        ...instanceTask,
+        name: typeof schedulePatch.name === "string" ? schedulePatch.name : instanceTask.name,
+        details: typeof schedulePatch.details === "string" ? schedulePatch.details : instanceTask.details,
+        startDate: typeof schedulePatch.startDate === "string" ? schedulePatch.startDate : instanceTask.startDate,
+        dueDate: typeof schedulePatch.dueDate === "string" ? schedulePatch.dueDate : instanceTask.dueDate,
+        timeOfDay: typeof schedulePatch.timeOfDay === "string" ? schedulePatch.timeOfDay : instanceTask.timeOfDay,
+        reminders: {
+          ...(instanceTask.reminders && typeof instanceTask.reminders === "object" ? instanceTask.reminders : {}),
+          ...(schedulePatch.reminders && typeof schedulePatch.reminders === "object" ? schedulePatch.reminders : {})
+        },
+        widgetTaskMeta: {
+          ...(instanceTask.widgetTaskMeta && typeof instanceTask.widgetTaskMeta === "object" ? instanceTask.widgetTaskMeta : {}),
+          ...(schedulePatch.widgetTaskMeta && typeof schedulePatch.widgetTaskMeta === "object" ? schedulePatch.widgetTaskMeta : {})
+        },
+        recurrence: instanceTask.recurrence,
+        googleCalendar: {
+          ...currentLink,
+          calendarId,
+          eventId: typeof override?.eventId === "string" ? override.eventId : (currentLink.eventId || ""),
+          recurringEventId: typeof override?.recurringEventId === "string" ? override.recurringEventId : (currentLink.recurringEventId || ""),
+          source: "lifetree",
+          linkedAt: currentLink.linkedAt || now,
+          lastSeenGoogleUpdatedAt: typeof override?.updated === "string" ? override.updated : (currentLink.lastSeenGoogleUpdatedAt || ""),
+          scheduleFingerprint: typeof schedulePatch.scheduleFingerprint === "string"
+            ? schedulePatch.scheduleFingerprint
+            : currentLink.scheduleFingerprint,
+          statusMirroredAt: typeof currentLink.statusMirroredAt === "number" ? currentLink.statusMirroredAt : 0,
+          schemaVersion: 1
+        },
+        updatedAt: now
+      });
+      Object.assign(instanceTask, nextTask);
+      appliedCount += 1;
+    }
+    return appliedCount;
   }
 
   async function saveCurrentStoreToDrive({ quiet = false, force = false, mode = "manual" } = {}) {
