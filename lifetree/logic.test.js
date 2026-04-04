@@ -911,11 +911,11 @@ test("energy completion does not allow tomorrow's reminder before midnight", () 
   assert.equal(findActiveEnergyCompletionTask(afterMidnight, "energy-1", "energy-vote", new Date("2026-03-23T08:00:00"))?.id, "morning-tomorrow");
 });
 
-test("fresh energy widget seeds only the current and future reminder windows for today", () => {
+test("fresh energy widget seeds only reminder windows whose scheduled time has not already passed", () => {
   const reminderTimes = ["07:00", "12:00", "19:00"];
   const eveningNow = new Date("2026-03-22T20:15:00");
 
   assert.equal(computeInitialReminderDate("2026-03-22", reminderTimes, 0, eveningNow), "2026-03-23");
   assert.equal(computeInitialReminderDate("2026-03-22", reminderTimes, 1, eveningNow), "2026-03-23");
-  assert.equal(computeInitialReminderDate("2026-03-22", reminderTimes, 2, eveningNow), "2026-03-22");
+  assert.equal(computeInitialReminderDate("2026-03-22", reminderTimes, 2, eveningNow), "2026-03-23");
 });

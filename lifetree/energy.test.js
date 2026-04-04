@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  computeInitialReminderDate,
   energyWidgetDefinition,
   reconcileEnergyReminderSettings,
   repairEnergyReminderTemplates
@@ -175,4 +176,15 @@ test("energy reminder settings recover missing slots from open widget tasks", ()
 
   assert.deepEqual(reminderTimes, ["07:00", "12:00", "19:00"]);
   assert.deepEqual(widget.settings.reminderTimes, ["07:00", "12:00", "19:00"]);
+});
+
+test("energy initial reminder date advances the current slot after its scheduled time has passed", () => {
+  const dueDate = computeInitialReminderDate(
+    "2026-04-04",
+    ["07:00", "12:00", "19:00"],
+    1,
+    new Date("2026-04-04T15:00:00-07:00")
+  );
+
+  assert.equal(dueDate, "2026-04-05");
 });

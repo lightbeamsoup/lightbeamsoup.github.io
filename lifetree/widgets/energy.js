@@ -953,8 +953,12 @@ function nextWidgetTaskDate(tasks, widgetId, ownerTaskKey, today, reminderTimes 
 }
 
 export function computeInitialReminderDate(today, reminderTimes, reminderIndex, now = new Date()) {
-  const activeIndex = currentReminderIndex(reminderTimes, now);
-  return reminderIndex < activeIndex ? addDaysToDateString(today, 1) : today;
+  const reminderTime = Array.isArray(reminderTimes) ? String(reminderTimes[reminderIndex] || "") : "";
+  if (!/^\d{2}:\d{2}$/.test(reminderTime)) {
+    return today;
+  }
+  const currentTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  return currentTime > reminderTime ? addDaysToDateString(today, 1) : today;
 }
 
 function addDaysToDateString(value, days) {
@@ -964,16 +968,6 @@ function addDaysToDateString(value, days) {
   }
   date.setDate(date.getDate() + days);
   return toDateString(date);
-}
-
-function currentReminderIndex(reminderTimes, now = new Date()) {
-  const current = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-  for (let index = reminderTimes.length - 1; index >= 0; index -= 1) {
-    if (current >= reminderTimes[index]) {
-      return index;
-    }
-  }
-  return 0;
 }
 
 function hasActiveReminderTask(tasks, widgetId, at = Date.now()) {
