@@ -111,8 +111,43 @@ test("schedule sync request includes eligible linked tasks and marks whether the
   });
 
   assert.equal(payload.totalEligibleTasks, 2);
-  assert.deepEqual(payload.tasks.map((task) => task.taskId), ["weekly-retinol"]);
+  assert.deepEqual(payload.tasks.map((task) => task.taskId), ["weekly-retinol", "dog-walk"]);
   assert.equal(payload.tasks.find((task) => task.taskId === "weekly-retinol")?.needsPush, true);
+  assert.equal(payload.tasks.find((task) => task.taskId === "dog-walk")?.needsPush, false);
+  assert.equal(payload.tasks.find((task) => task.taskId === "dog-walk")?.needsRemoteCheck, true);
+});
+
+test("schedule sync request carries pending Google Calendar deletions", () => {
+  const now = Date.now();
+  const payload = buildGoogleCalendarScheduleSyncRequest({
+    tasks: []
+  }, {
+    calendarId: "lifetree-cal",
+    calendarSummary: "Lifetree",
+    calendarTimeZone: "America/Los_Angeles",
+    pendingDeletions: [
+      {
+        id: "lifetree-cal:event-1",
+        calendarId: "lifetree-cal",
+        eventId: "event-1",
+        taskId: "task-1",
+        deletedAt: now,
+        kind: "task"
+      }
+    ]
+  });
+
+  assert.equal(payload.tasks.length, 0);
+  assert.deepEqual(payload.pendingDeletions, [
+    {
+      id: "lifetree-cal:event-1",
+      calendarId: "lifetree-cal",
+      eventId: "event-1",
+      taskId: "task-1",
+      deletedAt: now,
+      kind: "task"
+    }
+  ]);
 });
 
 test("event payload builds recurrence, reminders, and metadata for recurring tasks", () => {

@@ -793,7 +793,7 @@ export function createNotificationSyncController({
     const syncRequest = buildGoogleCalendarScheduleSyncRequest(getStore(), googleCalendar, {
       userTimeZone: currentUserTimeZone
     });
-    if (syncRequest.tasks.length === 0) {
+    if (syncRequest.tasks.length === 0 && (!Array.isArray(syncRequest.pendingDeletions) || syncRequest.pendingDeletions.length === 0)) {
       const now = Date.now();
       persistGoogleCalendarState({
         lastCalendarSyncAt: now,
@@ -836,12 +836,23 @@ export function createNotificationSyncController({
         .map((entry) => [entry.taskId, entry]));
       const nextCalendarSummary = payload.calendarSummary || googleCalendar.calendarSummary || "Lifetree";
       const nextCalendarTimeZone = payload.calendarTimeZone || googleCalendar.calendarTimeZone || "";
+      const processedDeletionIds = new Set(
+        Array.isArray(payload.processedDeletionIds)
+          ? payload.processedDeletionIds.filter((value) => typeof value === "string" && value)
+          : []
+      );
+      const pendingDeletions = Array.isArray(googleCalendar.pendingDeletions)
+        ? googleCalendar.pendingDeletions
+        : [];
+      const remainingPendingDeletions = pendingDeletions.filter((entry) => !processedDeletionIds.has(entry?.id));
 
       const store = getStore();
       let appliedCount = 0;
       let pulledCount = 0;
       let pushedCount = 0;
       let statusMirroredCount = 0;
+      let relinkedCount = 0;
+      let duplicateDeletedCount = 0;
       for (const task of store.tasks) {
         const result = byTaskId.get(task.id);
         if (!result || result.ok !== true) {
@@ -895,6 +906,12 @@ export function createNotificationSyncController({
             statusMirroredCount += 1;
           }
         }
+        if (result.relinked === true) {
+          relinkedCount += 1;
+        }
+        if (typeof result.duplicateDeletedCount === "number" && result.duplicateDeletedCount > 0) {
+          duplicateDeletedCount += result.duplicateDeletedCount;
+        }
         appliedCount += 1;
       }
       if (appliedCount > 0) {
@@ -903,23 +920,31 @@ export function createNotificationSyncController({
       }
 
       const errorCount = results.filter((entry) => entry?.ok === false).length;
+      const deletionErrorCount = Array.isArray(payload.deletionResults)
+        ? payload.deletionResults.filter((entry) => entry?.ok === false).length
+        : 0;
+      const processedDeletionCount = typeof payload.processedDeletionCount === "number" ? payload.processedDeletionCount : 0;
+      const deletedEventCount = typeof payload.deletedCount === "number" ? payload.deletedCount : 0;
       persistGoogleCalendarState({
         connected: true,
         calendarId: payload.calendarId || googleCalendar.calendarId,
         calendarSummary: nextCalendarSummary,
         calendarTimeZone: nextCalendarTimeZone,
+        pendingDeletions: remainingPendingDeletions,
         lastCalendarSyncAt: now,
-        lastCalendarSyncStatus: errorCount > 0 && appliedCount === 0 ? "error" : "success",
-        lastCalendarSyncMessage: errorCount > 0
-          ? `Synced ${appliedCount} scheduled task${appliedCount === 1 ? "" : "s"} with ${errorCount} error${errorCount === 1 ? "" : "s"}.`
-          : `Synced ${appliedCount} scheduled task${appliedCount === 1 ? "" : "s"} to Google Calendar.`
+        lastCalendarSyncStatus: errorCount + deletionErrorCount > 0 && appliedCount === 0 && processedDeletionCount === 0 ? "error" : "success",
+        lastCalendarSyncMessage: errorCount + deletionErrorCount > 0
+          ? `Synced ${appliedCount} scheduled task${appliedCount === 1 ? "" : "s"} and ${processedDeletionCount} calendar deletion${processedDeletionCount === 1 ? "" : "s"} with ${errorCount + deletionErrorCount} error${errorCount + deletionErrorCount === 1 ? "" : "s"}.`
+          : `Synced ${appliedCount} scheduled task${appliedCount === 1 ? "" : "s"} and ${processedDeletionCount} calendar deletion${processedDeletionCount === 1 ? "" : "s"} to Google Calendar.`
       }, now);
       renderSyncMeta();
-      if (errorCount > 0) {
-        const firstError = results.find((entry) => entry?.ok === false)?.error || "Calendar sync hit one or more Google errors.";
-        setSyncStatus(`Calendar sync updated ${appliedCount} task${appliedCount === 1 ? "" : "s"} (${pulledCount} pulled, ${pushedCount} pushed, ${statusMirroredCount} status mirrored), but ${errorCount} failed: ${firstError}`, "error");
+      if (errorCount + deletionErrorCount > 0) {
+        const firstError = results.find((entry) => entry?.ok === false)?.error
+          || payload.deletionResults?.find((entry) => entry?.ok === false)?.error
+          || "Calendar sync hit one or more Google errors.";
+        setSyncStatus(`Calendar sync updated ${appliedCount} task${appliedCount === 1 ? "" : "s"} (${pulledCount} pulled, ${pushedCount} pushed, ${statusMirroredCount} status mirrored, ${relinkedCount} relinked) and processed ${processedDeletionCount} deletion${processedDeletionCount === 1 ? "" : "s"} (${deletedEventCount} Google event${deletedEventCount === 1 ? "" : "s"} removed, ${duplicateDeletedCount} duplicate${duplicateDeletedCount === 1 ? "" : "s"} cleaned up), but ${errorCount + deletionErrorCount} failed: ${firstError}`, "error");
       } else {
-        setSyncStatus(`Calendar sync updated ${appliedCount} task${appliedCount === 1 ? "" : "s"} (${pulledCount} pulled, ${pushedCount} pushed, ${statusMirroredCount} status mirrored) against ${nextCalendarSummary}. Save to Drive if you want the links and pulled edits on other devices.`, "success");
+        setSyncStatus(`Calendar sync updated ${appliedCount} task${appliedCount === 1 ? "" : "s"} (${pulledCount} pulled, ${pushedCount} pushed, ${statusMirroredCount} status mirrored, ${relinkedCount} relinked) and processed ${processedDeletionCount} deletion${processedDeletionCount === 1 ? "" : "s"} (${deletedEventCount} Google event${deletedEventCount === 1 ? "" : "s"} removed, ${duplicateDeletedCount} duplicate${duplicateDeletedCount === 1 ? "" : "s"} cleaned up) against ${nextCalendarSummary}. Save to Drive if you want the links and pulled edits on other devices.`, "success");
       }
     } catch (error) {
       const message = String(error?.message || "Calendar schedule sync failed");

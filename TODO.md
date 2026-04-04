@@ -12,8 +12,8 @@
 
 ### Integrations
 
-- Google Calendar: Map recurring Lifetree series to recurring Google events plus exception handling for edited instances.
-- Google Calendar: Reconcile deletions, offline edits, and Drive/local/Google conflicts across schedule-linked items.
+- Google Calendar: Finish recurring exception handling for edited instances on linked Google Calendar series.
+- Google Calendar: Reconcile remote deletions, offline edits, and Drive/local/Google conflicts across schedule-linked items.
 - Google Calendar: Add per-task/event linkage diagnostics in the UI.
 
 ### Codebase Maintenance
@@ -72,6 +72,8 @@
 
 ### Integrations
 
+- 2026-04-04: Queue local task and series deletions for Google Calendar cleanup and process those pending event deletes during manual calendar sync.
+- 2026-04-04: Relink recurring Google Calendar masters by `lifetreeTaskId` during manual sync and clean up duplicate matching events instead of creating new series events.
 - 2026-04-04: Distinguish floating-local versus fixed-timezone tasks during Google Calendar sync and keep the dedicated `Lifetree` calendar aligned to the user's current timezone.
 - 2026-04-04: Mirror completion, skip, and restore status into linked Google event descriptions/private metadata during manual calendar sync without treating Calendar as the audit log.
 - 2026-04-04: Add Google Calendar bootstrap support that creates or finds a dedicated `Lifetree` calendar through the existing Google auth flow.

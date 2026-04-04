@@ -3623,14 +3623,52 @@ function rememberRetiredWidget(widget) {
   store.retiredWidgets = [...normalizeWidgets(store.retiredWidgets), normalizeWidgetRecord(widget, widgetRegistryHelpers())].filter(Boolean);
 }
 
+function enqueuePendingGoogleCalendarDeletion(task, kind = "task") {
+  if (!task || typeof task !== "object") {
+    return;
+  }
+  const currentIntegrations = normalizeIntegrations(store.integrations);
+  const currentCalendar = normalizeGoogleCalendarIntegration(currentIntegrations.googleCalendar);
+  const googleLink = normalizeGoogleCalendarTaskLink(task.googleCalendar, {
+    calendarId: currentCalendar.calendarId
+  });
+  if (!googleLink.eventId) {
+    return;
+  }
+  const deletedAt = Date.now();
+  store.integrations = normalizeIntegrations({
+    ...currentIntegrations,
+    googleCalendar: normalizeGoogleCalendarIntegration({
+      ...currentCalendar,
+      pendingDeletions: [
+        ...(Array.isArray(currentCalendar.pendingDeletions) ? currentCalendar.pendingDeletions : []),
+        {
+          id: `${googleLink.calendarId || currentCalendar.calendarId || "lifetree"}:${googleLink.eventId}`,
+          calendarId: googleLink.calendarId || currentCalendar.calendarId || "",
+          eventId: googleLink.eventId,
+          taskId: task.id || "",
+          deletedAt,
+          kind: kind === "series" ? "series" : "task"
+        }
+      ],
+      updatedAt: deletedAt
+    })
+  });
+}
+
 function rememberDeletedTask(taskOrId, taskRecord = null) {
   const task = typeof taskOrId === "object" && taskOrId
     ? taskOrId
-    : (taskRecord && typeof taskRecord === "object" ? taskRecord : null);
+    : (
+      taskRecord && typeof taskRecord === "object"
+        ? taskRecord
+        : store.tasks.find((candidate) => candidate.id === taskOrId) || null
+    );
   const taskId = typeof taskOrId === "string" ? taskOrId : (task?.id || "");
   if (!taskId) {
     return;
   }
+  enqueuePendingGoogleCalendarDeletion(task, "task");
   addDeletionMarker("task-id", taskId);
 }
 
@@ -3642,10 +3680,19 @@ function rememberDeletedTaskKey(task) {
   addDeletionMarker("task-key", taskKey);
 }
 
-function rememberDeletedSeries(templateId) {
+function rememberDeletedSeries(templateOrId, taskRecord = null) {
+  const template = typeof templateOrId === "object" && templateOrId
+    ? templateOrId
+    : (
+      taskRecord && typeof taskRecord === "object"
+        ? taskRecord
+        : store.tasks.find((candidate) => candidate.id === templateOrId) || null
+    );
+  const templateId = typeof templateOrId === "string" ? templateOrId : (template?.id || "");
   if (!templateId) {
     return;
   }
+  enqueuePendingGoogleCalendarDeletion(template, "series");
   addDeletionMarker("series-id", templateId);
 }
 

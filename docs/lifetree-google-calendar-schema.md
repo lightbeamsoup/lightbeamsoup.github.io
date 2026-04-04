@@ -41,6 +41,7 @@ store.integrations = {
     lastCalendarSyncStatus: "", // idle | success | error
     lastCalendarSyncMessage: "",
     lastCalendarSyncToken: "",
+    pendingDeletions: [],
     schemaVersion: 1
   }
 };
@@ -51,6 +52,7 @@ Notes:
 - `calendarId` is the stable Google calendar ID for the dedicated Lifetree calendar.
 - `calendarTimeZone` should follow the user's current browser timezone when the dedicated calendar is set up or refreshed.
 - `lastCalendarSyncToken` is for incremental event sync if the implementation uses Google sync tokens.
+- `pendingDeletions` is a bounded queue of linked Google events that should be removed on the next manual calendar sync after a local task/series delete.
 - This block should be normalized with safe defaults so older stores still load.
 
 ## Local task linkage schema
@@ -217,6 +219,9 @@ If both sides changed:
 ## Deletion rules
 
 - deleting a scheduled Lifetree task should delete or cancel the linked Google event
+- local deletions should enqueue `pendingDeletions` items in `store.integrations.googleCalendar` so manual calendar sync can remove the linked Google events even across devices
+- if a linked event ID goes stale, Lifetree should first try to relink by `lifetreeTaskId` before creating a replacement Google event
+- duplicate Google events with the same `lifetreeTaskId` should be deduped during manual sync, keeping one canonical event link
 - deleting the Google event should mark the local linkage stale and prompt or repair according to Lifetree policy
 - if a local task is completed/skipped and later archived, the Google event may remain as past calendar history unless explicitly removed
 

@@ -1,3 +1,5 @@
+import { normalizeGoogleCalendarIntegration } from "./googleCalendar.js";
+
 export const GOOGLE_CALENDAR_TASK_SCHEMA_VERSION = 1;
 export const GOOGLE_CALENDAR_TIME_ZONE_MODE_FLOATING = "floating-local";
 export const GOOGLE_CALENDAR_TIME_ZONE_MODE_FIXED = "fixed";
@@ -116,14 +118,10 @@ export function buildGoogleCalendarTaskScheduleFingerprint(task) {
 
 export function buildGoogleCalendarScheduleSyncRequest(store, googleCalendarIntegration, { userTimeZone = "" } = {}) {
   const tasks = Array.isArray(store?.tasks) ? store.tasks : [];
-  const calendar = googleCalendarIntegration && typeof googleCalendarIntegration === "object"
-    ? googleCalendarIntegration
-    : {};
-  const calendarId = typeof calendar.calendarId === "string" ? calendar.calendarId : "";
-  const calendarSummary = typeof calendar.calendarSummary === "string" && calendar.calendarSummary.trim()
-    ? calendar.calendarSummary.trim()
-    : "Lifetree";
-  const calendarTimeZone = typeof calendar.calendarTimeZone === "string" ? calendar.calendarTimeZone.trim() : "";
+  const calendar = normalizeGoogleCalendarIntegration(googleCalendarIntegration);
+  const calendarId = calendar.calendarId;
+  const calendarSummary = calendar.calendarSummary || "Lifetree";
+  const calendarTimeZone = calendar.calendarTimeZone;
   const eligibleTasks = tasks.filter((task) => isGoogleCalendarSchedulableTask(task) || isGoogleCalendarStatusMirrorableTask(task));
   const syncTasks = eligibleTasks
     .map((task) => {
@@ -138,11 +136,13 @@ export function buildGoogleCalendarScheduleSyncRequest(store, googleCalendarInte
       });
       const statusMirrorState = getGoogleCalendarTaskStatusMirrorState(task);
       const statusMirrorVersion = getGoogleCalendarTaskStatusMirrorVersion(task);
+      const needsRemoteCheck = Boolean(googleCalendar.eventId);
       const needsPush = !googleCalendar.eventId
         || googleCalendar.calendarId !== calendarId
         || googleCalendar.scheduleFingerprint !== scheduleFingerprint;
       const needsStatusPush = Boolean(googleCalendar.eventId) && statusMirrorVersion > (googleCalendar.statusMirroredAt || 0);
       return {
+        needsRemoteCheck,
         needsPush,
         needsStatusPush,
         taskId: task.id,
@@ -169,7 +169,7 @@ export function buildGoogleCalendarScheduleSyncRequest(store, googleCalendarInte
         statusMirrorLifecycleType: statusMirrorState.lifecycleType
       };
     })
-    .filter((task) => task.needsPush || task.needsStatusPush);
+    .filter((task) => task.needsPush || task.needsStatusPush || task.needsRemoteCheck);
 
   return {
     calendarId,
@@ -177,6 +177,7 @@ export function buildGoogleCalendarScheduleSyncRequest(store, googleCalendarInte
     calendarTimeZone,
     userTimeZone: String(userTimeZone || "").trim(),
     totalEligibleTasks: eligibleTasks.length,
+    pendingDeletions: Array.isArray(calendar.pendingDeletions) ? calendar.pendingDeletions : [],
     tasks: syncTasks
   };
 }
