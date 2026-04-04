@@ -12,6 +12,8 @@ export function createNotificationSyncController({
   persistStore,
   formatDateTime,
   normalizeProfile,
+  normalizeIntegrations,
+  normalizeGoogleCalendarIntegration,
   normalizeNotifications,
   normalizeNotificationTimezone,
   normalizeRecipientEmail,
@@ -74,13 +76,16 @@ export function createNotificationSyncController({
     syncLocalCard,
     syncDriveCard,
     syncAutosaveCard,
+    syncCalendarCard,
     syncLocalValue,
     syncDriveValue,
     syncAutosaveValue,
+    syncCalendarValue,
     googleSignInButton,
     googleSignOutButton,
     loadDriveButton,
     saveDriveButton,
+    bootstrapGoogleCalendarButton,
     clearDriveDataButton,
     clearWidgetDriveDataButton,
     downloadDriveDataButton,
@@ -219,6 +224,20 @@ export function createNotificationSyncController({
     });
     persistStore();
     renderNotificationsIfOpen();
+  }
+
+  function persistGoogleCalendarState(nextGoogleCalendar, updatedAt = Date.now()) {
+    const store = getStore();
+    const currentIntegrations = normalizeIntegrations(store.integrations);
+    store.integrations = normalizeIntegrations({
+      ...currentIntegrations,
+      googleCalendar: normalizeGoogleCalendarIntegration({
+        ...currentIntegrations.googleCalendar,
+        ...nextGoogleCalendar,
+        updatedAt
+      })
+    });
+    persistStore();
   }
 
   function buildSummarySendDraft(baseDraft, { frequencyOverride = "" } = {}) {
@@ -673,6 +692,75 @@ export function createNotificationSyncController({
     await saveCurrentStoreToDrive({ quiet: false, force: false, mode: "manual" });
   }
 
+  async function handleEnsureGoogleCalendar() {
+    if (!authState.authenticated) {
+      const authenticated = await refreshAuthStatus({ suppressUnavailableError: false });
+      if (!authenticated) {
+        setSyncStatus("Connect Google first to set up the Lifetree calendar.", "error");
+        return;
+      }
+    }
+
+    const current = normalizeIntegrations(getStore().integrations).googleCalendar;
+    bootstrapGoogleCalendarButton.disabled = true;
+    bootstrapGoogleCalendarButton.textContent = current.calendarId ? "Checking…" : "Setting up…";
+    try {
+      const response = await fetch(`${apiBase}/api/google-calendar/bootstrap`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        credentials: fetchCredentials,
+        body: JSON.stringify({
+          summary: current.calendarSummary || "Lifetree"
+        })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.error || "Calendar bootstrap failed");
+      }
+
+      const now = Date.now();
+      persistGoogleCalendarState({
+        connected: true,
+        calendarId: payload.calendarId || "",
+        calendarSummary: payload.calendarSummary || current.calendarSummary || "Lifetree",
+        calendarTimeZone: payload.calendarTimeZone || "",
+        lastCalendarSyncAt: now,
+        lastCalendarSyncStatus: "success",
+        lastCalendarSyncMessage: payload.created
+          ? "Created the dedicated Lifetree calendar."
+          : "Found the existing Lifetree calendar.",
+        lastCalendarSyncToken: current.lastCalendarSyncToken || ""
+      }, now);
+      renderSyncMeta();
+      setSyncStatus(
+        payload.created
+          ? `Created the ${payload.calendarSummary || "Lifetree"} Google Calendar.`
+          : `Linked the existing ${payload.calendarSummary || "Lifetree"} Google Calendar.`,
+        "success"
+      );
+    } catch (error) {
+      const message = String(error?.message || "Calendar bootstrap failed");
+      const now = Date.now();
+      persistGoogleCalendarState({
+        lastCalendarSyncAt: now,
+        lastCalendarSyncStatus: "error",
+        lastCalendarSyncMessage: message
+      }, now);
+      renderSyncMeta();
+      if (message.includes("insufficientPermissions") || message.includes("insufficient_scope")) {
+        setSyncStatus("Reconnect Google and grant Calendar access, then set up the Lifetree calendar again.", "error");
+      } else if (message === "Not authenticated") {
+        setSyncStatus("Connect Google first to set up the Lifetree calendar.", "error");
+      } else {
+        setSyncStatus(`Lifetree calendar setup failed: ${message}`, "error");
+      }
+    } finally {
+      updateGoogleButtons();
+    }
+  }
+
   async function saveCurrentStoreToDrive({ quiet = false, force = false, mode = "manual" } = {}) {
     if (driveSaveState.inFlight) {
       return { success: false, skipped: true };
@@ -705,6 +793,7 @@ export function createNotificationSyncController({
   function renderSyncMeta(now = new Date()) {
     const store = getStore();
     const localUpdatedAt = store.userUpdatedAt || 0;
+    const googleCalendar = normalizeIntegrations(store.integrations).googleCalendar;
     const remoteSavedAt = syncState.remoteSavedAt || 0;
     const remoteUpdatedAt = syncState.remoteUserUpdatedAt || 0;
     const remoteFingerprint = syncState.remoteUserFingerprint || "";
@@ -770,6 +859,25 @@ export function createNotificationSyncController({
 
     syncAutosaveCard.dataset.state = autosaveState;
     syncAutosaveValue.textContent = autosaveText;
+
+    let calendarState = "neutral";
+    let calendarText = "Not set up";
+    if (!authState.authenticated) {
+      calendarText = "Connect Google";
+    } else if (googleCalendar.calendarId) {
+      calendarState = googleCalendar.lastCalendarSyncStatus === "error" ? "error" : "success";
+      calendarText = `${googleCalendar.calendarSummary || "Lifetree"} ready`;
+    } else if (googleCalendar.lastCalendarSyncStatus === "error") {
+      calendarState = "error";
+      calendarText = "Setup failed";
+    } else if (googleCalendar.lastCalendarSyncAt > 0) {
+      calendarState = "info";
+      calendarText = "Checked";
+    } else {
+      calendarState = "info";
+    }
+    syncCalendarCard.dataset.state = calendarState;
+    syncCalendarValue.textContent = calendarText;
   }
 
   function getCurrentStoreFingerprint() {
@@ -1021,6 +1129,11 @@ export function createNotificationSyncController({
     googleSignOutButton.disabled = !authState.authenticated || saveInFlight;
     loadDriveButton.disabled = !authState.authenticated || saveInFlight;
     saveDriveButton.disabled = !authState.authenticated || saveInFlight;
+    const googleCalendar = normalizeIntegrations(getStore().integrations).googleCalendar;
+    bootstrapGoogleCalendarButton.disabled = !authState.authenticated || saveInFlight;
+    bootstrapGoogleCalendarButton.textContent = saveInFlight
+      ? "Waiting…"
+      : (googleCalendar.calendarId ? "Check Lifetree calendar" : "Setup Lifetree calendar");
     saveDriveButton.dataset.state = saveInFlight ? driveSaveState.mode || "saving" : "idle";
     saveDriveButton.textContent = saveInFlight
       ? (driveSaveState.mode === "autosave" ? "Autosaving…" : "Saving…")
@@ -1174,6 +1287,7 @@ export function createNotificationSyncController({
     getKnownRemoteState,
     getNotificationSendState,
     handleGoogleDisconnect,
+    handleEnsureGoogleCalendar,
     handleManualLoadFromDrive,
     handleManualSaveToDrive,
     handleNotificationsFormChange,

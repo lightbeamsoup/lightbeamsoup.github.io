@@ -25,6 +25,21 @@ export function createStoreDataBindings(config = {}) {
     mergeRetiredWidgets,
     normalizeProfile,
     choosePreferredProfile,
+    normalizeIntegrations = (value) => ({
+      googleCalendar: {
+        connected: value?.googleCalendar?.connected === true,
+        calendarId: typeof value?.googleCalendar?.calendarId === "string" ? value.googleCalendar.calendarId : "",
+        calendarSummary: typeof value?.googleCalendar?.calendarSummary === "string" ? value.googleCalendar.calendarSummary : "Lifetree",
+        calendarTimeZone: typeof value?.googleCalendar?.calendarTimeZone === "string" ? value.googleCalendar.calendarTimeZone : "",
+        lastCalendarSyncAt: typeof value?.googleCalendar?.lastCalendarSyncAt === "number" ? value.googleCalendar.lastCalendarSyncAt : 0,
+        lastCalendarSyncStatus: typeof value?.googleCalendar?.lastCalendarSyncStatus === "string" ? value.googleCalendar.lastCalendarSyncStatus : "idle",
+        lastCalendarSyncMessage: typeof value?.googleCalendar?.lastCalendarSyncMessage === "string" ? value.googleCalendar.lastCalendarSyncMessage : "",
+        lastCalendarSyncToken: typeof value?.googleCalendar?.lastCalendarSyncToken === "string" ? value.googleCalendar.lastCalendarSyncToken : "",
+        updatedAt: typeof value?.googleCalendar?.updatedAt === "number" ? value.googleCalendar.updatedAt : 0,
+        schemaVersion: 1
+      }
+    }),
+    choosePreferredIntegrations = (local, _remote) => normalizeIntegrations(local),
     normalizeNotifications,
     choosePreferredNotifications,
     normalizeDevSettings,
@@ -424,11 +439,12 @@ export function createStoreDataBindings(config = {}) {
   function createEmptyStore() {
     const now = Date.now();
     const emptyStore = {
-      version: 18,
+      version: 19,
       updatedAt: now,
       userUpdatedAt: now,
       driveFileId: "",
       profile: normalizeProfile({}),
+      integrations: normalizeIntegrations({}),
       notifications: normalizeNotifications({}),
       tasks: [],
       pointLedger: [],
@@ -465,10 +481,11 @@ export function createStoreDataBindings(config = {}) {
     });
     const pointHistorySource = Array.isArray(source.pointHistory) ? source.pointHistory : normalizedPointLedger;
     const normalized = {
-      version: 18,
+      version: 19,
       updatedAt: typeof source.updatedAt === "number" ? source.updatedAt : Date.now(),
       driveFileId: typeof source.driveFileId === "string" ? source.driveFileId : "",
       profile: normalizeProfile(source.profile),
+      integrations: normalizeIntegrations(source.integrations),
       notifications: normalizeNotifications(source.notifications),
       tasks,
       pointLedger: normalizedPointLedger,
@@ -662,12 +679,13 @@ export function createStoreDataBindings(config = {}) {
     }
 
     return {
-      version: 18,
+      version: 19,
       updatedAt: Math.max(localStore.updatedAt || 0, remoteStore.updatedAt || 0),
       userUpdatedAt: preferredUserState.userUpdatedAt,
       userFingerprint: preferredUserState.userFingerprint,
       driveFileId: remoteStore.driveFileId || localStore.driveFileId || "",
       profile: choosePreferredProfile(localStore.profile, remoteStore.profile),
+      integrations: choosePreferredIntegrations(localStore.integrations, remoteStore.integrations),
       notifications: choosePreferredNotifications(localStore.notifications, remoteStore.notifications),
       tasks: Array.from(mergedById.values()).sort((a, b) => b.createdAt - a.createdAt).slice(0, maxTasks),
       pointLedger: mergePointLedger(localStore.pointLedger, remoteStore.pointLedger, mergedPointOptions),
@@ -709,6 +727,13 @@ export function createStoreDataBindings(config = {}) {
         summaries: remote.summaries,
         reminders: remote.reminders
       });
+  }
+
+  function hasAmbiguousIntegrationsMerge(localIntegrations, remoteIntegrations) {
+    const local = normalizeIntegrations(localIntegrations).googleCalendar;
+    const remote = normalizeIntegrations(remoteIntegrations).googleCalendar;
+    return (local.updatedAt || 0) === (remote.updatedAt || 0)
+      && buildComparableValueSignature(local) !== buildComparableValueSignature(remote);
   }
 
   function hasAmbiguousTreeStateMerge(localTreeState, remoteTreeState) {
@@ -810,6 +835,7 @@ export function createStoreDataBindings(config = {}) {
 
   function hasAmbiguousDriveMergeConflict(localStore, remoteStore) {
     return hasAmbiguousProfileMerge(localStore.profile, remoteStore.profile)
+      || hasAmbiguousIntegrationsMerge(localStore.integrations, remoteStore.integrations)
       || hasAmbiguousNotificationsMerge(localStore.notifications, remoteStore.notifications)
       || hasAmbiguousTreeStateMerge(localStore.treeState, remoteStore.treeState)
       || hasAmbiguousDevSettingsMerge(localStore.devSettings, remoteStore.devSettings, localStore.updatedAt, remoteStore.updatedAt)
@@ -840,6 +866,7 @@ export function createStoreDataBindings(config = {}) {
         helpTextEnabled: normalizedProfile.helpTextEnabled,
         helpTooltipDelayMs: normalizedProfile.helpTooltipDelayMs
       },
+      integrations: sortObjectKeys(normalizeIntegrations(normalized.integrations || {})),
       notifications: {
         email: {
           recipientEmail: normalizedNotifications.email.recipientEmail,

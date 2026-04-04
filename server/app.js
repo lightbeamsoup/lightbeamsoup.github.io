@@ -47,6 +47,8 @@ const SESSION_COOKIE = "lifetree_session";
 const DRIVE_FILE_NAME = "task-deck-store.json";
 const DEV_EMAIL = "jbkallman@gmail.com";
 const LIFETREE_APP_URL = "https://www.joshcodes.ai/lifetree";
+const LIFETREE_GOOGLE_CALENDAR_SUMMARY = "Lifetree";
+const LIFETREE_GOOGLE_CALENDAR_DESCRIPTION = "Created by Lifetree for schedule sync.";
 const FLIGHTAWARE_AEROAPI_KEY = String(process.env.FLIGHTAWARE_AEROAPI_KEY || "").trim();
 const TRAVEL_WEATHER_CACHE_TTL_MS = 1000 * 60 * 15;
 const TRAVEL_WEATHER_RETRY_TTL_MS = 1000 * 60 * 2;
@@ -108,6 +110,7 @@ const OAUTH_SCOPES = [
   "email",
   "profile",
   "https://www.googleapis.com/auth/drive.appdata",
+  "https://www.googleapis.com/auth/calendar",
   "https://www.googleapis.com/auth/gmail.send"
 ].join(" ");
 const notificationSchedulerState = {
@@ -251,6 +254,27 @@ app.post("/api/auth/logout", (req, res) => {
     secure: shouldUseSecureCookies()
   }));
   res.json({ ok: true });
+});
+
+app.post("/api/google-calendar/bootstrap", async (req, res) => {
+  try {
+    const user = requireUser(req);
+    const accessToken = await refreshAccessToken(user);
+    const summary = sanitizeTravelText(req.body?.summary, 80) || LIFETREE_GOOGLE_CALENDAR_SUMMARY;
+    const calendar = await ensureLifetreeCalendar(accessToken, {
+      summary,
+      timeZone: typeof req.body?.timeZone === "string" ? req.body.timeZone.trim() : ""
+    });
+    res.json({
+      ok: true,
+      created: calendar.created === true,
+      calendarId: calendar.id || "",
+      calendarSummary: calendar.summary || summary,
+      calendarTimeZone: calendar.timeZone || ""
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 app.get("/api/lifetree/load", async (req, res) => {
@@ -880,6 +904,71 @@ async function fetchGoogleProfile(accessToken) {
   }
 
   return response.json();
+}
+
+async function listOwnedCalendars(accessToken) {
+  const response = await fetch(
+    "https://www.googleapis.com/calendar/v3/users/me/calendarList?minAccessRole=owner&fields=items(id,summary,description,timeZone,accessRole,primary)",
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`
+      }
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(await formatGoogleError(response, "Google Calendar lookup failed"));
+  }
+
+  const payload = await response.json();
+  return Array.isArray(payload.items) ? payload.items : [];
+}
+
+function findLifetreeCalendar(calendars, desiredSummary = LIFETREE_GOOGLE_CALENDAR_SUMMARY) {
+  const normalizedDesiredSummary = String(desiredSummary || LIFETREE_GOOGLE_CALENDAR_SUMMARY).trim().toLowerCase();
+  const exactDescriptionMatch = calendars.find((calendar) => String(calendar?.description || "").trim() === LIFETREE_GOOGLE_CALENDAR_DESCRIPTION);
+  if (exactDescriptionMatch) {
+    return exactDescriptionMatch;
+  }
+  return calendars.find((calendar) => String(calendar?.summary || "").trim().toLowerCase() === normalizedDesiredSummary) || null;
+}
+
+async function createGoogleCalendar(accessToken, { summary = LIFETREE_GOOGLE_CALENDAR_SUMMARY, timeZone = "" } = {}) {
+  const response = await fetch("https://www.googleapis.com/calendar/v3/calendars", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      summary,
+      description: LIFETREE_GOOGLE_CALENDAR_DESCRIPTION,
+      ...(timeZone ? { timeZone } : {})
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(await formatGoogleError(response, "Google Calendar create failed"));
+  }
+
+  return response.json();
+}
+
+async function ensureLifetreeCalendar(accessToken, { summary = LIFETREE_GOOGLE_CALENDAR_SUMMARY, timeZone = "" } = {}) {
+  const calendars = await listOwnedCalendars(accessToken);
+  const existing = findLifetreeCalendar(calendars, summary);
+  if (existing) {
+    return {
+      ...existing,
+      created: false
+    };
+  }
+
+  const created = await createGoogleCalendar(accessToken, { summary, timeZone });
+  return {
+    ...created,
+    created: true
+  };
 }
 
 async function findDriveFile(accessToken) {

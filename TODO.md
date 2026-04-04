@@ -12,8 +12,7 @@
 
 ### Integrations
 
-- Google Calendar: Bootstrap and persist a dedicated `Lifetree` calendar per user.
-- Google Calendar: Define and normalize the local `integrations.googleCalendar` sync state and per-task event linkage fields.
+- Google Calendar: Define and normalize per-task event linkage fields and schedule fingerprints.
 - Google Calendar: Export scheduled one-off tasks and recurring series into the `Lifetree` calendar as the schedule source of truth.
 - Google Calendar: Store Lifetree machine metadata in Google event `extendedProperties.private` while keeping history/points/widget state local.
 - Google Calendar: Read Google event edits back into Lifetree and prefer Google for schedule fields while preserving local-only state.
@@ -75,6 +74,11 @@
 - 2026-03-27: Add automated reminder sending with backend scheduler dedupe, plus a developer daily agenda email trigger.
 - 2026-03-28: Add an always-on backend worker mode so email summaries and reminders can keep sending when Lifetree itself is closed.
 - 2026-04-03: Composite repeated same-day tasks in agenda/summary emails, include overdue-open items in agendas, and surface Travel Buddy flight/forecast snapshots in notification emails.
+
+### Integrations
+
+- 2026-04-04: Add Google Calendar bootstrap support that creates or finds a dedicated `Lifetree` calendar through the existing Google auth flow.
+- 2026-04-04: Persist top-level Google Calendar integration state in Lifetree and surface calendar setup status in the shell sync panel.
 
 ### Workout Coach
 
