@@ -924,8 +924,12 @@ export function createNotificationSyncController({
       const deletionErrorCount = Array.isArray(payload.deletionResults)
         ? payload.deletionResults.filter((entry) => entry?.ok === false).length
         : 0;
+      const orphanDeletionErrorCount = Array.isArray(payload.orphanDeletionResults)
+        ? payload.orphanDeletionResults.filter((entry) => entry?.ok === false).length
+        : 0;
       const processedDeletionCount = typeof payload.processedDeletionCount === "number" ? payload.processedDeletionCount : 0;
       const deletedEventCount = typeof payload.deletedCount === "number" ? payload.deletedCount : 0;
+      const orphanDeletedCount = typeof payload.orphanDeletedCount === "number" ? payload.orphanDeletedCount : 0;
       persistGoogleCalendarState({
         connected: true,
         calendarId: payload.calendarId || googleCalendar.calendarId,
@@ -933,19 +937,20 @@ export function createNotificationSyncController({
         calendarTimeZone: nextCalendarTimeZone,
         pendingDeletions: remainingPendingDeletions,
         lastCalendarSyncAt: now,
-        lastCalendarSyncStatus: errorCount + deletionErrorCount > 0 && appliedCount === 0 && processedDeletionCount === 0 ? "error" : "success",
-        lastCalendarSyncMessage: errorCount + deletionErrorCount > 0
-          ? `Synced ${appliedCount} scheduled task${appliedCount === 1 ? "" : "s"} and ${processedDeletionCount} calendar deletion${processedDeletionCount === 1 ? "" : "s"} with ${errorCount + deletionErrorCount} error${errorCount + deletionErrorCount === 1 ? "" : "s"}.`
-          : `Synced ${appliedCount} scheduled task${appliedCount === 1 ? "" : "s"} and ${processedDeletionCount} calendar deletion${processedDeletionCount === 1 ? "" : "s"} to Google Calendar.`
+        lastCalendarSyncStatus: errorCount + deletionErrorCount + orphanDeletionErrorCount > 0 && appliedCount === 0 && processedDeletionCount === 0 && orphanDeletedCount === 0 ? "error" : "success",
+        lastCalendarSyncMessage: errorCount + deletionErrorCount + orphanDeletionErrorCount > 0
+          ? `Synced ${appliedCount} scheduled task${appliedCount === 1 ? "" : "s"}, processed ${processedDeletionCount} requested calendar deletion${processedDeletionCount === 1 ? "" : "s"}, removed ${orphanDeletedCount} orphaned calendar event${orphanDeletedCount === 1 ? "" : "s"}, and hit ${errorCount + deletionErrorCount + orphanDeletionErrorCount} error${errorCount + deletionErrorCount + orphanDeletionErrorCount === 1 ? "" : "s"}.`
+          : `Synced ${appliedCount} scheduled task${appliedCount === 1 ? "" : "s"}, processed ${processedDeletionCount} requested calendar deletion${processedDeletionCount === 1 ? "" : "s"}, and removed ${orphanDeletedCount} orphaned calendar event${orphanDeletedCount === 1 ? "" : "s"} in Google Calendar.`
       }, now);
       renderSyncMeta();
-      if (errorCount + deletionErrorCount > 0) {
+      if (errorCount + deletionErrorCount + orphanDeletionErrorCount > 0) {
         const firstError = results.find((entry) => entry?.ok === false)?.error
           || payload.deletionResults?.find((entry) => entry?.ok === false)?.error
+          || payload.orphanDeletionResults?.find((entry) => entry?.ok === false)?.error
           || "Calendar sync hit one or more Google errors.";
-        setSyncStatus(`Calendar sync updated ${appliedCount} task${appliedCount === 1 ? "" : "s"} (${pulledCount} pulled, ${pushedCount} pushed, ${statusMirroredCount} status mirrored, ${relinkedCount} relinked) and processed ${processedDeletionCount} deletion${processedDeletionCount === 1 ? "" : "s"} (${deletedEventCount} Google event${deletedEventCount === 1 ? "" : "s"} removed, ${duplicateDeletedCount} duplicate${duplicateDeletedCount === 1 ? "" : "s"} cleaned up), but ${errorCount + deletionErrorCount} failed: ${firstError}`, "error");
+        setSyncStatus(`Calendar sync updated ${appliedCount} task${appliedCount === 1 ? "" : "s"} (${pulledCount} pulled, ${pushedCount} pushed, ${statusMirroredCount} status mirrored, ${relinkedCount} relinked) and processed ${processedDeletionCount} deletion${processedDeletionCount === 1 ? "" : "s"} (${deletedEventCount} Google event${deletedEventCount === 1 ? "" : "s"} removed, ${duplicateDeletedCount} duplicate${duplicateDeletedCount === 1 ? "" : "s"} cleaned up, ${orphanDeletedCount} orphan${orphanDeletedCount === 1 ? "" : "s"} removed), but ${errorCount + deletionErrorCount + orphanDeletionErrorCount} failed: ${firstError}`, "error");
       } else {
-        setSyncStatus(`Calendar sync updated ${appliedCount} task${appliedCount === 1 ? "" : "s"} (${pulledCount} pulled, ${pushedCount} pushed, ${statusMirroredCount} status mirrored, ${relinkedCount} relinked) and processed ${processedDeletionCount} deletion${processedDeletionCount === 1 ? "" : "s"} (${deletedEventCount} Google event${deletedEventCount === 1 ? "" : "s"} removed, ${duplicateDeletedCount} duplicate${duplicateDeletedCount === 1 ? "" : "s"} cleaned up) against ${nextCalendarSummary}. Save to Drive if you want the links and pulled edits on other devices.`, "success");
+        setSyncStatus(`Calendar sync updated ${appliedCount} task${appliedCount === 1 ? "" : "s"} (${pulledCount} pulled, ${pushedCount} pushed, ${statusMirroredCount} status mirrored, ${relinkedCount} relinked) and processed ${processedDeletionCount} deletion${processedDeletionCount === 1 ? "" : "s"} (${deletedEventCount} Google event${deletedEventCount === 1 ? "" : "s"} removed, ${duplicateDeletedCount} duplicate${duplicateDeletedCount === 1 ? "" : "s"} cleaned up, ${orphanDeletedCount} orphan${orphanDeletedCount === 1 ? "" : "s"} removed) against ${nextCalendarSummary}. Save to Drive if you want the links and pulled edits on other devices.`, "success");
       }
     } catch (error) {
       const message = String(error?.message || "Calendar schedule sync failed");

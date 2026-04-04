@@ -5,6 +5,7 @@ import {
   buildGoogleCalendarEventPayload,
   buildGoogleCalendarScheduleSyncRequest,
   buildGoogleCalendarTaskScheduleFingerprint,
+  findOrphanedGoogleCalendarTaskEvents,
   normalizeGoogleCalendarTaskLink,
   normalizeGoogleCalendarSyncTask
 } from "./modules/googleCalendarTasks.js";
@@ -171,6 +172,41 @@ test("google calendar sync task normalization preserves push and remote-check fl
   assert.equal(normalized.needsRemoteCheck, true);
   assert.equal(normalized.needsPush, true);
   assert.equal(normalized.needsStatusPush, false);
+});
+
+test("orphaned google calendar task events are detected by missing lifetree task id matches", () => {
+  const orphans = findOrphanedGoogleCalendarTaskEvents([
+    {
+      id: "event-keep",
+      extendedProperties: {
+        private: {
+          lifetreeTaskId: "task-keep"
+        }
+      }
+    },
+    {
+      id: "event-orphan",
+      extendedProperties: {
+        private: {
+          lifetreeTaskId: "task-missing"
+        }
+      }
+    },
+    {
+      id: "event-manual"
+    }
+  ], [
+    {
+      taskId: "task-keep",
+      name: "Keep me",
+      dueDate: "2026-04-05",
+      startDate: "2026-04-05",
+      timeOfDay: "07:00",
+      recurrence: { type: "daily", interval: 1, weekday: 0, day: 1, ordinal: "first", endDate: "", count: null, forever: true }
+    }
+  ]);
+
+  assert.deepEqual(orphans.map((event) => event.id), ["event-orphan"]);
 });
 
 test("event payload builds recurrence, reminders, and metadata for recurring tasks", () => {

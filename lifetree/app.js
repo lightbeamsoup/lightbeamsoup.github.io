@@ -3812,7 +3812,8 @@ function syncWidgetOwnedTasks() {
     const definition = getWidgetDefinition(widget.type);
     definition?.syncOwnedTasks?.({
       widget,
-      store
+      store,
+      helpers: widgetRuntimeHelpers()
     });
   }
 }

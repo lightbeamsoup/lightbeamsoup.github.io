@@ -27,6 +27,8 @@ import {
 import {
   buildGoogleCalendarEventPayload,
   buildGoogleCalendarTaskSchedulePatchFromEvent,
+  findOrphanedGoogleCalendarTaskEvents,
+  getGoogleCalendarEventTaskId,
   normalizeGoogleCalendarSyncTask
 } from "../lifetree/modules/googleCalendarTasks.js";
 
@@ -308,9 +310,11 @@ app.post("/api/google-calendar/sync-schedule", async (req, res) => {
           .slice(0, 500)
       : [];
     const pendingDeletions = normalizeGoogleCalendarDeletionRequests(req.body?.pendingDeletions, calendarId);
+    const skippedOrphanCleanup = Array.isArray(req.body?.tasks) && req.body.tasks.length > tasks.length;
 
     const results = [];
     const deletionResults = [];
+    const orphanDeletionResults = [];
     let createdCount = 0;
     let updatedCount = 0;
     let deletedCount = 0;
@@ -349,6 +353,34 @@ app.post("/api/google-calendar/sync-schedule", async (req, res) => {
           ok: false,
           error: error.message
         });
+      }
+    }
+    if (!skippedOrphanCleanup) {
+      const orphanEvents = findOrphanedGoogleCalendarTaskEvents(
+        await listGoogleCalendarTaskTaggedEvents(accessToken, calendarId),
+        tasks
+      );
+      for (const orphanEvent of orphanEvents) {
+        try {
+          const outcome = await deleteGoogleCalendarEvent(accessToken, calendarId, orphanEvent.id);
+          if (outcome.deleted) {
+            deletedCount += 1;
+          }
+          orphanDeletionResults.push({
+            eventId: orphanEvent.id,
+            taskId: getGoogleCalendarEventTaskId(orphanEvent),
+            ok: true,
+            deleted: outcome.deleted === true,
+            missing: outcome.missing === true
+          });
+        } catch (error) {
+          orphanDeletionResults.push({
+            eventId: orphanEvent.id,
+            taskId: getGoogleCalendarEventTaskId(orphanEvent),
+            ok: false,
+            error: error.message
+          });
+        }
       }
     }
     for (const task of tasks) {
@@ -449,6 +481,9 @@ app.post("/api/google-calendar/sync-schedule", async (req, res) => {
       createdCount,
       updatedCount,
       deletedCount,
+      orphanDeletedCount: orphanDeletionResults.filter((entry) => entry.ok === true && entry.deleted === true).length,
+      orphanDeletionResults,
+      skippedOrphanCleanup,
       processedDeletionCount: deletionResults.filter((entry) => entry.ok === true).length,
       processedDeletionIds: deletionResults.filter((entry) => entry.ok === true).map((entry) => entry.id),
       deletionResults,
@@ -490,6 +525,10 @@ app.post("/api/google-calendar/diagnostics", async (req, res) => {
           .slice(0, 500)
       : [];
     const pendingDeletions = normalizeGoogleCalendarDeletionRequests(req.body?.pendingDeletions, calendarId);
+    const orphanEvents = findOrphanedGoogleCalendarTaskEvents(
+      await listGoogleCalendarTaskTaggedEvents(accessToken, calendarId),
+      tasks
+    );
 
     const taskDiagnostics = [];
     let linkedTaskCount = 0;
@@ -576,8 +615,18 @@ app.post("/api/google-calendar/diagnostics", async (req, res) => {
         linkedEventMissingCount,
         relinkCandidateCount,
         duplicateTaskCount,
-        duplicateEventCount
+        duplicateEventCount,
+        orphanEventCount: orphanEvents.length
       },
+      orphanEvents: orphanEvents.map((event) => ({
+        id: typeof event?.id === "string" ? event.id : "",
+        taskId: getGoogleCalendarEventTaskId(event),
+        updated: typeof event?.updated === "string" ? event.updated : "",
+        recurringEventId: typeof event?.recurringEventId === "string" ? event.recurringEventId : "",
+        summary: typeof event?.summary === "string" ? event.summary : "",
+        start: event?.start?.dateTime || event?.start?.date || "",
+        htmlLink: typeof event?.htmlLink === "string" ? event.htmlLink : ""
+      })),
       tasks: taskDiagnostics
     });
   } catch (error) {
@@ -1479,6 +1528,51 @@ async function listGoogleCalendarEventsByTaskId(accessToken, calendarId, taskId)
 
   const payload = await response.json();
   return Array.isArray(payload.items) ? payload.items : [];
+}
+
+async function listGoogleCalendarTaskTaggedEvents(accessToken, calendarId) {
+  const events = [];
+  let pageToken = "";
+
+  while (true) {
+    const params = new URLSearchParams({
+      maxResults: "250",
+      singleEvents: "false",
+      showDeleted: "false",
+      fields: "nextPageToken,items(id,updated,htmlLink,recurringEventId,status,summary,description,location,start,end,recurrence,reminders,extendedProperties)"
+    });
+    if (pageToken) {
+      params.set("pageToken", pageToken);
+    }
+
+    const response = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?${params.toString()}`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`
+        }
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(await formatGoogleError(response, "Google Calendar event list failed"));
+    }
+
+    const payload = await response.json();
+    const items = Array.isArray(payload.items) ? payload.items : [];
+    for (const event of items) {
+      if (getGoogleCalendarEventTaskId(event)) {
+        events.push(event);
+      }
+    }
+
+    pageToken = typeof payload.nextPageToken === "string" ? payload.nextPageToken : "";
+    if (!pageToken) {
+      break;
+    }
+  }
+
+  return events;
 }
 
 function getGoogleCalendarEventUpdatedAt(event) {

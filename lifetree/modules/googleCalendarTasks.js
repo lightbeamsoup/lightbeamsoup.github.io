@@ -223,6 +223,32 @@ export function normalizeGoogleCalendarSyncTask(value, { calendarId = "", calend
   return normalized;
 }
 
+export function getGoogleCalendarEventTaskId(event) {
+  const privateProps = event?.extendedProperties?.private;
+  if (!privateProps || typeof privateProps !== "object") {
+    return "";
+  }
+  return typeof privateProps.lifetreeTaskId === "string" ? privateProps.lifetreeTaskId : "";
+}
+
+export function findOrphanedGoogleCalendarTaskEvents(events, tasks) {
+  const taskIds = new Set(
+    (Array.isArray(tasks) ? tasks : [])
+      .map((task) => normalizeGoogleCalendarSyncTask(task))
+      .map((task) => task.taskId)
+      .filter(Boolean)
+  );
+  return Array.from(new Map(
+    (Array.isArray(events) ? events : [])
+      .filter((event) => event && typeof event.id === "string" && event.id)
+      .filter((event) => {
+        const taskId = getGoogleCalendarEventTaskId(event);
+        return taskId && !taskIds.has(taskId);
+      })
+      .map((event) => [event.id, event])
+  ).values());
+}
+
 export function buildGoogleCalendarEventPayload(task, { calendarTimeZone = "" } = {}) {
   const normalized = normalizeGoogleCalendarSyncTask(task, {
     calendarId: task?.googleCalendar?.calendarId || "",

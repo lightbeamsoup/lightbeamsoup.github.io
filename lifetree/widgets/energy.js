@@ -357,7 +357,14 @@ export const energyWidgetDefinition = {
     });
   },
 
-  syncOwnedTasks({ widget, store }) {
+  syncOwnedTasks({ widget, store, helpers }) {
+    const reminderTimes = normalizeReminderTimes(widget.settings.reminderTimes, normalizeMaxCheckins(widget.settings.maxCheckins));
+    repairEnergyReminderTemplates(store.tasks, widget.id, {
+      reminderTimes,
+      today: typeof helpers?.todayString === "function" ? helpers.todayString() : toDateString(new Date()),
+      now: new Date(),
+      regenerateSeries: (templateId) => helpers?.regenerateSeries?.(templateId, { preserveClosed: true })
+    });
     syncEnergyTaskChain(store.tasks, widget.id);
   },
 
@@ -790,6 +797,71 @@ export function syncEnergyTaskChain(tasks, widgetId) {
   }
 }
 
+export function repairEnergyReminderTemplates(tasks, widgetId, {
+  reminderTimes = DEFAULT_ENERGY_REMINDER_TIMES,
+  today = toDateString(new Date()),
+  now = new Date(),
+  regenerateSeries = null
+} = {}) {
+  const normalizedReminderTimes = normalizeReminderTimes(reminderTimes);
+  const changedTemplateIds = [];
+
+  normalizedReminderTimes.forEach((time, index) => {
+    const ownerTaskKey = `energy-reminder-${index}`;
+    const template = tasks.find((task) => (
+      task.ownerWidgetId === widgetId
+      && task.ownerWidgetType === ENERGY_WIDGET_TYPE
+      && task.ownerTaskKey === ownerTaskKey
+      && !task.archived
+      && !task.templateId
+      && task.recurrence?.type !== "none"
+      && task.recurrence?.type !== "generated"
+      && task.recurrence?.type !== "archived-series"
+    ));
+
+    if (!template || template.status !== "open") {
+      return;
+    }
+
+    const expectedDate = computeInitialReminderDate(today, normalizedReminderTimes, index, now);
+    const currentDate = template.dueDate || template.startDate || "";
+    if (!currentDate || currentDate <= expectedDate) {
+      return;
+    }
+
+    let changed = false;
+    if (template.startDate !== expectedDate) {
+      template.startDate = expectedDate;
+      changed = true;
+    }
+    if (template.dueDate !== expectedDate) {
+      template.dueDate = expectedDate;
+      changed = true;
+    }
+    if (template.timeOfDay !== time) {
+      template.timeOfDay = time;
+      changed = true;
+    }
+    const nextNotBeforeAt = startOfDayTimestamp(expectedDate);
+    if (template.notBeforeAt !== nextNotBeforeAt) {
+      template.notBeforeAt = nextNotBeforeAt;
+      changed = true;
+    }
+
+    if (changed) {
+      changedTemplateIds.push(template.id);
+    }
+  });
+
+  if (typeof regenerateSeries === "function") {
+    for (const templateId of changedTemplateIds) {
+      regenerateSeries(templateId);
+    }
+  }
+
+  return changedTemplateIds;
+}
+
 export function findActiveEnergyCompletionTask(tasks, widgetId, mechanism = "energy-vote", at = Date.now()) {
   const now = at instanceof Date ? at : new Date(at);
   const sequence = listEnergyScheduledTasks(tasks, widgetId, { openOnly: false }).filter((task) => task.widgetCompletion?.mechanism === mechanism);
@@ -813,21 +885,23 @@ export function findActiveEnergyCompletionTask(tasks, widgetId, mechanism = "ene
 }
 
 function nextWidgetTaskDate(tasks, widgetId, ownerTaskKey, today, reminderTimes = DEFAULT_ENERGY_REMINDER_TIMES, reminderIndex = 0, now = new Date()) {
-  const latestScheduled = tasks
-    .filter((task) => task.ownerWidgetId === widgetId && task.ownerTaskKey === ownerTaskKey)
+  const earliestOpenScheduled = tasks
+    .filter((task) => (
+      task.ownerWidgetId === widgetId
+      && task.ownerTaskKey === ownerTaskKey
+      && !task.archived
+      && task.status === "open"
+    ))
     .map((task) => task.dueDate || task.startDate || "")
     .filter(Boolean)
     .sort()
-    .pop();
+    [0];
 
-  if (!latestScheduled || latestScheduled < today) {
-    if (!latestScheduled) {
-      return computeInitialReminderDate(today, reminderTimes, reminderIndex, now);
-    }
-    return today;
+  if (earliestOpenScheduled) {
+    return earliestOpenScheduled < today ? today : earliestOpenScheduled;
   }
 
-  return addDaysToDateString(latestScheduled, 1);
+  return computeInitialReminderDate(today, reminderTimes, reminderIndex, now);
 }
 
 export function computeInitialReminderDate(today, reminderTimes, reminderIndex, now = new Date()) {
