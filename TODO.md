@@ -14,10 +14,6 @@
 - Codebase: Continue splitting Travel Buddy into focused render, live-data, task-sync, and state modules.
 - Codebase: Split Workout Coach into focused render, chart, task-sync, and state modules.
 - Codebase: Split `lifetree/style.css` further from imported chunks into feature-owned stylesheets and shared utility layers.
-- Codebase: Consolidate repeated dark-mode card/chip/form styling into shared CSS utilities after the stylesheet split.
-- Codebase: Add a render-fallback smoke test so malformed widget data from Drive can fail per-widget without freezing the whole app.
-- Codebase: Add lightweight Lifetree store and widget schema docs.
-- Codebase: Add JSDoc typedefs for core store, task, and widget records.
 
 ## Recently completed
 
@@ -35,6 +31,10 @@
 
 ### Codebase Maintenance
 
+- 2026-04-04: Consolidate repeated dark-mode card, chip, and form styling into a shared CSS utility layer after the stylesheet split.
+- 2026-04-04: Add a widget render-fallback smoke test so malformed widget data can fail per-widget without freezing the shell.
+- 2026-04-04: Add lightweight Lifetree store and widget schema docs.
+- 2026-04-04: Add JSDoc typedefs for core store, task, and widget records.
 - 2026-04-03: Extract developer modal state, panel rendering, and developer point/tree tooling out of `app.js` into `lifetree/modules/developerController.js`.
 - 2026-04-03: Extract canopy detail modal state, canopy actions, and recurring bonus logic out of `app.js` into `lifetree/modules/canopyController.js`.
 - 2026-04-03: Extract widget shell/menu orchestration, pending-action flow, and widget autoskip helpers out of `app.js` into `lifetree/modules/widgetController.js`.

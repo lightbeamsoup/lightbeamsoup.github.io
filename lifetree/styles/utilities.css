@@ -1,0 +1,141 @@
+body[data-theme="dark"] {
+  --lt-dark-card-bg: rgba(15, 24, 38, 0.9);
+  --lt-dark-card-border: var(--line);
+  --lt-dark-card-shadow: var(--shadow);
+  --lt-dark-soft-card-bg: rgba(18, 28, 42, 0.94);
+  --lt-dark-soft-card-border: rgba(214, 228, 246, 0.14);
+  --lt-dark-subcard-bg: rgba(24, 35, 52, 0.88);
+  --lt-dark-subcard-border: rgba(214, 228, 246, 0.12);
+  --lt-dark-subcard-highlight: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+  --lt-dark-field-bg: rgba(24, 35, 52, 0.92);
+  --lt-dark-field-border: var(--line);
+  --lt-dark-field-highlight: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  --lt-dark-chip-fg: #f7fbff;
+}
+
+body[data-theme="dark"] :is(
+  .lt-dark-card,
+  .dashboard-hero,
+  .widget-menu,
+  .lifetree-core,
+  .composer,
+  .board,
+  .history-column,
+  .summary-card,
+  .task-card,
+  .sync-panel,
+  .canopy-widget,
+  .widget-slot,
+  .task-desk-panel,
+  .widget-detail-panel,
+  .history-entry,
+  .tree-harvest-hint,
+  .canopy-column,
+  .energy-detail-card,
+  .energy-settings-card,
+  .workout-recurrence-panel,
+  .workout-plan-item,
+  .workout-progress-card,
+  .workout-log-card,
+  .workout-entry-card,
+  .edit-panel,
+  .recurrence-panel,
+  .skip-panel,
+  .category-panel,
+  .dependency-panel,
+  .category-item,
+  .sync-meta-card,
+  .travel-custom-task-row,
+  .travel-shell-card,
+  .travel-board-card,
+  .travel-template-card,
+  .travel-packing-item,
+  .travel-overview-stat,
+  .travel-packing-category,
+  .travel-trip-form,
+  .travel-template-form
+) {
+  background: var(--lt-dark-card-bg);
+  border-color: var(--lt-dark-card-border);
+  box-shadow: var(--lt-dark-card-shadow);
+}
+
+body[data-theme="dark"] :is(
+  .lt-dark-soft-card,
+  .developer-panel,
+  .tree-style-summary,
+  .tree-style-section,
+  .tree-style-card,
+  .developer-point-item.source,
+  .tree-detail-stat,
+  .tree-detail-card,
+  .tree-detail-section,
+  .tree-detail-source-item,
+  .notifications-section,
+  .notifications-preview-card,
+  .notifications-preview-meta,
+  .notifications-history-item
+) {
+  background: var(--lt-dark-soft-card-bg);
+  border-color: var(--lt-dark-soft-card-border);
+  box-shadow: var(--lt-dark-card-shadow);
+}
+
+body[data-theme="dark"] :is(
+  .lt-dark-subcard,
+  .travel-shell-live-section,
+  .travel-shell-forecast-day,
+  .travel-packing-check
+) {
+  background: var(--lt-dark-subcard-bg);
+  border-color: var(--lt-dark-subcard-border);
+  box-shadow: var(--lt-dark-subcard-highlight);
+}
+
+body[data-theme="dark"] :is(
+  .lt-dark-field,
+  .hero-status-panel,
+  .widget-slot.empty .plus,
+  .widget-slot-choice,
+  .workout-detail-tab,
+  .weekday-picker label,
+  .canopy-task-main,
+  .canopy-task-icon,
+  .canopy-task-undo,
+  .canopy-group-card,
+  .canopy-group-star,
+  .canopy-group-toggle,
+  .energy-widget-level,
+  .ghost-button,
+  input,
+  textarea,
+  select
+) {
+  background: var(--lt-dark-field-bg);
+  color: var(--ink);
+  border-color: var(--lt-dark-field-border);
+}
+
+body[data-theme="dark"] :is(
+  .lt-dark-field-inset,
+  .widget-slot.filled,
+  .widget-slot-choice.available,
+  .energy-widget-level,
+  .canopy-task-main
+) {
+  box-shadow: var(--lt-dark-field-highlight);
+}
+
+body[data-theme="dark"] :is(
+  .lt-dark-chip,
+  .canopy-task .canopy-chip,
+  .canopy-group-task .canopy-chip,
+  .task-chip.category-chip,
+  .task-chip.points-chip,
+  .tree-style-bank-pill,
+  .tree-point-pill
+) {
+  background: color-mix(in srgb, var(--chip-color, var(--canopy-chip-color, #7dbf74)) 34%, rgba(10, 16, 26, 0.92));
+  border: 1px solid color-mix(in srgb, var(--chip-color, var(--canopy-chip-color, #7dbf74)) 58%, rgba(255, 255, 255, 0.12));
+  color: var(--lt-dark-chip-fg);
+}

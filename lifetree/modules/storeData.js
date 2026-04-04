@@ -1,3 +1,6 @@
+/** @typedef {import("../types.js").LifetreeStore} LifetreeStore */
+/** @typedef {import("../types.js").LifetreeTask} LifetreeTask */
+
 export function createStoreDataBindings(config = {}) {
   const {
     baseCategories = [],
@@ -232,6 +235,10 @@ export function createStoreDataBindings(config = {}) {
     };
   }
 
+  /**
+   * @param {Record<string, unknown>} task
+   * @returns {LifetreeTask}
+   */
   function normalizeTask(task) {
     const fallbackCategory = baseCategories.find((category) => category.key === (typeof task.categoryKey === "string" ? task.categoryKey : defaultCategoryKey))
       || baseCategories.find((category) => category.key === defaultCategoryKey)
@@ -448,6 +455,9 @@ export function createStoreDataBindings(config = {}) {
     return buildComparableValueSignature(sortObjectKeys(widget));
   }
 
+  /**
+   * @returns {LifetreeStore}
+   */
   function createEmptyStore() {
     const now = Date.now();
     const emptyStore = {
@@ -473,6 +483,10 @@ export function createStoreDataBindings(config = {}) {
     return emptyStore;
   }
 
+  /**
+   * @param {unknown} input
+   * @returns {LifetreeStore}
+   */
   function normalizeStore(input) {
     const source = input && typeof input === "object" ? input : {};
     const tasks = Array.isArray(source.tasks)

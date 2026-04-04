@@ -2,6 +2,8 @@ import { energyWidgetDefinition } from "./energy.js";
 import { travelWidgetDefinition } from "./travel.js";
 import { workoutWidgetDefinition } from "./workout.js";
 
+/** @typedef {import("../types.js").LifetreeWidgetRecord} LifetreeWidgetRecord */
+
 /**
  * Widget definitions describe one plugin type and keep its lifecycle in one place.
  * A definition may provide:
@@ -28,11 +30,22 @@ export function ownerWidgetLabel(task) {
   return getWidgetDefinition(task?.ownerWidgetType)?.ownerLabel || "";
 }
 
+/**
+ * @param {unknown} widget
+ * @param {Record<string, unknown>} helpers
+ * @returns {LifetreeWidgetRecord | null}
+ */
 export function normalizeWidgetRecord(widget, helpers) {
   const definition = getWidgetDefinition(widget?.type);
   return definition?.normalizeWidget ? definition.normalizeWidget(widget, helpers) : null;
 }
 
+/**
+ * @param {unknown} value
+ * @param {Record<string, unknown>} helpers
+ * @param {number} maxWidgets
+ * @returns {LifetreeWidgetRecord[]}
+ */
 export function normalizeWidgetList(value, helpers, maxWidgets) {
   if (!Array.isArray(value)) {
     return [];
@@ -56,6 +69,13 @@ export function normalizeWidgetList(value, helpers, maxWidgets) {
   return widgets;
 }
 
+/**
+ * @param {LifetreeWidgetRecord[]} [localWidgets=[]]
+ * @param {LifetreeWidgetRecord[]} [remoteWidgets=[]]
+ * @param {Record<string, unknown>} helpers
+ * @param {number} maxWidgets
+ * @returns {LifetreeWidgetRecord[]}
+ */
 export function mergeWidgetLists(localWidgets = [], remoteWidgets = [], helpers, maxWidgets) {
   const mergedByType = new Map();
 
@@ -80,6 +100,10 @@ function choosePreferredWidget(localWidget, remoteWidget) {
   return localLatest >= remoteLatest ? localWidget : remoteWidget;
 }
 
+/**
+ * @param {LifetreeWidgetRecord} widget
+ * @returns {number}
+ */
 export function getWidgetUpdatedAt(widget) {
   const definition = getWidgetDefinition(widget?.type);
   return definition?.getUpdatedAt ? definition.getUpdatedAt(widget) : (widget?.createdAt || 0);

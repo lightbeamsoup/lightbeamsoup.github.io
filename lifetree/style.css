@@ -1,4 +1,5 @@
 @import "./styles/theme.css";
+@import "./styles/utilities.css";
 @import "./styles/shell-canopy.css";
 @import "./styles/tree-core-notifications.css";
 @import "./styles/widgets.css";
