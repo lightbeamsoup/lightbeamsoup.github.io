@@ -178,6 +178,66 @@ test("energy reminder settings recover missing slots from open widget tasks", ()
   assert.deepEqual(widget.settings.reminderTimes, ["07:00", "12:00", "19:00"]);
 });
 
+test("energy ensureTasks recreates recurring reminder templates when stale non-template tasks occupy a slot key", () => {
+  const widget = {
+    id: "energy-widget",
+    type: "energy",
+    settings: {
+      reminderTimes: ["07:00", "12:00", "19:00"],
+      maxCheckins: 12
+    },
+    data: {
+      entries: []
+    }
+  };
+  const store = {
+    tasks: [
+      {
+        id: "stale-closed",
+        templateId: "",
+        occurrenceIndex: 0,
+        ownerWidgetId: widget.id,
+        ownerWidgetType: "energy",
+        ownerTaskKey: "energy-reminder-0",
+        widgetTaskKind: "energy-checkin",
+        status: "done",
+        archived: false,
+        startDate: "2026-04-04",
+        dueDate: "2026-04-04",
+        timeOfDay: "07:00",
+        recurrence: { type: "none" },
+        history: [{ id: "h1", type: "completed", at: 1 }]
+      }
+    ]
+  };
+  const regenerated = [];
+  let nextId = 0;
+
+  energyWidgetDefinition.ensureTasks({
+    widget,
+    store,
+    helpers: {
+      createId: () => `new-template-${nextId++}`,
+      todayString: () => "2026-04-04",
+      regenerateSeries: (templateId) => {
+        regenerated.push(templateId);
+      },
+      resolveCategorySnapshot: () => ({
+        key: "health",
+        label: "Health",
+        color: "#77aa77"
+      })
+    }
+  });
+
+  const templates = store.tasks.filter((task) => !task.templateId && task.recurrence?.type === "daily");
+  assert.equal(templates.length, 3);
+  assert.ok(templates.some((task) => task.ownerTaskKey === "energy-reminder-0"));
+  assert.ok(templates.some((task) => task.ownerTaskKey === "energy-reminder-1"));
+  assert.ok(templates.some((task) => task.ownerTaskKey === "energy-reminder-2"));
+  assert.equal(regenerated.length, 3);
+});
+
 test("energy initial reminder date advances the current slot after its scheduled time has passed", () => {
   const dueDate = computeInitialReminderDate(
     "2026-04-04",

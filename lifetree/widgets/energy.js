@@ -332,33 +332,12 @@ export const energyWidgetDefinition = {
 
   ensureTasks({ widget, store, helpers }) {
     const reminderTimes = reconcileEnergyReminderSettings(widget, store.tasks);
-
-    reminderTimes.forEach((time, index) => {
-      const ownerTaskKey = `energy-reminder-${index}`;
-      const existing = store.tasks.find(
-        (task) => task.ownerWidgetId === widget.id && task.ownerTaskKey === ownerTaskKey && !task.archived && !task.templateId
-      );
-
-      if (existing) {
-        return;
-      }
-
-      const task = buildReminderTemplate({
-        widget,
-        helpers,
-        store,
-        reminderTimes,
-        index,
-        time
-      });
-
-      store.tasks.unshift(task);
-      helpers.regenerateSeries(task.id, { preserveClosed: false });
-    });
+    ensureEnergyReminderTemplates(widget, store, helpers, reminderTimes, { preserveClosed: false });
   },
 
   syncOwnedTasks({ widget, store, helpers }) {
     const reminderTimes = reconcileEnergyReminderSettings(widget, store.tasks);
+    ensureEnergyReminderTemplates(widget, store, helpers, reminderTimes, { preserveClosed: true });
     repairEnergyReminderTemplates(store.tasks, widget.id, {
       reminderTimes,
       today: typeof helpers?.todayString === "function" ? helpers.todayString() : toDateString(new Date()),
@@ -553,6 +532,29 @@ function buildReminderTemplate({ widget, helpers, store, reminderTimes, index, t
     },
     history: []
   };
+}
+
+function ensureEnergyReminderTemplates(widget, store, helpers, reminderTimes, { preserveClosed = true } = {}) {
+  reminderTimes.forEach((time, index) => {
+    const ownerTaskKey = `energy-reminder-${index}`;
+    const existing = findActiveEnergyReminderTemplate(store.tasks, widget.id, ownerTaskKey);
+
+    if (existing) {
+      return;
+    }
+
+    const task = buildReminderTemplate({
+      widget,
+      helpers,
+      store,
+      reminderTimes,
+      index,
+      time
+    });
+
+    store.tasks.unshift(task);
+    helpers.regenerateSeries(task.id, { preserveClosed });
+  });
 }
 
 function stageEnergyVote(widget, level, mode, helpers) {
@@ -856,16 +858,7 @@ export function repairEnergyReminderTemplates(tasks, widgetId, {
 
   normalizedReminderTimes.forEach((time, index) => {
     const ownerTaskKey = `energy-reminder-${index}`;
-    const template = tasks.find((task) => (
-      task.ownerWidgetId === widgetId
-      && task.ownerWidgetType === ENERGY_WIDGET_TYPE
-      && task.ownerTaskKey === ownerTaskKey
-      && !task.archived
-      && !task.templateId
-      && task.recurrence?.type !== "none"
-      && task.recurrence?.type !== "generated"
-      && task.recurrence?.type !== "archived-series"
-    ));
+    const template = findActiveEnergyReminderTemplate(tasks, widgetId, ownerTaskKey);
 
     if (!template || template.status !== "open") {
       return;
@@ -908,6 +901,19 @@ export function repairEnergyReminderTemplates(tasks, widgetId, {
   }
 
   return changedTemplateIds;
+}
+
+function findActiveEnergyReminderTemplate(tasks, widgetId, ownerTaskKey) {
+  return (Array.isArray(tasks) ? tasks : []).find((task) => (
+    task?.ownerWidgetId === widgetId
+    && task?.ownerWidgetType === ENERGY_WIDGET_TYPE
+    && task?.ownerTaskKey === ownerTaskKey
+    && task?.archived !== true
+    && !task?.templateId
+    && task?.recurrence?.type !== "none"
+    && task?.recurrence?.type !== "generated"
+    && task?.recurrence?.type !== "archived-series"
+  )) || null;
 }
 
 export function findActiveEnergyCompletionTask(tasks, widgetId, mechanism = "energy-vote", at = Date.now()) {
