@@ -5,11 +5,22 @@
 ### Travel Buddy
 
 - Widgets: Create a Hydration widget that tracks ounces consumed and grows a plant as you water it.
-- Integrations: Add Google Calendar integration.
 - Integrations: Add Apple Fitness integration.
 - Notifications: Move auth/session storage into a shared backend before re-enabling the dedicated Railway worker.
 - Canopy: Decide how dailies should be marked complete directly from the shell view.
 - Tasks: Add task snoozing.
+
+### Integrations
+
+- Google Calendar: Bootstrap and persist a dedicated `Lifetree` calendar per user.
+- Google Calendar: Define and normalize the local `integrations.googleCalendar` sync state and per-task event linkage fields.
+- Google Calendar: Export scheduled one-off tasks and recurring series into the `Lifetree` calendar as the schedule source of truth.
+- Google Calendar: Store Lifetree machine metadata in Google event `extendedProperties.private` while keeping history/points/widget state local.
+- Google Calendar: Read Google event edits back into Lifetree and prefer Google for schedule fields while preserving local-only state.
+- Google Calendar: Mirror completion, skip, and restore status into event description/private metadata without treating Calendar as the audit log.
+- Google Calendar: Map recurring Lifetree series to recurring Google events plus exception handling for edited instances.
+- Google Calendar: Reconcile deletions, offline edits, and Drive/local/Google conflicts across schedule-linked items.
+- Google Calendar: Add UI for calendar connect status, last sync state, and per-task/event linkage diagnostics.
 
 ### Codebase Maintenance
 

@@ -1,0 +1,216 @@
+# Lifetree Google Calendar Integration Schema
+
+## Goal
+
+Use a dedicated Google Calendar named `Lifetree` as the source of truth for scheduling:
+
+- event date/time
+- recurrence
+- reminder timing
+- location and travel-facing schedule details
+
+Lifetree remains the source of truth for:
+
+- completion history
+- points and tree state
+- widget ownership and widget-specific behavior
+- merge/deletion markers and local/Drive sync state
+
+## High-level model
+
+Each scheduled Lifetree item should have:
+
+1. A lightweight local task record in Lifetree
+2. A linked Google Calendar event in the dedicated `Lifetree` calendar
+
+The Google event owns the schedule.
+The Lifetree task owns local-only behavior and history.
+
+## Store schema
+
+Add a new top-level integration block:
+
+```js
+store.integrations = {
+  googleCalendar: {
+    connected: false,
+    calendarId: "",
+    calendarSummary: "Lifetree",
+    calendarTimeZone: "",
+    lastCalendarSyncAt: 0,
+    lastCalendarSyncStatus: "", // idle | success | error
+    lastCalendarSyncMessage: "",
+    lastCalendarSyncToken: "",
+    schemaVersion: 1
+  }
+};
+```
+
+Notes:
+
+- `calendarId` is the stable Google calendar ID for the dedicated Lifetree calendar.
+- `lastCalendarSyncToken` is for incremental event sync if the implementation uses Google sync tokens.
+- This block should be normalized with safe defaults so older stores still load.
+
+## Local task linkage schema
+
+Scheduled tasks should keep a lightweight Google linkage block:
+
+```js
+task.googleCalendar = {
+  calendarId: "",
+  eventId: "",
+  recurringEventId: "",
+  source: "lifetree", // reserved for future imports
+  linkedAt: 0,
+  lastSeenGoogleUpdatedAt: "",
+  scheduleFingerprint: "",
+  statusMirroredAt: 0
+};
+```
+
+Notes:
+
+- `eventId` is the concrete Google event ID for a one-off event or a recurring master.
+- `recurringEventId` is populated for Google instance overrides when applicable.
+- `lastSeenGoogleUpdatedAt` mirrors Google’s event `updated` timestamp for conflict checks.
+- `scheduleFingerprint` is a local comparable signature for schedule-only fields.
+- `statusMirroredAt` tracks when completion/skip metadata was last written back to Google.
+
+Unsheduled tasks should omit `task.googleCalendar` entirely or normalize it to empty values.
+
+## Google event schema
+
+### Google-native fields
+
+Use standard Google event fields for:
+
+- `summary`
+- `description`
+- `location`
+- `start`
+- `end`
+- `recurrence`
+- `reminders`
+- `transparency`
+- `visibility`
+
+### Extended private properties
+
+Use `extendedProperties.private` for machine-readable Lifetree metadata:
+
+```json
+{
+  "lifetreeTaskId": "task-or-template-id",
+  "lifetreeTaskKind": "one-off|recurring-master|generated-instance",
+  "lifetreeWidgetType": "travel|workout|energy|",
+  "lifetreeWidgetTaskKind": "flight-checkin|travel-pack|workout-session|",
+  "lifetreeCategoryKey": "travel",
+  "lifetreeImportance": "medium",
+  "lifetreeLength": "medium",
+  "lifetreeLateGraceMinutes": "15",
+  "lifetreeSchemaVersion": "1"
+}
+```
+
+Rules:
+
+- keep values string-serializable
+- only store data needed to reconstruct schedule-linked behavior
+- do not store full history, points, or large widget payloads here
+
+## Event description convention
+
+Event descriptions should remain human-readable. Append a short Lifetree footer, for example:
+
+```text
+Created by Lifetree.
+
+Lifetree status: completed Apr 4, 7:12 AM
+Lifetree widget: Travel Buddy
+Lifetree task ID: abc123
+```
+
+Rules:
+
+- descriptions may contain current status
+- descriptions should not be treated as the canonical history log
+- detailed audit history stays only in Lifetree
+
+## Mapping rules
+
+### One-off tasks
+
+- one Lifetree task -> one Google event
+- Google schedule edits update the local task schedule fields
+- local completion/skip updates event description/private metadata only
+
+### Recurring series
+
+- one Lifetree template/series -> one recurring Google event
+- edited single occurrences become Google instance overrides
+- Lifetree should keep enough local linkage to map exceptions back to the parent series
+
+### Widget-owned scheduled tasks
+
+Widget-owned tasks still sync through the same calendar:
+
+- Travel flight check-in
+- Travel packing task
+- Workout scheduled sessions
+- Energy scheduled check-ins
+
+The widget association stays local and is mirrored minimally in `extendedProperties.private`.
+
+## Conflict policy
+
+Recommended precedence:
+
+- Google Calendar wins for schedule fields:
+  - start/end
+  - recurrence
+  - reminders
+  - location
+- Lifetree wins for local-only fields:
+  - history
+  - points
+  - widget-local state
+  - deletion markers
+  - Drive/local sync metadata
+
+If both sides changed:
+
+1. compare Google `updated` vs local `lastSeenGoogleUpdatedAt`
+2. if only schedule changed in Google, apply Google schedule locally
+3. if only status/history changed locally, mirror status back to Google
+4. if both changed in overlapping ways, prefer Google for schedule and preserve local history/state
+
+## Deletion rules
+
+- deleting a scheduled Lifetree task should delete or cancel the linked Google event
+- deleting the Google event should mark the local linkage stale and prompt or repair according to Lifetree policy
+- if a local task is completed/skipped and later archived, the Google event may remain as past calendar history unless explicitly removed
+
+## Sync phases
+
+Implementation order should follow this shape:
+
+1. create/find the dedicated `Lifetree` calendar
+2. store and normalize `store.integrations.googleCalendar`
+3. export scheduled tasks and series one-way to Google
+4. record `task.googleCalendar` linkage locally
+5. support inbound Google edits for schedule fields
+6. mirror completion/skip/restore status back into Google metadata
+7. add recurring exception handling and conflict diagnostics
+
+## Non-goals
+
+Google Calendar should not store:
+
+- point ledger history
+- tree state
+- full task audit history
+- full widget payloads
+- Drive merge/deletion bookkeeping
+
+Those remain local to Lifetree and Drive sync.
