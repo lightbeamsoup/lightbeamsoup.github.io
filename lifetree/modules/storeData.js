@@ -987,7 +987,7 @@ export function createStoreDataBindings(config = {}) {
       ...comparable,
       integrations: {},
       tasks: comparable.tasks.map((task) => {
-        const { googleCalendar, createdAt, ...rest } = task;
+        const { googleCalendar, createdAt, updatedAt, ...rest } = task;
         return rest;
       }),
       widgets: comparable.widgets.map((widget) => {

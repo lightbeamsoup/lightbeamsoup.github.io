@@ -355,3 +355,52 @@ test("user content fingerprint ignores calendar linkage and travel live snapshot
   assert.notEqual(bindings.computeStoreFingerprint(baseStore), bindings.computeStoreFingerprint(metadataOnlyStore));
   assert.equal(bindings.computeUserContentFingerprint(baseStore), bindings.computeUserContentFingerprint(metadataOnlyStore));
 });
+
+test("user content fingerprint ignores sync-only task updatedAt churn", () => {
+  const bindings = createStoreDataTestBindings();
+  const baseStore = bindings.normalizeStore({
+    tasks: [
+      {
+        id: "task-1",
+        name: "Energy check-in",
+        dueDate: "2026-04-05",
+        startDate: "2026-04-05",
+        timeOfDay: "07:00",
+        updatedAt: 100,
+        recurrence: {
+          type: "daily",
+          interval: 1,
+          weekday: 0,
+          day: 1,
+          ordinal: "first",
+          endDate: "",
+          count: null,
+          forever: true
+        },
+        googleCalendar: {
+          calendarId: "lifetree-cal",
+          eventId: "event-a",
+          scheduleFingerprint: "fingerprint-a",
+          lastSeenGoogleUpdatedAt: "2026-04-04T18:00:00.000Z"
+        }
+      }
+    ]
+  });
+  const metadataOnlyStore = bindings.normalizeStore({
+    ...baseStore,
+    tasks: [
+      {
+        ...baseStore.tasks[0],
+        updatedAt: 500,
+        googleCalendar: {
+          ...baseStore.tasks[0].googleCalendar,
+          lastSeenGoogleUpdatedAt: "2026-04-04T19:00:00.000Z",
+          statusMirroredAt: 500
+        }
+      }
+    ]
+  });
+
+  assert.notEqual(bindings.computeStoreFingerprint(baseStore), bindings.computeStoreFingerprint(metadataOnlyStore));
+  assert.equal(bindings.computeUserContentFingerprint(baseStore), bindings.computeUserContentFingerprint(metadataOnlyStore));
+});
