@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   energyWidgetDefinition,
+  reconcileEnergyReminderSettings,
   repairEnergyReminderTemplates
 } from "./widgets/energy.js";
 
@@ -123,4 +124,55 @@ test("energy reminder repair pulls future-drifted templates back to the current 
   assert.equal(tasks[0].timeOfDay, "07:00");
   assert.ok(tasks[0].notBeforeAt > 0);
   assert.deepEqual(regenerated, ["energy-template"]);
+});
+
+test("energy reminder settings recover missing slots from open widget tasks", () => {
+  const widget = {
+    id: "energy-widget",
+    type: "energy",
+    settings: {
+      reminderTimes: ["19:00"],
+      maxCheckins: 12
+    },
+    data: {
+      entries: []
+    }
+  };
+  const tasks = [
+    {
+      id: "energy-0",
+      ownerWidgetId: widget.id,
+      ownerWidgetType: "energy",
+      ownerTaskKey: "energy-reminder-0",
+      templateId: "generated-0",
+      timeOfDay: "07:00",
+      status: "open",
+      archived: false
+    },
+    {
+      id: "energy-1",
+      ownerWidgetId: widget.id,
+      ownerWidgetType: "energy",
+      ownerTaskKey: "energy-reminder-1",
+      templateId: "generated-1",
+      timeOfDay: "12:00",
+      status: "open",
+      archived: false
+    },
+    {
+      id: "energy-2",
+      ownerWidgetId: widget.id,
+      ownerWidgetType: "energy",
+      ownerTaskKey: "energy-reminder-2",
+      templateId: "",
+      timeOfDay: "19:00",
+      status: "open",
+      archived: false
+    }
+  ];
+
+  const reminderTimes = reconcileEnergyReminderSettings(widget, tasks);
+
+  assert.deepEqual(reminderTimes, ["07:00", "12:00", "19:00"]);
+  assert.deepEqual(widget.settings.reminderTimes, ["07:00", "12:00", "19:00"]);
 });

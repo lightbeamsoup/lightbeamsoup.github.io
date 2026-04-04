@@ -854,6 +854,7 @@ export function createNotificationSyncController({
 
       const store = getStore();
       let appliedCount = 0;
+      let checkedCount = 0;
       let pulledCount = 0;
       let pushedCount = 0;
       let statusMirroredCount = 0;
@@ -905,11 +906,14 @@ export function createNotificationSyncController({
           Object.assign(task, nextTask);
           pulledCount += 1;
         } else {
-          task.updatedAt = now;
           if (result.direction === "push" || result.direction === "create") {
+            task.updatedAt = now;
             pushedCount += 1;
           } else if (result.direction === "status") {
+            task.updatedAt = now;
             statusMirroredCount += 1;
+          } else if (result.direction === "noop") {
+            checkedCount += 1;
           }
         }
         if (result.relinked === true) {
@@ -961,14 +965,15 @@ export function createNotificationSyncController({
         mirroredToDrive = driveResult?.success === true;
       }
       renderSyncMeta();
+      const changedCount = pulledCount + pushedCount + statusMirroredCount;
       if (errorCount + deletionErrorCount + orphanDeletionErrorCount > 0) {
         const firstError = results.find((entry) => entry?.ok === false)?.error
           || payload.deletionResults?.find((entry) => entry?.ok === false)?.error
           || payload.orphanDeletionResults?.find((entry) => entry?.ok === false)?.error
           || "Calendar sync hit one or more Google errors.";
-        setSyncStatus(`Calendar sync updated ${appliedCount} task${appliedCount === 1 ? "" : "s"} (${pulledCount} pulled, ${pushedCount} pushed, ${statusMirroredCount} status mirrored, ${relinkedCount} relinked) and processed ${processedDeletionCount} deletion${processedDeletionCount === 1 ? "" : "s"} (${deletedEventCount} Google event${deletedEventCount === 1 ? "" : "s"} removed, ${duplicateDeletedCount} duplicate${duplicateDeletedCount === 1 ? "" : "s"} cleaned up, ${orphanDeletedCount} orphan${orphanDeletedCount === 1 ? "" : "s"} removed), but ${errorCount + deletionErrorCount + orphanDeletionErrorCount} failed: ${firstError}`, "error");
+        setSyncStatus(`Calendar sync checked ${appliedCount} task${appliedCount === 1 ? "" : "s"} (${changedCount} changed: ${pulledCount} pulled, ${pushedCount} pushed, ${statusMirroredCount} status mirrored; ${checkedCount} already up to date; ${relinkedCount} relinked) and processed ${processedDeletionCount} deletion${processedDeletionCount === 1 ? "" : "s"} (${deletedEventCount} Google event${deletedEventCount === 1 ? "" : "s"} removed, ${duplicateDeletedCount} duplicate${duplicateDeletedCount === 1 ? "" : "s"} cleaned up, ${orphanDeletedCount} orphan${orphanDeletedCount === 1 ? "" : "s"} removed), but ${errorCount + deletionErrorCount + orphanDeletionErrorCount} failed: ${firstError}`, "error");
       } else {
-        setSyncStatus(`Calendar sync updated ${appliedCount} task${appliedCount === 1 ? "" : "s"} (${pulledCount} pulled, ${pushedCount} pushed, ${statusMirroredCount} status mirrored, ${relinkedCount} relinked) and processed ${processedDeletionCount} deletion${processedDeletionCount === 1 ? "" : "s"} (${deletedEventCount} Google event${deletedEventCount === 1 ? "" : "s"} removed, ${duplicateDeletedCount} duplicate${duplicateDeletedCount === 1 ? "" : "s"} cleaned up, ${orphanDeletedCount} orphan${orphanDeletedCount === 1 ? "" : "s"} removed) against ${nextCalendarSummary}.${mirroredToDrive ? " Mirrored the updated calendar state to Drive." : " Save to Drive if you want the links and pulled edits on other devices."}`, "success");
+        setSyncStatus(`Calendar sync checked ${appliedCount} task${appliedCount === 1 ? "" : "s"} (${changedCount} changed: ${pulledCount} pulled, ${pushedCount} pushed, ${statusMirroredCount} status mirrored; ${checkedCount} already up to date; ${relinkedCount} relinked) and processed ${processedDeletionCount} deletion${processedDeletionCount === 1 ? "" : "s"} (${deletedEventCount} Google event${deletedEventCount === 1 ? "" : "s"} removed, ${duplicateDeletedCount} duplicate${duplicateDeletedCount === 1 ? "" : "s"} cleaned up, ${orphanDeletedCount} orphan${orphanDeletedCount === 1 ? "" : "s"} removed) against ${nextCalendarSummary}.${mirroredToDrive ? " Mirrored the updated calendar state to Drive." : " Save to Drive if you want the links and pulled edits on other devices."}`, "success");
       }
     } catch (error) {
       const message = String(error?.message || "Calendar schedule sync failed");

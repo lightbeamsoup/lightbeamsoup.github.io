@@ -331,7 +331,7 @@ export const energyWidgetDefinition = {
   },
 
   ensureTasks({ widget, store, helpers }) {
-    const reminderTimes = normalizeReminderTimes(widget.settings.reminderTimes, normalizeMaxCheckins(widget.settings.maxCheckins));
+    const reminderTimes = reconcileEnergyReminderSettings(widget, store.tasks);
 
     reminderTimes.forEach((time, index) => {
       const ownerTaskKey = `energy-reminder-${index}`;
@@ -358,7 +358,7 @@ export const energyWidgetDefinition = {
   },
 
   syncOwnedTasks({ widget, store, helpers }) {
-    const reminderTimes = normalizeReminderTimes(widget.settings.reminderTimes, normalizeMaxCheckins(widget.settings.maxCheckins));
+    const reminderTimes = reconcileEnergyReminderSettings(widget, store.tasks);
     repairEnergyReminderTemplates(store.tasks, widget.id, {
       reminderTimes,
       today: typeof helpers?.todayString === "function" ? helpers.todayString() : toDateString(new Date()),
@@ -415,6 +415,54 @@ function normalizeReminderTimes(value, maxCheckins = DEFAULT_MAX_CHECKINS) {
     .sort()
     .slice(0, maxCheckins);
   return normalized.length > 0 ? normalized : [...DEFAULT_ENERGY_REMINDER_TIMES];
+}
+
+export function reconcileEnergyReminderSettings(widget, tasks) {
+  const maxCheckins = normalizeMaxCheckins(widget?.settings?.maxCheckins);
+  const configuredReminderTimes = normalizeReminderTimes(widget?.settings?.reminderTimes, maxCheckins);
+  const recoveredReminderTimes = collectEnergyReminderTimesFromTasks(tasks, widget?.id);
+
+  if (recoveredReminderTimes.length <= configuredReminderTimes.length) {
+    return configuredReminderTimes;
+  }
+
+  const nextMaxCheckins = Math.max(maxCheckins, recoveredReminderTimes.length);
+  const nextReminderTimes = normalizeReminderTimes(recoveredReminderTimes, nextMaxCheckins);
+  if (widget?.settings && nextReminderTimes.length > configuredReminderTimes.length) {
+    widget.settings.maxCheckins = nextMaxCheckins;
+    widget.settings.reminderTimes = [...nextReminderTimes];
+  }
+  return nextReminderTimes;
+}
+
+function collectEnergyReminderTimesFromTasks(tasks, widgetId) {
+  if (!widgetId) {
+    return [];
+  }
+  const bySlotIndex = new Map();
+  for (const task of Array.isArray(tasks) ? tasks : []) {
+    if (
+      !task
+      || task.archived === true
+      || task.ownerWidgetId !== widgetId
+      || task.ownerWidgetType !== ENERGY_WIDGET_TYPE
+      || task.status !== "open"
+    ) {
+      continue;
+    }
+    const slotIndex = parseReminderIndex(task.ownerTaskKey);
+    const timeOfDay = typeof task.timeOfDay === "string" ? task.timeOfDay.trim() : "";
+    if (slotIndex < 0 || !/^\d{2}:\d{2}$/.test(timeOfDay)) {
+      continue;
+    }
+    const existing = bySlotIndex.get(slotIndex) || null;
+    if (!existing || task.templateId === "" || task.templateId == null) {
+      bySlotIndex.set(slotIndex, timeOfDay);
+    }
+  }
+  return Array.from(bySlotIndex.entries())
+    .sort((left, right) => left[0] - right[0])
+    .map(([, timeOfDay]) => timeOfDay);
 }
 
 function normalizeEnergyEntries(value) {
