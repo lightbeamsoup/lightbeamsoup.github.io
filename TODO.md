@@ -10,11 +10,6 @@
 - Canopy: Decide how dailies should be marked complete directly from the shell view.
 - Tasks: Add task snoozing.
 
-### Integrations
-
-- Google Calendar: Finish recurring exception handling for edited instances on linked Google Calendar series.
-- Google Calendar: Reconcile remote deletions, offline edits, and Drive/local/Google conflicts across schedule-linked items.
-
 ### Codebase Maintenance
 
 - Codebase: Continue extracting `app.js` orchestration into smaller feature modules.
@@ -71,6 +66,7 @@
 
 ### Integrations
 
+- 2026-04-04: Reconcile remote Google Calendar deletions against local and Drive state so missing linked events delete locally when unsynced state is clean, but recreate from local changes when offline edits still need to win.
 - 2026-04-04: Recompute Drive user-content fingerprints from normalized content, ignore sync metadata in conflict detection, and mirror successful calendar sync updates back to Drive when safe.
 - 2026-04-04: Preserve Google recurring instance overrides during diagnostics and manual sync, and pull matching override schedules into generated Lifetree occurrences when they can be mapped safely.
 - 2026-04-04: Repair drifted Energy recurring masters during widget sync and remove orphaned Lifetree-tagged Google Calendar events during manual schedule sync.

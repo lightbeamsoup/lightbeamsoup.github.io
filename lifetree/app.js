@@ -1109,6 +1109,7 @@ notificationSyncController = createNotificationSyncController({
   computeStoreFingerprint,
   computeUserContentFingerprint,
   createId,
+  addDeletionMarker,
   escapeHtml,
   setSyncStatus,
   renderDeveloperPanel: () => developerController?.renderDeveloperPanel(),

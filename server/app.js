@@ -33,6 +33,7 @@ import {
   parseGoogleCalendarEventStart,
   splitGoogleCalendarTaskEvents
 } from "../lifetree/modules/googleCalendarTasks.js";
+import { shouldTreatMissingLinkedGoogleCalendarEventAsRemoteDeletion } from "../lifetree/modules/googleCalendarConflict.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -392,6 +393,10 @@ app.post("/api/google-calendar/sync-schedule", async (req, res) => {
         const canonicalEvent = resolved.canonicalEvent;
         const syncEventId = canonicalEvent?.id || (resolved.linkedEventMissing ? "" : linkedEventId);
         const relinked = Boolean(canonicalEvent && canonicalEvent.id !== linkedEventId);
+        const remoteDeleteCandidate = shouldTreatMissingLinkedGoogleCalendarEventAsRemoteDeletion(task, {
+          linkedEventMissing: resolved.linkedEventMissing,
+          canonicalEvent
+        });
         if (canonicalEvent && (
           relinked
           || !linkedEventId
@@ -432,6 +437,28 @@ app.post("/api/google-calendar/sync-schedule", async (req, res) => {
             instanceOverrides,
             relinked,
             duplicateDeletedCount: resolved.duplicateDeletedEventIds.length
+          });
+          continue;
+        }
+
+        if (remoteDeleteCandidate) {
+          results.push({
+            taskId: task.taskId,
+            ok: true,
+            direction: "remote-delete",
+            calendarId,
+            eventId: "",
+            recurringEventId: "",
+            htmlLink: "",
+            linkedAt: task.googleCalendar.linkedAt || Date.now(),
+            lastSeenGoogleUpdatedAt: "",
+            scheduleFingerprint: task.scheduleFingerprint,
+            statusMirroredAt: 0,
+            instanceOverrides: [],
+            relinked,
+            duplicateDeletedCount: resolved.duplicateDeletedEventIds.length,
+            remoteDeleted: true,
+            recreatedAfterRemoteDelete: false
           });
           continue;
         }
@@ -497,7 +524,9 @@ app.post("/api/google-calendar/sync-schedule", async (req, res) => {
           statusMirroredAt: task.statusMirrorVersion || 0,
           instanceOverrides: [],
           relinked,
-          duplicateDeletedCount: resolved.duplicateDeletedEventIds.length
+          duplicateDeletedCount: resolved.duplicateDeletedEventIds.length,
+          remoteDeleted: false,
+          recreatedAfterRemoteDelete: Boolean(resolved.linkedEventMissing && linkedEventId && !canonicalEvent)
         });
       } catch (error) {
         results.push({
@@ -576,6 +605,8 @@ app.post("/api/google-calendar/diagnostics", async (req, res) => {
     let duplicateEventCount = 0;
     let instanceOverrideTaskCount = 0;
     let instanceOverrideEventCount = 0;
+    let remoteDeleteCandidateCount = 0;
+    let localRecreateCandidateCount = 0;
 
     for (const task of tasks) {
       const linkedEventId = task.googleCalendar.eventId || "";
@@ -586,6 +617,16 @@ app.post("/api/google-calendar/diagnostics", async (req, res) => {
       const isRecurring = String(task.recurrence?.type || "none") !== "none";
       const relinkCandidate = Boolean(canonicalEvent && canonicalEvent.id !== linkedEventId);
       const linkedEventExists = Boolean(!linkedEventId || canonicalEvent?.id === linkedEventId);
+      const remoteDeleteCandidate = shouldTreatMissingLinkedGoogleCalendarEventAsRemoteDeletion(task, {
+        linkedEventMissing: resolved.linkedEventMissing,
+        canonicalEvent
+      });
+      const localRecreateCandidate = Boolean(
+        resolved.linkedEventMissing
+        && linkedEventId
+        && !canonicalEvent
+        && !remoteDeleteCandidate
+      );
       const duplicateEventIds = Array.isArray(resolved.duplicateEventIds) ? resolved.duplicateEventIds : [];
       const instanceOverrideEvents = Array.isArray(resolved.instanceOverrideEvents) ? resolved.instanceOverrideEvents : [];
       if (linkedEventId) {
@@ -610,6 +651,12 @@ app.post("/api/google-calendar/diagnostics", async (req, res) => {
         instanceOverrideTaskCount += 1;
         instanceOverrideEventCount += instanceOverrideEvents.length;
       }
+      if (remoteDeleteCandidate) {
+        remoteDeleteCandidateCount += 1;
+      }
+      if (localRecreateCandidate) {
+        localRecreateCandidateCount += 1;
+      }
 
       taskDiagnostics.push({
         taskId: task.taskId,
@@ -626,6 +673,8 @@ app.post("/api/google-calendar/diagnostics", async (req, res) => {
         matchingEventCount: Array.isArray(resolved.matchingEvents) ? resolved.matchingEvents.length : 0,
         canonicalEventId: canonicalEvent?.id || "",
         relinkCandidate,
+        remoteDeleteCandidate,
+        localRecreateCandidate,
         duplicateEventIds,
         instanceOverrideCount: instanceOverrideEvents.length,
         needsPush: task.needsPush === true,
@@ -677,6 +726,8 @@ app.post("/api/google-calendar/diagnostics", async (req, res) => {
         duplicateEventCount,
         instanceOverrideTaskCount,
         instanceOverrideEventCount,
+        remoteDeleteCandidateCount,
+        localRecreateCandidateCount,
         orphanEventCount: orphanEvents.length
       },
       orphanEvents: orphanEvents.map((event) => ({

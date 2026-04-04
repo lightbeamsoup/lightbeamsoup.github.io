@@ -215,7 +215,9 @@ If both sides changed:
 1. compare Google `updated` vs local `lastSeenGoogleUpdatedAt`
 2. if only schedule changed in Google, apply Google schedule locally
 3. if only status/history changed locally, mirror status back to Google
-4. if both changed in overlapping ways, prefer Google for schedule and preserve local history/state
+4. if Google deleted the linked event and Lifetree has no unsynced local schedule/status changes, the remote delete wins locally
+5. if Google deleted the linked event but Lifetree still has unsynced local schedule/status changes, recreate the event from Lifetree
+6. if both changed in overlapping ways, prefer Google for schedule and preserve local history/state
 
 ## Deletion rules
 
@@ -223,7 +225,9 @@ If both sides changed:
 - local deletions should enqueue `pendingDeletions` items in `store.integrations.googleCalendar` so manual calendar sync can remove the linked Google events even across devices
 - if a linked event ID goes stale, Lifetree should first try to relink by `lifetreeTaskId` before creating a replacement Google event
 - duplicate Google events with the same `lifetreeTaskId` should be deduped during manual sync, keeping one canonical event link
-- deleting the Google event should mark the local linkage stale and prompt or repair according to Lifetree policy
+- deleting the Google event should not automatically recreate it
+- when Google deleted the linked event and Lifetree has no unsynced local changes for that task, the local task/series should be removed or archived locally and saved back to Drive
+- when Google deleted the linked event but Lifetree still has unsynced local changes, manual sync should recreate the Google event and preserve the local schedule
 - if a local task is completed/skipped and later archived, the Google event may remain as past calendar history unless explicitly removed
 
 ## Sync phases

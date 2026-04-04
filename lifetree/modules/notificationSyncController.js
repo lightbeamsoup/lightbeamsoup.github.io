@@ -1,3 +1,5 @@
+import { applyRemoteDeletedGoogleCalendarTask } from "./googleCalendarConflict.js";
+
 export function createNotificationSyncController({
   apiBase,
   fetchCredentials,
@@ -38,6 +40,7 @@ export function createNotificationSyncController({
   computeStoreFingerprint,
   computeUserContentFingerprint,
   createId,
+  addDeletionMarker = null,
   escapeHtml,
   setSyncStatus,
   renderDeveloperPanel,
@@ -861,9 +864,28 @@ export function createNotificationSyncController({
       let instanceOverrideAppliedCount = 0;
       let relinkedCount = 0;
       let duplicateDeletedCount = 0;
-      for (const task of store.tasks) {
+      let remoteDeletedCount = 0;
+      let recreatedAfterRemoteDeleteCount = 0;
+      for (const task of [...store.tasks]) {
         const result = byTaskId.get(task.id);
         if (!result || result.ok !== true) {
+          continue;
+        }
+        if (result.direction === "remote-delete") {
+          const outcome = applyRemoteDeletedGoogleCalendarTask(store, task.id, {
+            now,
+            addDeletionMarker
+          });
+          if (outcome.changed) {
+            remoteDeletedCount += 1;
+          }
+          if (result.relinked === true) {
+            relinkedCount += 1;
+          }
+          if (typeof result.duplicateDeletedCount === "number" && result.duplicateDeletedCount > 0) {
+            duplicateDeletedCount += result.duplicateDeletedCount;
+          }
+          appliedCount += 1;
           continue;
         }
         const currentLink = normalizeGoogleCalendarTaskLink(task.googleCalendar, {
@@ -924,12 +946,15 @@ export function createNotificationSyncController({
         if (result.relinked === true) {
           relinkedCount += 1;
         }
+        if (result.recreatedAfterRemoteDelete === true) {
+          recreatedAfterRemoteDeleteCount += 1;
+        }
         if (typeof result.duplicateDeletedCount === "number" && result.duplicateDeletedCount > 0) {
           duplicateDeletedCount += result.duplicateDeletedCount;
         }
         appliedCount += 1;
       }
-      const localTaskChangeCount = pulledCount + pushedCount + statusMirroredCount + instanceOverrideAppliedCount + relinkedCount;
+      const localTaskChangeCount = pulledCount + pushedCount + statusMirroredCount + instanceOverrideAppliedCount + relinkedCount + remoteDeletedCount;
       if (localTaskChangeCount > 0) {
         persistStore();
         renderAll();
@@ -955,8 +980,8 @@ export function createNotificationSyncController({
         lastCalendarSyncAt: now,
         lastCalendarSyncStatus: errorCount + deletionErrorCount + orphanDeletionErrorCount > 0 && appliedCount === 0 && processedDeletionCount === 0 && orphanDeletedCount === 0 ? "error" : "success",
         lastCalendarSyncMessage: errorCount + deletionErrorCount + orphanDeletionErrorCount > 0
-          ? `Synced ${appliedCount} scheduled task${appliedCount === 1 ? "" : "s"}, processed ${processedDeletionCount} requested calendar deletion${processedDeletionCount === 1 ? "" : "s"}, removed ${orphanDeletedCount} orphaned calendar event${orphanDeletedCount === 1 ? "" : "s"}, and hit ${errorCount + deletionErrorCount + orphanDeletionErrorCount} error${errorCount + deletionErrorCount + orphanDeletionErrorCount === 1 ? "" : "s"}.`
-          : `Synced ${appliedCount} scheduled task${appliedCount === 1 ? "" : "s"}, processed ${processedDeletionCount} requested calendar deletion${processedDeletionCount === 1 ? "" : "s"}, and removed ${orphanDeletedCount} orphaned calendar event${orphanDeletedCount === 1 ? "" : "s"} in Google Calendar.`
+          ? `Synced ${appliedCount} scheduled task${appliedCount === 1 ? "" : "s"}, applied ${remoteDeletedCount} remote deletion${remoteDeletedCount === 1 ? "" : "s"}, processed ${processedDeletionCount} requested calendar deletion${processedDeletionCount === 1 ? "" : "s"}, removed ${orphanDeletedCount} orphaned calendar event${orphanDeletedCount === 1 ? "" : "s"}, and hit ${errorCount + deletionErrorCount + orphanDeletionErrorCount} error${errorCount + deletionErrorCount + orphanDeletionErrorCount === 1 ? "" : "s"}.`
+          : `Synced ${appliedCount} scheduled task${appliedCount === 1 ? "" : "s"}, applied ${remoteDeletedCount} remote deletion${remoteDeletedCount === 1 ? "" : "s"}, processed ${processedDeletionCount} requested calendar deletion${processedDeletionCount === 1 ? "" : "s"}, and removed ${orphanDeletedCount} orphaned calendar event${orphanDeletedCount === 1 ? "" : "s"} in Google Calendar.`
       }, now);
       if (
         errorCount + deletionErrorCount + orphanDeletionErrorCount === 0
@@ -971,15 +996,16 @@ export function createNotificationSyncController({
         mirroredToDrive = driveResult?.success === true;
       }
       renderSyncMeta();
-      const changedCount = pulledCount + pushedCount + statusMirroredCount + instanceOverrideAppliedCount;
+      const changedCount = pulledCount + pushedCount + statusMirroredCount + instanceOverrideAppliedCount + remoteDeletedCount;
+      const summarySuffix = `; ${checkedCount} already up to date; ${relinkedCount} relinked; ${remoteDeletedCount} remote deleted; ${recreatedAfterRemoteDeleteCount} recreated after remote delete`;
       if (errorCount + deletionErrorCount + orphanDeletionErrorCount > 0) {
         const firstError = results.find((entry) => entry?.ok === false)?.error
           || payload.deletionResults?.find((entry) => entry?.ok === false)?.error
           || payload.orphanDeletionResults?.find((entry) => entry?.ok === false)?.error
           || "Calendar sync hit one or more Google errors.";
-        setSyncStatus(`Calendar sync checked ${appliedCount} task${appliedCount === 1 ? "" : "s"} (${changedCount} changed: ${pulledCount} pulled, ${pushedCount} pushed, ${statusMirroredCount} status mirrored, ${instanceOverrideAppliedCount} instance override${instanceOverrideAppliedCount === 1 ? "" : "s"} applied; ${checkedCount} already up to date; ${relinkedCount} relinked) and processed ${processedDeletionCount} deletion${processedDeletionCount === 1 ? "" : "s"} (${deletedEventCount} Google event${deletedEventCount === 1 ? "" : "s"} removed, ${duplicateDeletedCount} duplicate${duplicateDeletedCount === 1 ? "" : "s"} cleaned up, ${orphanDeletedCount} orphan${orphanDeletedCount === 1 ? "" : "s"} removed), but ${errorCount + deletionErrorCount + orphanDeletionErrorCount} failed: ${firstError}`, "error");
+        setSyncStatus(`Calendar sync checked ${appliedCount} task${appliedCount === 1 ? "" : "s"} (${changedCount} changed: ${pulledCount} pulled, ${pushedCount} pushed, ${statusMirroredCount} status mirrored, ${instanceOverrideAppliedCount} instance override${instanceOverrideAppliedCount === 1 ? "" : "s"} applied${summarySuffix}) and processed ${processedDeletionCount} deletion${processedDeletionCount === 1 ? "" : "s"} (${deletedEventCount} Google event${deletedEventCount === 1 ? "" : "s"} removed, ${duplicateDeletedCount} duplicate${duplicateDeletedCount === 1 ? "" : "s"} cleaned up, ${orphanDeletedCount} orphan${orphanDeletedCount === 1 ? "" : "s"} removed), but ${errorCount + deletionErrorCount + orphanDeletionErrorCount} failed: ${firstError}`, "error");
       } else {
-        setSyncStatus(`Calendar sync checked ${appliedCount} task${appliedCount === 1 ? "" : "s"} (${changedCount} changed: ${pulledCount} pulled, ${pushedCount} pushed, ${statusMirroredCount} status mirrored, ${instanceOverrideAppliedCount} instance override${instanceOverrideAppliedCount === 1 ? "" : "s"} applied; ${checkedCount} already up to date; ${relinkedCount} relinked) and processed ${processedDeletionCount} deletion${processedDeletionCount === 1 ? "" : "s"} (${deletedEventCount} Google event${deletedEventCount === 1 ? "" : "s"} removed, ${duplicateDeletedCount} duplicate${duplicateDeletedCount === 1 ? "" : "s"} cleaned up, ${orphanDeletedCount} orphan${orphanDeletedCount === 1 ? "" : "s"} removed) against ${nextCalendarSummary}.${mirroredToDrive ? " Mirrored the updated calendar state to Drive." : " Save to Drive if you want the links and pulled edits on other devices."}`, "success");
+        setSyncStatus(`Calendar sync checked ${appliedCount} task${appliedCount === 1 ? "" : "s"} (${changedCount} changed: ${pulledCount} pulled, ${pushedCount} pushed, ${statusMirroredCount} status mirrored, ${instanceOverrideAppliedCount} instance override${instanceOverrideAppliedCount === 1 ? "" : "s"} applied${summarySuffix}) and processed ${processedDeletionCount} deletion${processedDeletionCount === 1 ? "" : "s"} (${deletedEventCount} Google event${deletedEventCount === 1 ? "" : "s"} removed, ${duplicateDeletedCount} duplicate${duplicateDeletedCount === 1 ? "" : "s"} cleaned up, ${orphanDeletedCount} orphan${orphanDeletedCount === 1 ? "" : "s"} removed) against ${nextCalendarSummary}.${mirroredToDrive ? " Mirrored the updated calendar state to Drive." : " Save to Drive if you want the links and pulled edits on other devices."}`, "success");
       }
     } catch (error) {
       const message = String(error?.message || "Calendar schedule sync failed");
