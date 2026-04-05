@@ -1151,13 +1151,14 @@ function recoverOrphanedWorkoutPlans(widget, store, helpers) {
     return;
   }
 
+  const now = Date.now();
   const tasksById = new Map(store.tasks.map((task) => [task.id, task]));
   const existingPlans = normalizeWorkoutPlans(widget.settings?.workoutPlans, helpers?.createId);
   const existingKeys = new Set(existingPlans.map((plan) => buildWorkoutPlanRecoveryKey(plan)).filter(Boolean));
   const recoveredByKey = new Map();
 
   for (const task of store.tasks) {
-    if (!isRecoverableOrphanedWorkoutTask(task, widget.id, tasksById)) {
+    if (!isRecoverableOrphanedWorkoutTask(task, widget.id, tasksById, { now })) {
       continue;
     }
     const recoveredPlan = buildRecoveredWorkoutPlanFromTask(task, helpers);
@@ -1597,22 +1598,52 @@ function slugWorkoutPlanIdSegment(value) {
     .replace(/^-+|-+$/g, "") || "workout";
 }
 
-function isRecoverableOrphanedWorkoutTask(task, widgetId, tasksById) {
-  return Boolean(
-    task
-    && task.archived !== true
-    && task.ownerWidgetId === widgetId
-    && task.ownerWidgetType === WORKOUT_WIDGET_TYPE
-    && task.widgetTaskKind === "workout-session"
-    && task.templateId
-    && !tasksById.has(task.templateId)
-  );
+function isRecoverableOrphanedWorkoutTask(task, widgetId, tasksById, { now = Date.now() } = {}) {
+  if (
+    !task
+    || task.ownerWidgetType !== WORKOUT_WIDGET_TYPE
+    || task.widgetTaskKind !== "workout-session"
+  ) {
+    return false;
+  }
+
+  const missingTemplate = Boolean(task.templateId && !tasksById.has(task.templateId));
+  if (task.ownerWidgetId === widgetId && task.archived !== true && missingTemplate) {
+    return true;
+  }
+
+  const recentEvidence = isRecentWorkoutPlanEvidence(task, now);
+  if (!recentEvidence) {
+    return false;
+  }
+
+  return missingTemplate || task.recurrence?.type === "archived-series";
+}
+
+function isRecentWorkoutPlanEvidence(task, now = Date.now()) {
+  const recentWindowMs = 1000 * 60 * 60 * 24 * 21;
+  const cutoff = now - recentWindowMs;
+  const latestHistoryAt = Array.isArray(task?.history)
+    ? task.history.reduce((latest, item) => Math.max(latest, item?.at || 0), 0)
+    : 0;
+  if (latestHistoryAt >= cutoff) {
+    return true;
+  }
+  const scheduledDate = String(task?.dueDate || task?.startDate || "");
+  if (!scheduledDate) {
+    return false;
+  }
+  const scheduledTime = String(task?.timeOfDay || "12:00");
+  const scheduledAt = Date.parse(`${scheduledDate}T${scheduledTime}:00`);
+  return Number.isFinite(scheduledAt) && scheduledAt >= cutoff;
 }
 
 function buildRecoveredWorkoutPlanFromTask(task, helpers) {
   const recurrenceType = task?.recurrence?.type === "generated"
     ? (task?.recurrence?.sourceType || task?.widgetTaskMeta?.recurrenceType || "")
-    : (task?.recurrence?.type || "");
+    : (task?.recurrence?.type === "archived-series"
+      ? (task?.widgetTaskMeta?.recurrenceType || "")
+      : (task?.recurrence?.type || task?.widgetTaskMeta?.recurrenceType || ""));
   if (recurrenceType !== "daily" && recurrenceType !== "weekly") {
     return null;
   }

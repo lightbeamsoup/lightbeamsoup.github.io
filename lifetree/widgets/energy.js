@@ -400,13 +400,18 @@ export function reconcileEnergyReminderSettings(widget, tasks) {
   const maxCheckins = normalizeMaxCheckins(widget?.settings?.maxCheckins);
   const configuredReminderTimes = normalizeReminderTimes(widget?.settings?.reminderTimes, maxCheckins);
   const recoveredReminderTimes = collectEnergyReminderTimesFromTasks(tasks, widget?.id);
+  const recoveredRecentReminderTimes = recoveredReminderTimes.length > configuredReminderTimes.length
+    ? recoveredReminderTimes
+    : collectEnergyReminderTimesFromTasks(tasks, widget?.id, {
+      includeRecentClosed: true
+    });
 
-  if (recoveredReminderTimes.length <= configuredReminderTimes.length) {
+  if (recoveredRecentReminderTimes.length <= configuredReminderTimes.length) {
     return configuredReminderTimes;
   }
 
-  const nextMaxCheckins = Math.max(maxCheckins, recoveredReminderTimes.length);
-  const nextReminderTimes = normalizeReminderTimes(recoveredReminderTimes, nextMaxCheckins);
+  const nextMaxCheckins = Math.max(maxCheckins, recoveredRecentReminderTimes.length);
+  const nextReminderTimes = normalizeReminderTimes(recoveredRecentReminderTimes, nextMaxCheckins);
   if (widget?.settings && nextReminderTimes.length > configuredReminderTimes.length) {
     widget.settings.maxCheckins = nextMaxCheckins;
     widget.settings.reminderTimes = [...nextReminderTimes];
@@ -414,7 +419,7 @@ export function reconcileEnergyReminderSettings(widget, tasks) {
   return nextReminderTimes;
 }
 
-function collectEnergyReminderTimesFromTasks(tasks, widgetId) {
+function collectEnergyReminderTimesFromTasks(tasks, widgetId, { includeRecentClosed = false, now = Date.now() } = {}) {
   if (!widgetId) {
     return [];
   }
@@ -422,10 +427,10 @@ function collectEnergyReminderTimesFromTasks(tasks, widgetId) {
   for (const task of Array.isArray(tasks) ? tasks : []) {
     if (
       !task
-      || task.archived === true
-      || task.ownerWidgetId !== widgetId
-      || task.ownerWidgetType !== ENERGY_WIDGET_TYPE
-      || task.status !== "open"
+      || !isEnergyReminderRecoveryCandidate(task, widgetId, {
+        includeRecentClosed,
+        now
+      })
     ) {
       continue;
     }
@@ -442,6 +447,58 @@ function collectEnergyReminderTimesFromTasks(tasks, widgetId) {
   return Array.from(bySlotIndex.entries())
     .sort((left, right) => left[0] - right[0])
     .map(([, timeOfDay]) => timeOfDay);
+}
+
+function isEnergyReminderRecoveryCandidate(task, widgetId, { includeRecentClosed = false, now = Date.now() } = {}) {
+  if (!task || task.ownerWidgetType !== ENERGY_WIDGET_TYPE) {
+    return false;
+  }
+  if (!String(task.ownerTaskKey || "").startsWith("energy-reminder-")) {
+    return false;
+  }
+  if (task.ownerWidgetId === widgetId) {
+    return shouldUseEnergyTaskForReminderRecovery(task, {
+      includeRecentClosed,
+      now
+    });
+  }
+  if (!includeRecentClosed) {
+    return false;
+  }
+  return isRecentEnergyReminderEvidence(task, now);
+}
+
+function shouldUseEnergyTaskForReminderRecovery(task, { includeRecentClosed = false, now = Date.now() } = {}) {
+  if (!task) {
+    return false;
+  }
+  if (task.archived !== true && task.status === "open") {
+    return true;
+  }
+  if (!includeRecentClosed) {
+    return false;
+  }
+  if (task.recurrence?.type === "archived-series") {
+    return isRecentEnergyReminderEvidence(task, now);
+  }
+  return task.archived !== true && isRecentEnergyReminderEvidence(task, now);
+}
+
+function isRecentEnergyReminderEvidence(task, now = Date.now()) {
+  const recentWindowMs = 1000 * 60 * 60 * 24 * 14;
+  const cutoff = now - recentWindowMs;
+  const taskHistory = Array.isArray(task?.history) ? task.history : [];
+  const latestHistoryAt = taskHistory.reduce((latest, item) => Math.max(latest, item?.at || 0), 0);
+  if (latestHistoryAt >= cutoff) {
+    return true;
+  }
+  const scheduledDate = String(task?.dueDate || task?.startDate || "");
+  if (!scheduledDate) {
+    return false;
+  }
+  const scheduledTime = String(task?.timeOfDay || "12:00");
+  const scheduledAt = Date.parse(`${scheduledDate}T${scheduledTime}:00`);
+  return Number.isFinite(scheduledAt) && scheduledAt >= cutoff;
 }
 
 function normalizeEnergyEntries(value) {

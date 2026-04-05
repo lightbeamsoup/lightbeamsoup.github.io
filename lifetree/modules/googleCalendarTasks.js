@@ -616,14 +616,53 @@ function getGoogleCalendarTaskStatusMirrorVersion(task) {
 
 function buildGoogleCalendarRecurringInstanceStatusChanges(tasks, templateTask, calendarId, userTimeZone) {
   return (Array.isArray(tasks) ? tasks : [])
-    .filter((task) => (
-      task
-      && task.archived !== true
-      && task.templateId === templateTask.id
-      && String(task?.recurrence?.type || "") === "generated"
-    ))
+    .filter((task) => isGoogleCalendarRecurringInstanceStatusCandidate(task, templateTask, calendarId))
     .map((task) => buildGoogleCalendarRecurringInstanceStatusChange(templateTask, task, calendarId, userTimeZone))
     .filter(Boolean);
+}
+
+function isGoogleCalendarRecurringInstanceStatusCandidate(task, templateTask, calendarId) {
+  if (!task || String(task?.recurrence?.type || "") !== "generated") {
+    return false;
+  }
+  if (task.templateId === templateTask.id) {
+    return true;
+  }
+
+  const templateLink = normalizeGoogleCalendarTaskLink(templateTask?.googleCalendar, { calendarId });
+  const instanceLink = normalizeGoogleCalendarTaskLink(task?.googleCalendar, { calendarId });
+  if (templateLink.eventId && instanceLink.recurringEventId && instanceLink.recurringEventId === templateLink.eventId) {
+    return true;
+  }
+
+  const templateMatchKey = buildGoogleCalendarRecurringInstanceTemplateMatchKey(templateTask);
+  if (!templateMatchKey) {
+    return false;
+  }
+  return buildGoogleCalendarRecurringInstanceTemplateMatchKey(task) === templateMatchKey;
+}
+
+function buildGoogleCalendarRecurringInstanceTemplateMatchKey(task) {
+  const recurrenceType = task?.recurrence?.type === "generated"
+    ? (task?.recurrence?.sourceType || task?.widgetTaskMeta?.recurrenceType || "")
+    : (task?.recurrence?.type || task?.widgetTaskMeta?.recurrenceType || "");
+  if (!recurrenceType || recurrenceType === "none" || recurrenceType === "archived-series") {
+    return "";
+  }
+  return JSON.stringify(sortObjectKeys({
+    recurrenceType,
+    name: String(task?.name || ""),
+    timeOfDay: String(task?.timeOfDay || ""),
+    categoryKey: String(task?.categoryKey || ""),
+    ownerWidgetType: String(task?.ownerWidgetType || ""),
+    ownerTaskKey: String(task?.ownerTaskKey || ""),
+    widgetTaskKind: String(task?.widgetTaskKind || ""),
+    planId: String(task?.widgetTaskMeta?.planId || ""),
+    slotKey: String(task?.widgetTaskMeta?.slotKey || ""),
+    reminderIndex: Number.isFinite(Number(task?.widgetTaskMeta?.reminderIndex))
+      ? Number(task.widgetTaskMeta.reminderIndex)
+      : -1
+  }));
 }
 
 function buildGoogleCalendarRecurringInstanceStatusChange(templateTask, instanceTask, calendarId, userTimeZone) {

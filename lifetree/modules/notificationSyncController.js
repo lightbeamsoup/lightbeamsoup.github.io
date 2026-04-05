@@ -1333,6 +1333,9 @@ export function createNotificationSyncController({
     }
     const statusResults = Array.isArray(result?.instanceStatusResults) ? result.instanceStatusResults : [];
     let appliedCount = 0;
+    const templateLink = normalizeGoogleCalendarTaskLink(templateTask.googleCalendar, {
+      calendarId
+    });
     for (const statusResult of statusResults) {
       if (!statusResult || statusResult.ok !== true) {
         continue;
@@ -1340,18 +1343,29 @@ export function createNotificationSyncController({
       const sourceTaskId = typeof statusResult.sourceTaskId === "string" ? statusResult.sourceTaskId : "";
       const originalStartDate = typeof statusResult.originalStartDate === "string" ? statusResult.originalStartDate : "";
       const originalTimeOfDay = typeof statusResult.originalTimeOfDay === "string" ? statusResult.originalTimeOfDay : "";
-      const instanceTask = store.tasks.find((candidate) => (
-        !candidate.archived
-        && candidate.templateId === templateTask.id
-        && (
-          (sourceTaskId && candidate.id === sourceTaskId)
-          || (
-            originalStartDate
-            && (candidate.googleCalendar?.originalStartDate || candidate.startDate || candidate.dueDate || "") === originalStartDate
-            && (!originalTimeOfDay || (candidate.googleCalendar?.originalTimeOfDay || candidate.timeOfDay || "") === originalTimeOfDay)
-          )
-        )
-      ));
+      const instanceTask = (sourceTaskId
+        ? store.tasks.find((candidate) => (
+          String(candidate?.recurrence?.type || "") === "generated"
+          && candidate.id === sourceTaskId
+        ))
+        : null) || store.tasks.find((candidate) => {
+        if (String(candidate?.recurrence?.type || "") !== "generated") {
+          return false;
+        }
+        if (!originalStartDate) {
+          return false;
+        }
+        const candidateLink = normalizeGoogleCalendarTaskLink(candidate.googleCalendar, {
+          calendarId
+        });
+        const sameSeries = candidate.templateId === templateTask.id
+          || (templateLink.eventId && candidateLink.recurringEventId === templateLink.eventId);
+        if (!sameSeries) {
+          return false;
+        }
+        return (candidateLink.originalStartDate || candidate.startDate || candidate.dueDate || "") === originalStartDate
+          && (!originalTimeOfDay || (candidateLink.originalTimeOfDay || candidate.timeOfDay || "") === originalTimeOfDay);
+      });
       if (!instanceTask) {
         continue;
       }

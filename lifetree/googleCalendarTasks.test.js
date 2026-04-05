@@ -291,6 +291,94 @@ test("schedule sync request includes recurring instance status changes for gener
   });
 });
 
+test("schedule sync request matches archived recurring instance status changes after a series template is recreated", () => {
+  const payload = buildGoogleCalendarScheduleSyncRequest({
+    tasks: [
+      {
+        id: "nasal-spray-template-new",
+        name: "Nasal spray",
+        details: "Created by Lifetree.\nLifetree task ID: nasal-spray-template-new",
+        dueDate: "2026-03-22",
+        startDate: "2026-03-22",
+        timeOfDay: "19:01",
+        length: "very-short",
+        recurrence: {
+          type: "daily",
+          interval: 1,
+          weekday: 0,
+          day: 1,
+          ordinal: "first",
+          endDate: "",
+          count: null,
+          forever: true
+        },
+        reminders: { enabled: false, dueSoonMinutes: 0, overdueMinutes: 0 },
+        importance: "medium",
+        categoryKey: "health",
+        lateGraceMinutes: 15,
+        ownerWidgetType: "",
+        ownerTaskKey: "",
+        widgetTaskKind: "",
+        widgetTaskMeta: {},
+        status: "open",
+        archived: false,
+        historyOnly: false,
+        templateId: "",
+        googleCalendar: normalizeGoogleCalendarTaskLink({
+          calendarId: "lifetree-cal",
+          eventId: "master-event"
+        }, { calendarId: "lifetree-cal" })
+      },
+      {
+        id: "nasal-spray-2026-04-04",
+        templateId: "nasal-spray-template-old",
+        occurrenceIndex: 13,
+        name: "Nasal spray",
+        details: "",
+        dueDate: "2026-04-04",
+        startDate: "2026-04-04",
+        timeOfDay: "19:01",
+        length: "very-short",
+        recurrence: { type: "generated", sourceType: "daily" },
+        reminders: { enabled: false, dueSoonMinutes: 0, overdueMinutes: 0 },
+        importance: "medium",
+        categoryKey: "health",
+        lateGraceMinutes: 15,
+        ownerWidgetType: "",
+        ownerTaskKey: "",
+        widgetTaskKind: "",
+        widgetTaskMeta: {},
+        status: "done",
+        archived: true,
+        historyOnly: false,
+        history: [
+          {
+            id: "history-1",
+            type: "completed",
+            at: 1775364060000
+          }
+        ],
+        googleCalendar: normalizeGoogleCalendarTaskLink({
+          calendarId: "lifetree-cal",
+          statusMirroredAt: 0
+        }, { calendarId: "lifetree-cal" })
+      }
+    ]
+  }, {
+    calendarId: "lifetree-cal",
+    calendarSummary: "Lifetree",
+    calendarTimeZone: "America/Los_Angeles"
+  }, {
+    userTimeZone: "America/Los_Angeles"
+  });
+
+  assert.equal(payload.totalEligibleTasks, 1);
+  assert.equal(payload.tasks.length, 1);
+  assert.equal(payload.tasks[0].taskId, "nasal-spray-template-new");
+  assert.equal(payload.tasks[0].instanceStatusChanges.length, 1);
+  assert.equal(payload.tasks[0].instanceStatusChanges[0]?.sourceTaskId, "nasal-spray-2026-04-04");
+});
+
 test("google calendar sync task normalization preserves push and remote-check flags", () => {
   const normalized = normalizeGoogleCalendarSyncTask({
     taskId: "energy-checkin",
