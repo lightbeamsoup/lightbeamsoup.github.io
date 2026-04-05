@@ -305,7 +305,7 @@ app.post("/api/google-calendar/sync-schedule", async (req, res) => {
     const userTimeZone = sanitizeTravelText(req.body?.userTimeZone, 80);
     const tasks = Array.isArray(req.body?.tasks)
       ? req.body.tasks
-          .map((task) => normalizeGoogleCalendarSyncTask(task, {
+          .map((task) => normalizeGoogleCalendarSyncTaskRequest(task, {
             calendarId,
             calendarTimeZone,
             userTimeZone
@@ -390,6 +390,7 @@ app.post("/api/google-calendar/sync-schedule", async (req, res) => {
     for (const task of tasks) {
       try {
         const linkedEventId = task.googleCalendar.eventId || "";
+        const instanceStatusChanges = Array.isArray(task.instanceStatusChanges) ? task.instanceStatusChanges : [];
         const resolved = await resolveGoogleCalendarTaskEvent(accessToken, calendarId, task, linkedEventId);
         const canonicalEvent = resolved.canonicalEvent;
         const syncEventId = canonicalEvent?.id || (resolved.linkedEventMissing ? "" : linkedEventId);
@@ -423,6 +424,13 @@ app.post("/api/google-calendar/sync-schedule", async (req, res) => {
               schedulePatch: overridePatch
             };
           });
+          const instanceStatusResults = await syncGoogleCalendarTaskInstanceStatusChanges(
+            accessToken,
+            calendarId,
+            typeof canonicalEvent.id === "string" ? canonicalEvent.id : "",
+            instanceStatusChanges,
+            { calendarTimeZone }
+          );
           results.push({
             taskId: task.taskId,
             ok: true,
@@ -436,6 +444,7 @@ app.post("/api/google-calendar/sync-schedule", async (req, res) => {
             scheduleFingerprint: schedulePatch.scheduleFingerprint,
             schedulePatch,
             instanceOverrides,
+            instanceStatusResults,
             relinked,
             duplicateDeletedCount: resolved.duplicateDeletedEventIds.length
           });
@@ -465,6 +474,13 @@ app.post("/api/google-calendar/sync-schedule", async (req, res) => {
         }
 
         if (!task.needsPush && !task.needsStatusPush && syncEventId) {
+          const instanceStatusResults = await syncGoogleCalendarTaskInstanceStatusChanges(
+            accessToken,
+            calendarId,
+            syncEventId,
+            instanceStatusChanges,
+            { calendarTimeZone }
+          );
           results.push({
             taskId: task.taskId,
             ok: true,
@@ -492,6 +508,7 @@ app.post("/api/google-calendar/sync-schedule", async (req, res) => {
                 schedulePatch: overridePatch
               };
             }),
+            instanceStatusResults,
             relinked,
             duplicateDeletedCount: resolved.duplicateDeletedEventIds.length
           });
@@ -509,6 +526,13 @@ app.post("/api/google-calendar/sync-schedule", async (req, res) => {
         } else {
           updatedCount += 1;
         }
+        const instanceStatusResults = await syncGoogleCalendarTaskInstanceStatusChanges(
+          accessToken,
+          calendarId,
+          typeof event.id === "string" ? event.id : "",
+          instanceStatusChanges,
+          { calendarTimeZone }
+        );
         results.push({
           taskId: task.taskId,
           ok: true,
@@ -524,6 +548,7 @@ app.post("/api/google-calendar/sync-schedule", async (req, res) => {
           scheduleFingerprint: task.scheduleFingerprint,
           statusMirroredAt: task.statusMirrorVersion || 0,
           instanceOverrides: [],
+          instanceStatusResults,
           relinked,
           duplicateDeletedCount: resolved.duplicateDeletedEventIds.length,
           remoteDeleted: false,
@@ -582,7 +607,7 @@ app.post("/api/google-calendar/diagnostics", async (req, res) => {
     const calendarTimeZone = typeof calendar.timeZone === "string" ? calendar.timeZone : requestedTimeZone;
     const tasks = Array.isArray(req.body?.tasks)
       ? req.body.tasks
-          .map((task) => normalizeGoogleCalendarSyncTask(task, {
+          .map((task) => normalizeGoogleCalendarSyncTaskRequest(task, {
             calendarId,
             calendarTimeZone,
             userTimeZone
@@ -678,10 +703,20 @@ app.post("/api/google-calendar/diagnostics", async (req, res) => {
         localRecreateCandidate,
         duplicateEventIds,
         instanceOverrideCount: instanceOverrideEvents.length,
+        instanceStatusChangeCount: Array.isArray(task.instanceStatusChanges) ? task.instanceStatusChanges.length : 0,
         needsPush: task.needsPush === true,
         needsStatusPush: task.needsStatusPush === true,
         scheduleFingerprint: task.scheduleFingerprint,
         statusMirrorVersion: task.statusMirrorVersion || 0,
+        instanceStatusChanges: (Array.isArray(task.instanceStatusChanges) ? task.instanceStatusChanges : []).map((change) => ({
+          sourceTaskId: typeof change?.sourceTaskId === "string" ? change.sourceTaskId : "",
+          originalStartDate: typeof change?.originalStartDate === "string" ? change.originalStartDate : "",
+          originalTimeOfDay: typeof change?.originalTimeOfDay === "string" ? change.originalTimeOfDay : "",
+          statusMirrorLifecycleType: typeof change?.statusMirrorLifecycleType === "string" ? change.statusMirrorLifecycleType : "",
+          statusMirrorVersion: typeof change?.statusMirrorVersion === "number" ? change.statusMirrorVersion : 0,
+          eventId: typeof change?.googleCalendar?.eventId === "string" ? change.googleCalendar.eventId : "",
+          recurringEventId: typeof change?.googleCalendar?.recurringEventId === "string" ? change.googleCalendar.recurringEventId : ""
+        })),
         instanceOverrides: instanceOverrideEvents.map((event) => {
           const originalStart = parseGoogleCalendarEventStart(event?.originalStartTime || {}, calendarTimeZone);
           return {
@@ -1589,6 +1624,71 @@ function normalizeGoogleCalendarDeletionRequests(value, defaultCalendarId = "") 
   return Array.from(merged.values()).slice(0, 500);
 }
 
+function normalizeGoogleCalendarSyncTaskRequest(value, { calendarId = "", calendarTimeZone = "", userTimeZone = "" } = {}) {
+  const normalized = normalizeGoogleCalendarSyncTask(value, {
+    calendarId,
+    calendarTimeZone,
+    userTimeZone
+  });
+  return {
+    ...normalized,
+    instanceStatusChanges: normalizeGoogleCalendarInstanceStatusChanges(
+      value?.instanceStatusChanges,
+      normalized.taskId,
+      { calendarId, calendarTimeZone, userTimeZone }
+    )
+  };
+}
+
+function normalizeGoogleCalendarInstanceStatusChanges(value, templateTaskId, { calendarId = "", calendarTimeZone = "", userTimeZone = "" } = {}) {
+  return (Array.isArray(value) ? value : [])
+    .map((entry) => normalizeGoogleCalendarInstanceStatusChange(entry, templateTaskId, {
+      calendarId,
+      calendarTimeZone,
+      userTimeZone
+    }))
+    .filter(Boolean)
+    .slice(0, 200);
+}
+
+function normalizeGoogleCalendarInstanceStatusChange(value, templateTaskId, { calendarId = "", calendarTimeZone = "", userTimeZone = "" } = {}) {
+  const source = value && typeof value === "object" ? value : {};
+  const normalized = normalizeGoogleCalendarSyncTask({
+    ...source,
+    taskId: templateTaskId,
+    recurrence: { type: "none" }
+  }, {
+    calendarId,
+    calendarTimeZone,
+    userTimeZone
+  });
+  const originalStartDate = sanitizeTravelText(
+    source.originalStartDate || normalized.googleCalendar?.originalStartDate || normalized.startDate || normalized.dueDate,
+    20
+  );
+  const originalTimeOfDay = sanitizeTravelText(
+    source.originalTimeOfDay || normalized.googleCalendar?.originalTimeOfDay || normalized.timeOfDay,
+    10
+  );
+  if (!originalStartDate) {
+    return null;
+  }
+  if (!["completed", "skipped", "reopened"].includes(normalized.statusMirrorLifecycleType)) {
+    return null;
+  }
+  return {
+    ...normalized,
+    sourceTaskId: sanitizeTravelText(source.sourceTaskId, 120),
+    originalStartDate,
+    originalTimeOfDay,
+    googleCalendar: {
+      ...normalized.googleCalendar,
+      originalStartDate,
+      originalTimeOfDay
+    }
+  };
+}
+
 async function deleteGoogleCalendarEvent(accessToken, calendarId, eventId) {
   const response = await fetch(
     `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
@@ -1617,6 +1717,28 @@ async function deleteGoogleCalendarEvent(accessToken, calendarId, eventId) {
   };
 }
 
+async function patchGoogleCalendarEvent(accessToken, calendarId, eventId, eventPatch) {
+  const response = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}?fields=id,updated,htmlLink,recurringEventId,originalStartTime,status,summary`,
+    {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(eventPatch)
+    }
+  );
+
+  if (response.status === 404 || response.status === 410) {
+    return null;
+  }
+  if (!response.ok) {
+    throw new Error(await formatGoogleError(response, "Google Calendar event patch failed"));
+  }
+  return response.json();
+}
+
 async function listGoogleCalendarEventsByTaskId(accessToken, calendarId, taskId) {
   if (!taskId) {
     return [];
@@ -1642,6 +1764,201 @@ async function listGoogleCalendarEventsByTaskId(accessToken, calendarId, taskId)
 
   const payload = await response.json();
   return (Array.isArray(payload.items) ? payload.items : []).filter((event) => !isGoogleCalendarDeletedEvent(event));
+}
+
+async function listGoogleCalendarRecurringInstances(accessToken, calendarId, recurringEventId, {
+  timeMin = "",
+  timeMax = "",
+  showDeleted = false
+} = {}) {
+  if (!recurringEventId) {
+    return [];
+  }
+  const params = new URLSearchParams({
+    maxResults: "100",
+    showDeleted: showDeleted ? "true" : "false",
+    fields: "items(id,updated,htmlLink,recurringEventId,originalStartTime,status,summary,start,end)"
+  });
+  if (timeMin) {
+    params.set("timeMin", timeMin);
+  }
+  if (timeMax) {
+    params.set("timeMax", timeMax);
+  }
+  const response = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(recurringEventId)}/instances?${params.toString()}`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`
+      }
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(await formatGoogleError(response, "Google Calendar recurring instances lookup failed"));
+  }
+
+  const payload = await response.json();
+  return Array.isArray(payload.items) ? payload.items : [];
+}
+
+function shiftDateString(dateString, dayOffset) {
+  const date = new Date(`${dateString}T12:00:00Z`);
+  if (Number.isNaN(date.getTime())) {
+    return dateString;
+  }
+  date.setUTCDate(date.getUTCDate() + dayOffset);
+  return date.toISOString().slice(0, 10);
+}
+
+function buildRecurringInstanceLookupWindow(originalStartDate) {
+  if (!originalStartDate) {
+    return {
+      timeMin: "",
+      timeMax: ""
+    };
+  }
+  return {
+    timeMin: `${shiftDateString(originalStartDate, -14)}T00:00:00Z`,
+    timeMax: `${shiftDateString(originalStartDate, 14)}T23:59:59Z`
+  };
+}
+
+async function findGoogleCalendarRecurringInstanceByOriginalStart(accessToken, calendarId, recurringEventId, {
+  originalStartDate = "",
+  originalTimeOfDay = "",
+  calendarTimeZone = "",
+  showDeleted = false
+} = {}) {
+  if (!recurringEventId || !originalStartDate) {
+    return null;
+  }
+  const { timeMin, timeMax } = buildRecurringInstanceLookupWindow(originalStartDate);
+  const instances = await listGoogleCalendarRecurringInstances(accessToken, calendarId, recurringEventId, {
+    timeMin,
+    timeMax,
+    showDeleted
+  });
+  const exact = instances.find((event) => {
+    const originalStart = parseGoogleCalendarEventStart(event?.originalStartTime || {}, calendarTimeZone);
+    return originalStart.startDate === originalStartDate
+      && (!originalTimeOfDay || originalStart.timeOfDay === originalTimeOfDay);
+  });
+  if (exact) {
+    return exact;
+  }
+  return instances.find((event) => {
+    const originalStart = parseGoogleCalendarEventStart(event?.originalStartTime || event?.start || {}, calendarTimeZone);
+    return originalStart.startDate === originalStartDate;
+  }) || null;
+}
+
+function buildGoogleCalendarInstanceStatusPayload(instanceChange, { calendarTimeZone = "" } = {}) {
+  return {
+    ...buildGoogleCalendarEventPayload({
+      ...instanceChange,
+      recurrence: { type: "none" }
+    }, { calendarTimeZone }),
+    status: "confirmed"
+  };
+}
+
+async function syncGoogleCalendarTaskInstanceStatusChanges(accessToken, calendarId, recurringEventId, instanceStatusChanges, { calendarTimeZone = "" } = {}) {
+  const results = [];
+  for (const instanceChange of Array.isArray(instanceStatusChanges) ? instanceStatusChanges : []) {
+    try {
+      results.push(await syncGoogleCalendarTaskInstanceStatusChange(accessToken, calendarId, recurringEventId, instanceChange, {
+        calendarTimeZone
+      }));
+    } catch (error) {
+      results.push({
+        sourceTaskId: typeof instanceChange?.sourceTaskId === "string" ? instanceChange.sourceTaskId : "",
+        originalStartDate: typeof instanceChange?.originalStartDate === "string" ? instanceChange.originalStartDate : "",
+        originalTimeOfDay: typeof instanceChange?.originalTimeOfDay === "string" ? instanceChange.originalTimeOfDay : "",
+        ok: false,
+        error: error.message
+      });
+    }
+  }
+  return results;
+}
+
+async function syncGoogleCalendarTaskInstanceStatusChange(accessToken, calendarId, recurringEventId, instanceChange, { calendarTimeZone = "" } = {}) {
+  const lifecycleType = String(instanceChange?.statusMirrorLifecycleType || "");
+  if (!recurringEventId) {
+    throw new Error("Missing recurring Google Calendar event id for instance status sync.");
+  }
+  if (!["completed", "skipped", "reopened"].includes(lifecycleType)) {
+    throw new Error("Unsupported recurring instance status change.");
+  }
+
+  let targetEventId = sanitizeTravelText(instanceChange?.googleCalendar?.eventId, 256);
+  const originalStartDate = sanitizeTravelText(instanceChange?.originalStartDate, 20);
+  const originalTimeOfDay = sanitizeTravelText(instanceChange?.originalTimeOfDay, 10);
+  if (!originalStartDate) {
+    throw new Error("Missing recurring instance original start date.");
+  }
+
+  if (!targetEventId) {
+    const matchingInstance = await findGoogleCalendarRecurringInstanceByOriginalStart(accessToken, calendarId, recurringEventId, {
+      originalStartDate,
+      originalTimeOfDay,
+      calendarTimeZone,
+      showDeleted: lifecycleType === "reopened"
+    });
+    targetEventId = matchingInstance?.id || "";
+  }
+
+  if (!targetEventId) {
+    throw new Error(`Google Calendar occurrence lookup failed for ${originalStartDate}${originalTimeOfDay ? ` ${originalTimeOfDay}` : ""}.`);
+  }
+
+  let event = lifecycleType === "completed" || lifecycleType === "skipped"
+    ? await patchGoogleCalendarEvent(accessToken, calendarId, targetEventId, { status: "cancelled" })
+    : await patchGoogleCalendarEvent(
+      accessToken,
+      calendarId,
+      targetEventId,
+      buildGoogleCalendarInstanceStatusPayload(instanceChange, { calendarTimeZone })
+    );
+
+  if (!event) {
+    const matchingInstance = await findGoogleCalendarRecurringInstanceByOriginalStart(accessToken, calendarId, recurringEventId, {
+      originalStartDate,
+      originalTimeOfDay,
+      calendarTimeZone,
+      showDeleted: lifecycleType === "reopened"
+    });
+    const fallbackEventId = matchingInstance?.id || "";
+    if (!fallbackEventId) {
+      throw new Error(`Google Calendar occurrence lookup failed for ${originalStartDate}${originalTimeOfDay ? ` ${originalTimeOfDay}` : ""}.`);
+    }
+    event = lifecycleType === "completed" || lifecycleType === "skipped"
+      ? await patchGoogleCalendarEvent(accessToken, calendarId, fallbackEventId, { status: "cancelled" })
+      : await patchGoogleCalendarEvent(
+        accessToken,
+        calendarId,
+        fallbackEventId,
+        buildGoogleCalendarInstanceStatusPayload(instanceChange, { calendarTimeZone })
+      );
+  }
+
+  if (!event) {
+    throw new Error(`Google Calendar occurrence update failed for ${originalStartDate}${originalTimeOfDay ? ` ${originalTimeOfDay}` : ""}.`);
+  }
+
+  return {
+    sourceTaskId: typeof instanceChange?.sourceTaskId === "string" ? instanceChange.sourceTaskId : "",
+    ok: true,
+    eventId: typeof event.id === "string" ? event.id : targetEventId,
+    recurringEventId: typeof event.recurringEventId === "string" ? event.recurringEventId : recurringEventId,
+    originalStartDate,
+    originalTimeOfDay,
+    linkedAt: Date.now(),
+    lastSeenGoogleUpdatedAt: typeof event.updated === "string" ? event.updated : "",
+    scheduleFingerprint: typeof instanceChange?.scheduleFingerprint === "string" ? instanceChange.scheduleFingerprint : "",
+    statusMirroredAt: Number.isFinite(Number(instanceChange?.statusMirrorVersion)) ? Number(instanceChange.statusMirrorVersion) : 0
+  };
 }
 
 async function listGoogleCalendarTaskTaggedEvents(accessToken, calendarId) {

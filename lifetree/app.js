@@ -4054,6 +4054,7 @@ function syncRecurringWindowSkipRules() {
 function buildGeneratedInstance(template, occurrenceIndex, startDate, dueDate, existingTask = null) {
   const existingWidgetTaskMeta = normalizeWidgetTaskMeta(existingTask?.widgetTaskMeta);
   const templateWidgetTaskMeta = normalizeWidgetTaskMeta(template.widgetTaskMeta);
+  const existingGoogleCalendar = normalizeGoogleCalendarTaskLink(existingTask?.googleCalendar);
   return {
     id: existingTask?.id || createId(),
     templateId: template.id,
@@ -4085,6 +4086,7 @@ function buildGeneratedInstance(template, occurrenceIndex, startDate, dueDate, e
       ...existingWidgetTaskMeta,
       ...templateWidgetTaskMeta
     }),
+    googleCalendar: normalizeGoogleCalendarTaskLink(existingGoogleCalendar),
     linkedSeries: resolveGeneratedLinkedSeries(existingTask?.linkedSeries, template.linkedSeries),
     sequenceDependencyId: existingTask?.sequenceDependencyId || "",
     widgetCompletion: normalizeWidgetCompletion(existingTask?.widgetCompletion || template.widgetCompletion),

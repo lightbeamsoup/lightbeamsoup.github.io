@@ -1016,6 +1016,8 @@ export function createNotificationSyncController({
           calendarId: result.calendarId || googleCalendar.calendarId,
           eventId: result.eventId || "",
           recurringEventId: result.recurringEventId || "",
+          originalStartDate: typeof result.originalStartDate === "string" ? result.originalStartDate : currentLink.originalStartDate,
+          originalTimeOfDay: typeof result.originalTimeOfDay === "string" ? result.originalTimeOfDay : currentLink.originalTimeOfDay,
           source: "lifetree",
           linkedAt: typeof result.linkedAt === "number" ? result.linkedAt : now,
           lastSeenGoogleUpdatedAt: typeof result.lastSeenGoogleUpdatedAt === "string" ? result.lastSeenGoogleUpdatedAt : "",
@@ -1057,7 +1059,18 @@ export function createNotificationSyncController({
             task.updatedAt = now;
             statusMirroredCount += 1;
           } else if (result.direction === "noop") {
-            checkedCount += 1;
+            const appliedInstanceStatuses = applyRecurringInstanceStatusResults(store, task, result, result.calendarId || googleCalendar.calendarId, now);
+            if (appliedInstanceStatuses > 0) {
+              statusMirroredCount += appliedInstanceStatuses;
+            } else {
+              checkedCount += 1;
+            }
+          }
+        }
+        if (result.direction !== "noop") {
+          const appliedInstanceStatuses = applyRecurringInstanceStatusResults(store, task, result, result.calendarId || googleCalendar.calendarId, now);
+          if (appliedInstanceStatuses > 0) {
+            statusMirroredCount += appliedInstanceStatuses;
           }
         }
         const appliedOverrides = applyRecurringInstanceOverrides(store, task, result, result.calendarId || googleCalendar.calendarId, now);
@@ -1295,6 +1308,8 @@ export function createNotificationSyncController({
           calendarId,
           eventId: typeof override?.eventId === "string" ? override.eventId : (currentLink.eventId || ""),
           recurringEventId: typeof override?.recurringEventId === "string" ? override.recurringEventId : (currentLink.recurringEventId || ""),
+          originalStartDate: originalStartDate || currentLink.originalStartDate || "",
+          originalTimeOfDay: originalTimeOfDay || currentLink.originalTimeOfDay || "",
           source: "lifetree",
           linkedAt: currentLink.linkedAt || now,
           lastSeenGoogleUpdatedAt: typeof override?.updated === "string" ? override.updated : (currentLink.lastSeenGoogleUpdatedAt || ""),
@@ -1307,6 +1322,64 @@ export function createNotificationSyncController({
         updatedAt: now
       });
       Object.assign(instanceTask, nextTask);
+      appliedCount += 1;
+    }
+    return appliedCount;
+  }
+
+  function applyRecurringInstanceStatusResults(store, templateTask, result, calendarId, now) {
+    if (!templateTask || String(templateTask.recurrence?.type || "none") === "none") {
+      return 0;
+    }
+    const statusResults = Array.isArray(result?.instanceStatusResults) ? result.instanceStatusResults : [];
+    let appliedCount = 0;
+    for (const statusResult of statusResults) {
+      if (!statusResult || statusResult.ok !== true) {
+        continue;
+      }
+      const sourceTaskId = typeof statusResult.sourceTaskId === "string" ? statusResult.sourceTaskId : "";
+      const originalStartDate = typeof statusResult.originalStartDate === "string" ? statusResult.originalStartDate : "";
+      const originalTimeOfDay = typeof statusResult.originalTimeOfDay === "string" ? statusResult.originalTimeOfDay : "";
+      const instanceTask = store.tasks.find((candidate) => (
+        !candidate.archived
+        && candidate.templateId === templateTask.id
+        && (
+          (sourceTaskId && candidate.id === sourceTaskId)
+          || (
+            originalStartDate
+            && (candidate.googleCalendar?.originalStartDate || candidate.startDate || candidate.dueDate || "") === originalStartDate
+            && (!originalTimeOfDay || (candidate.googleCalendar?.originalTimeOfDay || candidate.timeOfDay || "") === originalTimeOfDay)
+          )
+        )
+      ));
+      if (!instanceTask) {
+        continue;
+      }
+      const currentLink = normalizeGoogleCalendarTaskLink(instanceTask.googleCalendar, {
+        calendarId
+      });
+      instanceTask.googleCalendar = normalizeGoogleCalendarTaskLink({
+        ...currentLink,
+        calendarId,
+        eventId: typeof statusResult.eventId === "string" ? statusResult.eventId : currentLink.eventId,
+        recurringEventId: typeof statusResult.recurringEventId === "string" ? statusResult.recurringEventId : currentLink.recurringEventId,
+        originalStartDate: originalStartDate || currentLink.originalStartDate || "",
+        originalTimeOfDay: originalTimeOfDay || currentLink.originalTimeOfDay || "",
+        source: "lifetree",
+        linkedAt: typeof statusResult.linkedAt === "number" ? statusResult.linkedAt : (currentLink.linkedAt || now),
+        lastSeenGoogleUpdatedAt: typeof statusResult.lastSeenGoogleUpdatedAt === "string"
+          ? statusResult.lastSeenGoogleUpdatedAt
+          : (currentLink.lastSeenGoogleUpdatedAt || ""),
+        scheduleFingerprint: typeof statusResult.scheduleFingerprint === "string"
+          ? statusResult.scheduleFingerprint
+          : currentLink.scheduleFingerprint,
+        statusMirroredAt: typeof statusResult.statusMirroredAt === "number"
+          ? statusResult.statusMirroredAt
+          : (typeof currentLink.statusMirroredAt === "number" ? currentLink.statusMirroredAt : 0),
+        schemaVersion: 1
+      }, {
+        calendarId
+      });
       appliedCount += 1;
     }
     return appliedCount;

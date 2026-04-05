@@ -80,7 +80,7 @@ export const workoutWidgetDefinition = {
       type: WORKOUT_WIDGET_TYPE,
       slotIndex: normalizeSlotIndex(widget.slotIndex, maxWidgets || 5),
       settings: {
-        workoutPlans: normalizeWorkoutPlans(widget.settings?.workoutPlans),
+        workoutPlans: normalizeWorkoutPlans(widget.settings?.workoutPlans, createId),
         weightTracking: normalizeWeightTracking(widget.settings?.weightTracking)
       },
       data: {
@@ -1459,7 +1459,7 @@ function findMatchingWorkoutTemplate(existingTemplates, desired, matchedExisting
       const desiredPlanId = desired.widgetTaskMeta?.planId || "";
       const taskPlanId = task.widgetTaskMeta?.planId || "";
       const legacyKeyMatch = desiredPlanId && String(task.ownerTaskKey || "").startsWith(`workout-plan:${desiredPlanId}:`);
-      if (desiredPlanId && taskPlanId !== desiredPlanId && !legacyKeyMatch) {
+      if (desiredPlanId && taskPlanId && taskPlanId !== desiredPlanId && !legacyKeyMatch) {
         return false;
       }
     }
@@ -1509,14 +1509,16 @@ function normalizeSlotIndex(value, maxWidgets) {
   return Math.max(0, Math.min(maxWidgets - 1, Math.floor(index)));
 }
 
-function normalizeWorkoutPlans(value) {
+function normalizeWorkoutPlans(value, createId = () => "") {
   if (!Array.isArray(value)) {
     return [];
   }
   return value
     .filter((plan) => plan && typeof plan === "object")
     .map((plan) => ({
-      id: typeof plan.id === "string" ? plan.id : "",
+      id: typeof plan.id === "string" && plan.id.trim()
+        ? plan.id
+        : String(createId() || ""),
       name: typeof plan.name === "string" ? plan.name.trim().slice(0, 80) : "",
       workoutType: typeof plan.workoutType === "string" ? plan.workoutType.trim().slice(0, 80) : "",
       durationMinutes: normalizeDurationMinutes(plan.durationMinutes),

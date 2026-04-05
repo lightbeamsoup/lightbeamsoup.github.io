@@ -35,6 +35,8 @@ export function normalizeGoogleCalendarTaskLink(value, { calendarId = "" } = {})
     calendarId: typeof source.calendarId === "string" ? source.calendarId : String(calendarId || ""),
     eventId: typeof source.eventId === "string" ? source.eventId : "",
     recurringEventId: typeof source.recurringEventId === "string" ? source.recurringEventId : "",
+    originalStartDate: typeof source.originalStartDate === "string" ? source.originalStartDate : "",
+    originalTimeOfDay: typeof source.originalTimeOfDay === "string" ? source.originalTimeOfDay : "",
     source: typeof source.source === "string" && source.source.trim()
       ? source.source.trim()
       : DEFAULT_LINK_SOURCE,
@@ -136,6 +138,9 @@ export function buildGoogleCalendarScheduleSyncRequest(store, googleCalendarInte
         ...task,
         userTimeZone
       });
+      const instanceStatusChanges = String(task?.recurrence?.type || "none") !== "none"
+        ? buildGoogleCalendarRecurringInstanceStatusChanges(tasks, task, calendarId, userTimeZone)
+        : [];
       const statusMirrorState = getGoogleCalendarTaskStatusMirrorState(task);
       const statusMirrorVersion = getGoogleCalendarTaskStatusMirrorVersion(task);
       const needsRemoteCheck = Boolean(googleCalendar.eventId);
@@ -168,7 +173,8 @@ export function buildGoogleCalendarScheduleSyncRequest(store, googleCalendarInte
         googleCalendar,
         scheduleFingerprint,
         statusMirrorVersion,
-        statusMirrorLifecycleType: statusMirrorState.lifecycleType
+        statusMirrorLifecycleType: statusMirrorState.lifecycleType,
+        instanceStatusChanges
       };
     })
     .filter((task) => task.needsPush || task.needsStatusPush || task.needsRemoteCheck);
@@ -578,6 +584,68 @@ function getGoogleCalendarTaskStatusMirrorState(task) {
 
 function getGoogleCalendarTaskStatusMirrorVersion(task) {
   return getGoogleCalendarTaskStatusMirrorState(task).changedAt || 0;
+}
+
+function buildGoogleCalendarRecurringInstanceStatusChanges(tasks, templateTask, calendarId, userTimeZone) {
+  return (Array.isArray(tasks) ? tasks : [])
+    .filter((task) => (
+      task
+      && task.archived !== true
+      && task.templateId === templateTask.id
+      && String(task?.recurrence?.type || "") === "generated"
+    ))
+    .map((task) => buildGoogleCalendarRecurringInstanceStatusChange(templateTask, task, calendarId, userTimeZone))
+    .filter(Boolean);
+}
+
+function buildGoogleCalendarRecurringInstanceStatusChange(templateTask, instanceTask, calendarId, userTimeZone) {
+  const googleCalendar = normalizeGoogleCalendarTaskLink(instanceTask.googleCalendar, { calendarId });
+  const statusMirrorState = getGoogleCalendarTaskStatusMirrorState(instanceTask);
+  const statusMirrorVersion = statusMirrorState.changedAt || 0;
+  if (!statusMirrorVersion || statusMirrorVersion <= (googleCalendar.statusMirroredAt || 0)) {
+    return null;
+  }
+
+  const originalStartDate = googleCalendar.originalStartDate || String(instanceTask.startDate || instanceTask.dueDate || "");
+  const originalTimeOfDay = googleCalendar.originalTimeOfDay || String(instanceTask.timeOfDay || "");
+  if (!originalStartDate) {
+    return null;
+  }
+
+  const scheduleTask = {
+    ...instanceTask,
+    id: templateTask.id,
+    recurrence: { type: "none" },
+    userTimeZone
+  };
+
+  return {
+    sourceTaskId: String(instanceTask.id || ""),
+    taskId: templateTask.id,
+    name: String(instanceTask.name || ""),
+    details: String(instanceTask.details || ""),
+    startDate: String(instanceTask.startDate || ""),
+    dueDate: String(instanceTask.dueDate || ""),
+    timeOfDay: String(instanceTask.timeOfDay || ""),
+    length: String(instanceTask.length || "medium"),
+    recurrence: { type: "none" },
+    reminders: normalizeExportReminders(instanceTask.reminders),
+    importance: String(instanceTask.importance || "medium"),
+    categoryKey: String(instanceTask.categoryKey || ""),
+    lateGraceMinutes: Number.isFinite(Number(instanceTask.lateGraceMinutes)) ? Number(instanceTask.lateGraceMinutes) : 0,
+    ownerWidgetType: String(instanceTask.ownerWidgetType || ""),
+    ownerTaskKey: String(instanceTask.ownerTaskKey || ""),
+    widgetTaskKind: String(instanceTask.widgetTaskKind || ""),
+    widgetTaskMeta: normalizeExportWidgetTaskMeta(instanceTask.widgetTaskMeta),
+    userTimeZone: String(userTimeZone || "").trim(),
+    timeZoneMode: resolveGoogleCalendarTaskTimeZoneMode(scheduleTask),
+    googleCalendar,
+    originalStartDate,
+    originalTimeOfDay,
+    scheduleFingerprint: buildGoogleCalendarTaskScheduleFingerprint(scheduleTask),
+    statusMirrorVersion,
+    statusMirrorLifecycleType: statusMirrorState.lifecycleType
+  };
 }
 
 function getLatestGoogleCalendarLifecycleEntry(task) {
