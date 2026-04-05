@@ -56,6 +56,7 @@ export function createDeveloperController(config = {}) {
     removeTreeSkinButton = null,
     copyNotificationDiagnosticsButton = null,
     downloadLocalDataButton = null,
+    replaceLocalFromDriveButton = null,
     importDriveDataButton = null,
     sendDeveloperNotificationTestButton = null,
     sendDeveloperDailySummaryButton = null,
@@ -164,6 +165,9 @@ export function createDeveloperController(config = {}) {
     }
     if (downloadLocalDataButton) {
       downloadLocalDataButton.disabled = !visible;
+    }
+    if (replaceLocalFromDriveButton) {
+      replaceLocalFromDriveButton.disabled = !visible || !(authState?.authenticated);
     }
     if (importDriveDataButton) {
       importDriveDataButton.disabled = !visible;

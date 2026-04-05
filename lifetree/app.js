@@ -405,6 +405,7 @@ const copyGoogleCalendarDiagnosticsButton = document.getElementById("copyGoogleC
 const copyNotificationDiagnosticsButton = document.getElementById("copyNotificationDiagnostics");
 const downloadLocalDataButton = document.getElementById("downloadLocalData");
 const downloadDriveDataButton = document.getElementById("downloadDriveData");
+const replaceLocalFromDriveButton = document.getElementById("replaceLocalFromDrive");
 const importDriveDataButton = document.getElementById("importDriveData");
 const sendDeveloperNotificationTestButton = document.getElementById("sendDeveloperNotificationTest");
 const sendDeveloperDailySummaryButton = document.getElementById("sendDeveloperDailySummary");
@@ -1192,6 +1193,7 @@ developerController = createDeveloperController({
     removeTreeSkinButton,
     copyNotificationDiagnosticsButton,
     downloadLocalDataButton,
+    replaceLocalFromDriveButton,
     importDriveDataButton,
     sendDeveloperNotificationTestButton,
     sendDeveloperDailySummaryButton,
@@ -1374,6 +1376,7 @@ copyGoogleCalendarDiagnosticsButton.addEventListener("click", copyGoogleCalendar
 copyNotificationDiagnosticsButton.addEventListener("click", copyNotificationDiagnostics);
 downloadLocalDataButton.addEventListener("click", downloadLocalBackup);
 downloadDriveDataButton.addEventListener("click", downloadDriveData);
+replaceLocalFromDriveButton.addEventListener("click", replaceLocalStoreFromDrive);
 sendDeveloperNotificationTestButton.addEventListener("click", sendDeveloperNotificationTest);
 sendDeveloperDailySummaryButton.addEventListener("click", sendDeveloperDailySummary);
 sendDeveloperDailyAgendaButton.addEventListener("click", sendDeveloperDailyAgenda);
@@ -4415,6 +4418,88 @@ function openDeveloperImportPicker() {
   developerImportJsonInput.click();
 }
 
+function applyImportedStorePayload(payload, {
+  successMessage,
+  remoteState = null,
+  preserveRemoteState = false
+} = {}) {
+  store = normalizeStore(payload);
+  finalizeStoreState();
+  persistStore({ touchUpdatedAt: false, touchUserUpdatedAt: false });
+
+  if (preserveRemoteState) {
+    const currentUpdatedAt = store.updatedAt || 0;
+    const currentUserUpdatedAt = store.userUpdatedAt || currentUpdatedAt;
+    const currentFingerprint = computeStoreFingerprint(store);
+    const currentUserFingerprint = computeUserContentFingerprint(store);
+    const nextRemoteState = {
+      updatedAt: remoteState?.updatedAt || currentUpdatedAt,
+      fingerprint: remoteState?.fingerprint || currentFingerprint,
+      savedAt: remoteState?.savedAt || Date.now(),
+      userUpdatedAt: remoteState?.userUpdatedAt || currentUserUpdatedAt,
+      userFingerprint: remoteState?.userFingerprint || currentUserFingerprint
+    };
+    observeRemoteStoreState(nextRemoteState);
+    setRemoteComparisonBase({
+      userUpdatedAt: nextRemoteState.userUpdatedAt,
+      userFingerprint: nextRemoteState.userFingerprint
+    });
+    announceRemoteStoreState();
+    autosaveController.markCurrentAsSaved();
+  } else {
+    clearRemoteStoreState();
+    autosaveController.clearSavedBaseline();
+  }
+
+  autosaveController.refreshSchedule();
+  renderAll();
+  renderSyncMeta();
+  setSyncStatus(successMessage, "success");
+}
+
+async function replaceLocalStoreFromDrive() {
+  if (!isDeveloperUser()) {
+    return;
+  }
+  if (!authState.authenticated) {
+    setSyncStatus("Sign in to Google Drive first, then replace the local browser data from Drive.", "error");
+    return;
+  }
+  if (!window.confirm("Replace the local Lifetree data in this browser with the latest Google Drive copy? Unsaved local changes in this browser will be lost.")) {
+    return;
+  }
+
+  try {
+    const response = await fetch(`${API_BASE}/api/lifetree/load`, {
+      credentials: FETCH_CREDENTIALS
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || "Drive load failed");
+    }
+    if (!payload.found || !payload.payload || typeof payload.payload !== "object") {
+      setSyncStatus("No Google Drive Lifetree data exists yet for this account.", "info");
+      return;
+    }
+
+    const normalized = normalizeStore(payload.payload);
+    const remoteSavedAt = Date.parse(payload.modifiedTime || "");
+    applyImportedStorePayload(normalized, {
+      successMessage: "Replaced the local browser data with the latest Google Drive Lifetree store.",
+      preserveRemoteState: true,
+      remoteState: {
+        updatedAt: normalized.updatedAt || 0,
+        fingerprint: computeStoreFingerprint(normalized),
+        savedAt: Number.isFinite(remoteSavedAt) ? remoteSavedAt : Date.now(),
+        userUpdatedAt: normalized.userUpdatedAt || normalized.updatedAt || 0,
+        userFingerprint: computeUserContentFingerprint(normalized)
+      }
+    });
+  } catch (error) {
+    setSyncStatus(`Drive replace failed: ${error.message}`, "error");
+  }
+}
+
 async function handleDeveloperImportJson(event) {
   if (!isDeveloperUser()) {
     event.target.value = "";
@@ -4437,15 +4522,9 @@ async function handleDeveloperImportJson(event) {
     const payload = parsed && typeof parsed === "object" && parsed.payload && typeof parsed.payload === "object"
       ? parsed.payload
       : parsed;
-    store = normalizeStore(payload);
-    finalizeStoreState();
-    persistStore({ touchUpdatedAt: false, touchUserUpdatedAt: false });
-    clearRemoteStoreState();
-    autosaveController.clearSavedBaseline();
-    autosaveController.refreshSchedule();
-    renderAll();
-    renderSyncMeta();
-    setSyncStatus(`Imported ${file.name} into local Lifetree data. Review it, then save to Google Drive if you want to replace the remote copy.`, "success");
+    applyImportedStorePayload(payload, {
+      successMessage: `Imported ${file.name} into local Lifetree data. Review it, then save to Google Drive if you want to replace the remote copy.`
+    });
   } catch (error) {
     setSyncStatus(`JSON import failed: ${error.message}`, "error");
   }
