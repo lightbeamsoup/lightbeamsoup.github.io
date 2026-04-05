@@ -391,7 +391,9 @@ app.post("/api/google-calendar/sync-schedule", async (req, res) => {
       try {
         const linkedEventId = task.googleCalendar.eventId || "";
         const instanceStatusChanges = Array.isArray(task.instanceStatusChanges) ? task.instanceStatusChanges : [];
-        const resolved = await resolveGoogleCalendarTaskEvent(accessToken, calendarId, task, linkedEventId);
+        const resolved = await resolveGoogleCalendarTaskEvent(accessToken, calendarId, task, linkedEventId, {
+          calendarTimeZone
+        });
         const canonicalEvent = resolved.canonicalEvent;
         const syncEventId = canonicalEvent?.id || (resolved.linkedEventMissing ? "" : linkedEventId);
         const relinked = Boolean(canonicalEvent && canonicalEvent.id !== linkedEventId);
@@ -641,7 +643,8 @@ app.post("/api/google-calendar/diagnostics", async (req, res) => {
     for (const task of tasks) {
       const linkedEventId = task.googleCalendar.eventId || "";
       const resolved = await resolveGoogleCalendarTaskEvent(accessToken, calendarId, task, linkedEventId, {
-        deleteDuplicates: false
+        deleteDuplicates: false,
+        calendarTimeZone
       });
       const canonicalEvent = resolved.canonicalEvent;
       const isRecurring = String(task.recurrence?.type || "none") !== "none";
@@ -1636,11 +1639,34 @@ function normalizeGoogleCalendarSyncTaskRequest(value, { calendarId = "", calend
   });
   return {
     ...normalized,
+    relatedOccurrenceHints: normalizeGoogleCalendarOccurrenceHints(value?.relatedOccurrenceHints),
     instanceStatusChanges: normalizeGoogleCalendarInstanceStatusChanges(
       value?.instanceStatusChanges,
       normalized.taskId,
       { calendarId, calendarTimeZone, userTimeZone }
     )
+  };
+}
+
+function normalizeGoogleCalendarOccurrenceHints(value) {
+  return (Array.isArray(value) ? value : [])
+    .map((entry) => normalizeGoogleCalendarOccurrenceHint(entry))
+    .filter(Boolean)
+    .slice(0, 50);
+}
+
+function normalizeGoogleCalendarOccurrenceHint(value) {
+  const source = value && typeof value === "object" ? value : {};
+  const recurringEventId = sanitizeTravelText(source.recurringEventId, 256);
+  const originalStartDate = sanitizeTravelText(source.originalStartDate, 20);
+  const originalTimeOfDay = sanitizeTravelText(source.originalTimeOfDay, 10);
+  if (!recurringEventId || !originalStartDate) {
+    return null;
+  }
+  return {
+    recurringEventId,
+    originalStartDate,
+    originalTimeOfDay
   };
 }
 
@@ -2000,16 +2026,28 @@ async function listGoogleCalendarTaskTaggedEvents(accessToken, calendarId) {
   return events;
 }
 
-async function resolveGoogleCalendarTaskEvent(accessToken, calendarId, task, linkedEventId = "", { deleteDuplicates = true } = {}) {
+async function resolveGoogleCalendarTaskEvent(accessToken, calendarId, task, linkedEventId = "", {
+  deleteDuplicates = true,
+  calendarTimeZone = ""
+} = {}) {
   const recurrenceType = String(task?.recurrence?.type || "none");
   const shouldListByTaskId = !linkedEventId || recurrenceType !== "none";
   const events = [];
   let linkedEventMissing = false;
+  const seenEventIds = new Set();
+
+  function rememberEvent(event) {
+    if (!event || typeof event.id !== "string" || !event.id || seenEventIds.has(event.id)) {
+      return;
+    }
+    seenEventIds.add(event.id);
+    events.push(event);
+  }
 
   if (linkedEventId) {
     const linkedEvent = await getGoogleCalendarEvent(accessToken, calendarId, linkedEventId);
     if (linkedEvent) {
-      events.push(linkedEvent);
+      rememberEvent(linkedEvent);
     } else {
       linkedEventMissing = true;
     }
@@ -2017,7 +2055,32 @@ async function resolveGoogleCalendarTaskEvent(accessToken, calendarId, task, lin
 
   if (shouldListByTaskId && task?.taskId) {
     for (const event of await listGoogleCalendarEventsByTaskId(accessToken, calendarId, task.taskId)) {
-      events.push(event);
+      rememberEvent(event);
+    }
+  }
+
+  for (const hint of Array.isArray(task?.relatedOccurrenceHints) ? task.relatedOccurrenceHints : []) {
+    if (!hint?.recurringEventId || !hint?.originalStartDate) {
+      continue;
+    }
+    if (hint.recurringEventId !== linkedEventId) {
+      const relatedMaster = await getGoogleCalendarEvent(accessToken, calendarId, hint.recurringEventId);
+      if (relatedMaster) {
+        rememberEvent(relatedMaster);
+      }
+    }
+    const relatedInstance = await findGoogleCalendarRecurringInstanceByOriginalStart(
+      accessToken,
+      calendarId,
+      hint.recurringEventId,
+      {
+        originalStartDate: hint.originalStartDate,
+        originalTimeOfDay: hint.originalTimeOfDay,
+        calendarTimeZone
+      }
+    );
+    if (relatedInstance) {
+      rememberEvent(relatedInstance);
     }
   }
 

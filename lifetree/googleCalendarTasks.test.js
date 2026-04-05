@@ -494,6 +494,10 @@ test("schedule sync request prefers a generated recurring occurrence over the ma
         ],
         googleCalendar: normalizeGoogleCalendarTaskLink({
           calendarId: "lifetree-cal",
+          eventId: "weight-series_20260404T140000Z",
+          recurringEventId: "weight-series",
+          originalStartDate: "2026-04-04",
+          originalTimeOfDay: "07:00",
           statusMirroredAt: 0
         }, { calendarId: "lifetree-cal" })
       }
@@ -507,10 +511,18 @@ test("schedule sync request prefers a generated recurring occurrence over the ma
   });
 
   assert.equal(payload.tasks.length, 1);
+  assert.equal(payload.tasks[0].googleCalendar.eventId, "weight-series");
   assert.equal(payload.tasks[0].instanceStatusChanges.length, 1);
   assert.equal(payload.tasks[0].instanceStatusChanges[0].sourceTaskId, "weight-2026-04-04");
   assert.equal(payload.tasks[0].instanceStatusChanges[0].name, "Weight check-in");
   assert.equal(payload.tasks[0].instanceStatusChanges[0].statusMirrorVersion, 1775312518007);
+  assert.deepEqual(payload.tasks[0].relatedOccurrenceHints, [
+    {
+      recurringEventId: "weight-series",
+      originalStartDate: "2026-04-04",
+      originalTimeOfDay: "07:00"
+    }
+  ]);
 });
 
 test("schedule sync request does not remirror a recurring master when the same occurrence already exists as a mirrored generated task", () => {
@@ -610,6 +622,106 @@ test("schedule sync request does not remirror a recurring master when the same o
   assert.equal(payload.tasks[0].instanceStatusChanges.length, 0);
 });
 
+test("schedule sync request remirrors a recurring occurrence when it was previously mirrored onto a different series", () => {
+  const completedAt = 1775312518007;
+  const payload = buildGoogleCalendarScheduleSyncRequest({
+    tasks: [
+      {
+        id: "weight-template",
+        name: "Weight check-in",
+        details: "Created by Workout Coach. Log your weight in lbs.",
+        dueDate: "2026-04-04",
+        startDate: "2026-04-04",
+        timeOfDay: "07:00",
+        length: "very-short",
+        recurrence: {
+          type: "weekly",
+          interval: 1,
+          weekday: 6,
+          day: 1,
+          ordinal: "first",
+          endDate: "",
+          count: null,
+          forever: true
+        },
+        reminders: { enabled: false, dueSoonMinutes: 0, overdueMinutes: 0 },
+        importance: "medium",
+        categoryKey: "health",
+        lateGraceMinutes: 15,
+        ownerWidgetType: "workout",
+        ownerTaskKey: "weight-checkin:weekday:6",
+        widgetTaskKind: "weight-checkin",
+        widgetTaskMeta: {},
+        status: "done",
+        archived: false,
+        historyOnly: false,
+        templateId: "",
+        history: [
+          {
+            id: "history-master",
+            type: "completed",
+            at: 1774705685466
+          }
+        ],
+        googleCalendar: normalizeGoogleCalendarTaskLink({
+          calendarId: "lifetree-cal",
+          eventId: "current-weight-master",
+          statusMirroredAt: 0
+        }, { calendarId: "lifetree-cal" })
+      },
+      {
+        id: "weight-2026-04-04",
+        templateId: "weight-template-old",
+        occurrenceIndex: 1,
+        name: "7:00 AM Weight check-in (Completed)",
+        details: "Created by Workout Coach. Log your weight in lbs.",
+        dueDate: "2026-04-04",
+        startDate: "2026-04-04",
+        timeOfDay: "07:00",
+        length: "very-short",
+        recurrence: { type: "generated", sourceType: "weekly" },
+        reminders: { enabled: false, dueSoonMinutes: 0, overdueMinutes: 0 },
+        importance: "medium",
+        categoryKey: "health",
+        lateGraceMinutes: 15,
+        ownerWidgetType: "workout",
+        ownerTaskKey: "weight-checkin:weekday:6",
+        widgetTaskKind: "weight-checkin",
+        widgetTaskMeta: {},
+        status: "done",
+        archived: true,
+        historyOnly: false,
+        history: [
+          {
+            id: "history-generated",
+            type: "completed",
+            at: completedAt
+          }
+        ],
+        googleCalendar: normalizeGoogleCalendarTaskLink({
+          calendarId: "lifetree-cal",
+          eventId: "old-weight-master_20260404T140000Z",
+          recurringEventId: "old-weight-master",
+          originalStartDate: "2026-04-04",
+          originalTimeOfDay: "07:00",
+          statusMirroredAt: completedAt
+        }, { calendarId: "lifetree-cal" })
+      }
+    ]
+  }, {
+    calendarId: "lifetree-cal",
+    calendarSummary: "Lifetree",
+    calendarTimeZone: "America/Los_Angeles"
+  }, {
+    userTimeZone: "America/Los_Angeles"
+  });
+
+  assert.equal(payload.tasks.length, 1);
+  assert.equal(payload.tasks[0].instanceStatusChanges.length, 1);
+  assert.equal(payload.tasks[0].instanceStatusChanges[0].sourceTaskId, "weight-2026-04-04");
+  assert.equal(payload.tasks[0].instanceStatusChanges[0].statusMirrorVersion, completedAt);
+});
+
 test("schedule sync request matches archived recurring instance status changes after a series template is recreated", () => {
   const payload = buildGoogleCalendarScheduleSyncRequest({
     tasks: [
@@ -679,6 +791,10 @@ test("schedule sync request matches archived recurring instance status changes a
         ],
         googleCalendar: normalizeGoogleCalendarTaskLink({
           calendarId: "lifetree-cal",
+          eventId: "relinked-master_20260405T020100Z",
+          recurringEventId: "relinked-master",
+          originalStartDate: "2026-04-04",
+          originalTimeOfDay: "19:01",
           statusMirroredAt: 0
         }, { calendarId: "lifetree-cal" })
       }
@@ -694,8 +810,16 @@ test("schedule sync request matches archived recurring instance status changes a
   assert.equal(payload.totalEligibleTasks, 1);
   assert.equal(payload.tasks.length, 1);
   assert.equal(payload.tasks[0].taskId, "nasal-spray-template-new");
+  assert.equal(payload.tasks[0].googleCalendar.eventId, "relinked-master");
   assert.equal(payload.tasks[0].instanceStatusChanges.length, 1);
   assert.equal(payload.tasks[0].instanceStatusChanges[0]?.sourceTaskId, "nasal-spray-2026-04-04");
+  assert.deepEqual(payload.tasks[0].relatedOccurrenceHints, [
+    {
+      recurringEventId: "relinked-master",
+      originalStartDate: "2026-04-04",
+      originalTimeOfDay: "19:01"
+    }
+  ]);
 });
 
 test("recurring google payload anchors the series to the earliest pending instance date while preserving local due dates in metadata", () => {
