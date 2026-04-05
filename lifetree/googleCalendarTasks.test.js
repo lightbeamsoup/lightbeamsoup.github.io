@@ -379,6 +379,113 @@ test("schedule sync request matches archived recurring instance status changes a
   assert.equal(payload.tasks[0].instanceStatusChanges[0]?.sourceTaskId, "nasal-spray-2026-04-04");
 });
 
+test("recurring google payload anchors the series to the earliest pending instance date while preserving local due dates in metadata", () => {
+  const syncRequest = buildGoogleCalendarScheduleSyncRequest({
+    tasks: [
+      {
+        id: "energy-template",
+        name: "Energy check-in",
+        details: "Created by the Energy widget.",
+        dueDate: "2026-04-05",
+        startDate: "2026-04-05",
+        timeOfDay: "12:00",
+        length: "very-short",
+        recurrence: {
+          type: "daily",
+          interval: 1,
+          weekday: 0,
+          day: 1,
+          ordinal: "first",
+          endDate: "",
+          count: null,
+          forever: true
+        },
+        reminders: { enabled: false, dueSoonMinutes: 0, overdueMinutes: 0 },
+        importance: "medium",
+        categoryKey: "health",
+        lateGraceMinutes: 60,
+        ownerWidgetType: "energy",
+        ownerTaskKey: "energy-reminder-1",
+        widgetTaskKind: "energy-checkin",
+        widgetTaskMeta: {},
+        status: "open",
+        archived: false,
+        historyOnly: false,
+        templateId: "",
+        googleCalendar: normalizeGoogleCalendarTaskLink({
+          calendarId: "lifetree-cal",
+          eventId: "master-event"
+        }, { calendarId: "lifetree-cal" })
+      },
+      {
+        id: "energy-2026-04-04",
+        templateId: "energy-template",
+        occurrenceIndex: 1,
+        name: "Energy check-in",
+        details: "",
+        dueDate: "2026-04-04",
+        startDate: "2026-04-04",
+        timeOfDay: "12:00",
+        length: "very-short",
+        recurrence: { type: "generated", sourceType: "daily" },
+        reminders: { enabled: false, dueSoonMinutes: 0, overdueMinutes: 0 },
+        importance: "medium",
+        categoryKey: "health",
+        lateGraceMinutes: 60,
+        ownerWidgetType: "energy",
+        ownerTaskKey: "energy-reminder-1",
+        widgetTaskKind: "energy-checkin",
+        widgetTaskMeta: {},
+        status: "done",
+        archived: true,
+        historyOnly: false,
+        history: [
+          {
+            id: "history-1",
+            type: "completed",
+            at: 1775323587866
+          }
+        ],
+        googleCalendar: normalizeGoogleCalendarTaskLink({
+          calendarId: "lifetree-cal",
+          statusMirroredAt: 0
+        }, { calendarId: "lifetree-cal" })
+      }
+    ]
+  }, {
+    calendarId: "lifetree-cal",
+    calendarSummary: "Lifetree",
+    calendarTimeZone: "America/Los_Angeles"
+  }, {
+    userTimeZone: "America/Los_Angeles"
+  });
+
+  assert.equal(syncRequest.tasks.length, 1);
+  assert.equal(syncRequest.tasks[0].seriesAnchorDate, "2026-04-04");
+
+  const payload = buildGoogleCalendarEventPayload(syncRequest.tasks[0], {
+    calendarTimeZone: "America/Los_Angeles"
+  });
+  assert.equal(payload.start.dateTime, "2026-04-04T12:00:00-07:00");
+  assert.equal(payload.extendedProperties.private.lifetreeStartDate, "2026-04-05");
+  assert.equal(payload.extendedProperties.private.lifetreeDueDate, "2026-04-05");
+
+  const patch = buildGoogleCalendarTaskSchedulePatchFromEvent({
+    summary: payload.summary,
+    description: payload.description,
+    start: payload.start,
+    end: payload.end,
+    recurrence: payload.recurrence,
+    reminders: payload.reminders,
+    extendedProperties: payload.extendedProperties
+  }, {
+    calendarTimeZone: "America/Los_Angeles",
+    userTimeZone: "America/Los_Angeles"
+  });
+  assert.equal(patch.startDate, "2026-04-05");
+  assert.equal(patch.dueDate, "2026-04-05");
+});
+
 test("google calendar sync task normalization preserves push and remote-check flags", () => {
   const normalized = normalizeGoogleCalendarSyncTask({
     taskId: "energy-checkin",

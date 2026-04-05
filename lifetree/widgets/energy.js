@@ -478,10 +478,7 @@ function shouldUseEnergyTaskForReminderRecovery(task, { includeRecentClosed = fa
   if (!includeRecentClosed) {
     return false;
   }
-  if (task.recurrence?.type === "archived-series") {
-    return isRecentEnergyReminderEvidence(task, now);
-  }
-  return task.archived !== true && isRecentEnergyReminderEvidence(task, now);
+  return isRecentEnergyReminderEvidence(task, now);
 }
 
 function isRecentEnergyReminderEvidence(task, now = Date.now()) {

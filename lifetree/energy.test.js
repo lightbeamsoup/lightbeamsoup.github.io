@@ -238,6 +238,66 @@ test("energy reminder settings recover a recent slot from archived same-type evi
   assert.deepEqual(widget.settings.reminderTimes, ["07:00", "12:00", "19:00"]);
 });
 
+test("energy reminder settings recover a recent archived generated slot for the current widget", () => {
+  const widget = {
+    id: "energy-widget",
+    type: "energy",
+    settings: {
+      reminderTimes: ["07:00", "12:00"],
+      maxCheckins: 12
+    },
+    data: {
+      entries: []
+    }
+  };
+  const tasks = [
+    {
+      id: "energy-0",
+      ownerWidgetId: widget.id,
+      ownerWidgetType: "energy",
+      ownerTaskKey: "energy-reminder-0",
+      templateId: "",
+      timeOfDay: "07:00",
+      status: "open",
+      archived: false
+    },
+    {
+      id: "energy-1",
+      ownerWidgetId: widget.id,
+      ownerWidgetType: "energy",
+      ownerTaskKey: "energy-reminder-1",
+      templateId: "",
+      timeOfDay: "12:00",
+      status: "open",
+      archived: false
+    },
+    {
+      id: "energy-2-archived",
+      ownerWidgetId: widget.id,
+      ownerWidgetType: "energy",
+      ownerTaskKey: "energy-reminder-2",
+      templateId: "missing-template",
+      timeOfDay: "19:00",
+      dueDate: "2026-04-04",
+      status: "done",
+      archived: true,
+      recurrence: { type: "generated", sourceType: "daily" },
+      history: [
+        {
+          id: "history-1",
+          type: "completed",
+          at: Date.parse("2026-04-04T19:07:00-07:00")
+        }
+      ]
+    }
+  ];
+
+  const reminderTimes = reconcileEnergyReminderSettings(widget, tasks);
+
+  assert.deepEqual(reminderTimes, ["07:00", "12:00", "19:00"]);
+  assert.deepEqual(widget.settings.reminderTimes, ["07:00", "12:00", "19:00"]);
+});
+
 test("energy ensureTasks recreates recurring reminder templates when stale non-template tasks occupy a slot key", () => {
   const widget = {
     id: "energy-widget",

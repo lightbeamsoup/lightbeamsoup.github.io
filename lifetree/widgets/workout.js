@@ -1607,7 +1607,7 @@ function isRecoverableOrphanedWorkoutTask(task, widgetId, tasksById, { now = Dat
     return false;
   }
 
-  const missingTemplate = Boolean(task.templateId && !tasksById.has(task.templateId));
+  const missingTemplate = isMissingOrInactiveWorkoutTemplate(task, widgetId, tasksById);
   if (task.ownerWidgetId === widgetId && task.archived !== true && missingTemplate) {
     return true;
   }
@@ -1618,6 +1618,19 @@ function isRecoverableOrphanedWorkoutTask(task, widgetId, tasksById, { now = Dat
   }
 
   return missingTemplate || task.recurrence?.type === "archived-series";
+}
+
+function isMissingOrInactiveWorkoutTemplate(task, widgetId, tasksById) {
+  if (!task?.templateId) {
+    return false;
+  }
+  const template = tasksById.get(task.templateId);
+  if (!template) {
+    return true;
+  }
+  return template.archived === true
+    || template.recurrence?.type === "archived-series"
+    || template.ownerWidgetId !== widgetId;
 }
 
 function isRecentWorkoutPlanEvidence(task, now = Date.now()) {

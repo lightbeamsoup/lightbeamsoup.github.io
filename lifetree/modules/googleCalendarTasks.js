@@ -35,6 +35,7 @@ export function normalizeGoogleCalendarTaskLink(value, { calendarId = "" } = {})
     calendarId: typeof source.calendarId === "string" ? source.calendarId : String(calendarId || ""),
     eventId: typeof source.eventId === "string" ? source.eventId : "",
     recurringEventId: typeof source.recurringEventId === "string" ? source.recurringEventId : "",
+    seriesAnchorDate: typeof source.seriesAnchorDate === "string" ? source.seriesAnchorDate : "",
     originalStartDate: typeof source.originalStartDate === "string" ? source.originalStartDate : "",
     originalTimeOfDay: typeof source.originalTimeOfDay === "string" ? source.originalTimeOfDay : "",
     source: typeof source.source === "string" && source.source.trim()
@@ -99,6 +100,8 @@ export function buildGoogleCalendarTaskScheduleFingerprint(task) {
   const userTimeZone = String(task?.userTimeZone || "").trim();
   const timeZoneMode = resolveGoogleCalendarTaskTimeZoneMode(task);
   const effectiveTimeZone = resolveGoogleCalendarTaskTimeZone(task, userTimeZone);
+  const recurrence = normalizeExportRecurrence(task?.recurrence);
+  const seriesAnchorDate = resolveGoogleCalendarRecurringSeriesAnchorDate(task, recurrence);
   return JSON.stringify(sortObjectKeys({
     eventPayloadVersion: GOOGLE_CALENDAR_EVENT_PAYLOAD_VERSION,
     name: String(task?.name || ""),
@@ -107,13 +110,14 @@ export function buildGoogleCalendarTaskScheduleFingerprint(task) {
     dueDate: String(task?.dueDate || ""),
     timeOfDay: String(task?.timeOfDay || ""),
     length: String(task?.length || "medium"),
-    recurrence: normalizeExportRecurrence(task?.recurrence),
+    recurrence,
     reminders: normalizeExportReminders(task?.reminders),
     importance: String(task?.importance || "medium"),
     categoryKey: String(task?.categoryKey || ""),
     lateGraceMinutes: Number.isFinite(Number(task?.lateGraceMinutes)) ? Number(task.lateGraceMinutes) : 0,
     ownerWidgetType: String(task?.ownerWidgetType || ""),
     widgetTaskKind: String(task?.widgetTaskKind || ""),
+    seriesAnchorDate,
     timeZoneMode,
     timeZone: effectiveTimeZone,
     location: resolveGoogleCalendarTaskLocation(task)
@@ -130,17 +134,23 @@ export function buildGoogleCalendarScheduleSyncRequest(store, googleCalendarInte
   const syncTasks = eligibleTasks
     .map((task) => {
       const googleCalendar = normalizeGoogleCalendarTaskLink(task.googleCalendar, { calendarId });
+      const instanceStatusChanges = String(task?.recurrence?.type || "none") !== "none"
+        ? buildGoogleCalendarRecurringInstanceStatusChanges(tasks, task, calendarId, userTimeZone)
+        : [];
+      const seriesAnchorDate = resolveGoogleCalendarRecurringSeriesAnchorDate({
+        ...task,
+        googleCalendar,
+        instanceStatusChanges
+      });
       const scheduleFingerprint = buildGoogleCalendarTaskScheduleFingerprint({
         ...task,
-        userTimeZone
+        userTimeZone,
+        seriesAnchorDate
       });
       const timeZoneMode = resolveGoogleCalendarTaskTimeZoneMode({
         ...task,
         userTimeZone
       });
-      const instanceStatusChanges = String(task?.recurrence?.type || "none") !== "none"
-        ? buildGoogleCalendarRecurringInstanceStatusChanges(tasks, task, calendarId, userTimeZone)
-        : [];
       const statusMirrorState = getGoogleCalendarTaskStatusMirrorState(task);
       const statusMirrorVersion = getGoogleCalendarTaskStatusMirrorVersion(task);
       const needsRemoteCheck = Boolean(googleCalendar.eventId);
@@ -170,6 +180,7 @@ export function buildGoogleCalendarScheduleSyncRequest(store, googleCalendarInte
         widgetTaskMeta: normalizeExportWidgetTaskMeta(task.widgetTaskMeta),
         userTimeZone: String(userTimeZone || "").trim(),
         timeZoneMode,
+        seriesAnchorDate,
         googleCalendar,
         scheduleFingerprint,
         statusMirrorVersion,
@@ -216,6 +227,7 @@ export function normalizeGoogleCalendarSyncTask(value, { calendarId = "", calend
     widgetTaskMeta,
     googleCalendar: normalizeGoogleCalendarTaskLink(source.googleCalendar, { calendarId }),
     userTimeZone: String(source.userTimeZone || userTimeZone || "").trim(),
+    seriesAnchorDate: typeof source.seriesAnchorDate === "string" ? source.seriesAnchorDate : "",
     status: typeof source.status === "string" ? source.status : "open",
     history: Array.isArray(source.history) ? source.history : [],
     statusMirrorLifecycleType: typeof source.statusMirrorLifecycleType === "string" ? source.statusMirrorLifecycleType : "",
@@ -365,12 +377,14 @@ export function buildGoogleCalendarTaskSchedulePatchFromEvent(event, { calendarT
     && start.timeZone.trim()
     ? start.timeZone.trim()
     : "";
+  const storedStartDate = normalizeDateString(privateProps.lifetreeStartDate);
+  const storedDueDate = normalizeDateString(privateProps.lifetreeDueDate);
   const location = typeof event?.location === "string" ? event.location.trim() : "";
   const patch = {
     name: typeof event?.summary === "string" && event.summary.trim() ? event.summary.trim() : "Untitled task",
     details,
-    startDate: start.startDate,
-    dueDate: start.dueDate,
+    startDate: recurrence.type !== "none" && storedStartDate ? storedStartDate : start.startDate,
+    dueDate: recurrence.type !== "none" && storedDueDate ? storedDueDate : start.dueDate,
     timeOfDay: start.timeOfDay,
     recurrence,
     reminders,
@@ -537,6 +551,9 @@ function buildGoogleCalendarExtendedProperties(task) {
   return {
     lifetreeTaskId: task.taskId,
     lifetreeTaskKind: task.recurrence.type === "none" ? "one-off" : "recurring-master",
+    lifetreeStartDate: String(task.startDate || ""),
+    lifetreeDueDate: String(task.dueDate || ""),
+    lifetreeSeriesAnchorDate: String(task.seriesAnchorDate || ""),
     lifetreeWidgetType: String(task.ownerWidgetType || ""),
     lifetreeWidgetTaskKind: String(task.widgetTaskKind || ""),
     lifetreeCategoryKey: String(task.categoryKey || ""),
@@ -782,8 +799,14 @@ function parseGoogleCalendarEventReminders(value) {
 function buildGoogleCalendarEventStartEnd(task, timeZone) {
   const durationMinutes = DURATION_MINUTES_BY_LENGTH[task.length] || DURATION_MINUTES_BY_LENGTH.medium;
   const hasTime = Boolean(task.timeOfDay);
-  const startDate = task.startDate || task.dueDate;
-  const dueDate = task.dueDate || task.startDate;
+  const recurrence = normalizeExportRecurrence(task.recurrence);
+  const seriesAnchorDate = resolveGoogleCalendarRecurringSeriesAnchorDate(task, recurrence);
+  const startDate = recurrence.type !== "none"
+    ? (seriesAnchorDate || task.startDate || task.dueDate)
+    : (task.startDate || task.dueDate);
+  const dueDate = recurrence.type !== "none"
+    ? (seriesAnchorDate || task.dueDate || task.startDate)
+    : (task.dueDate || task.startDate);
 
   if (!hasTime) {
     const eventStartDate = normalizeDateString(startDate || dueDate);
@@ -866,6 +889,30 @@ export function parseGoogleCalendarEventStart(event, calendarTimeZone) {
     timeOfDay,
     timeZone: eventTimeZone
   };
+}
+
+function resolveGoogleCalendarRecurringSeriesAnchorDate(task, recurrenceOverride = null) {
+  const recurrence = recurrenceOverride || normalizeExportRecurrence(task?.recurrence);
+  if (!recurrence || recurrence.type === "none") {
+    return "";
+  }
+
+  const existingAnchor = normalizeDateString(task?.seriesAnchorDate || task?.googleCalendar?.seriesAnchorDate || "");
+  if (existingAnchor) {
+    return existingAnchor;
+  }
+
+  const historicalAnchor = Array.isArray(task?.instanceStatusChanges)
+    ? task.instanceStatusChanges
+      .map((change) => normalizeDateString(change?.originalStartDate || ""))
+      .filter(Boolean)
+      .sort()[0] || ""
+    : "";
+  if (historicalAnchor) {
+    return historicalAnchor;
+  }
+
+  return normalizeDateString(task?.startDate || task?.dueDate || "");
 }
 
 function buildGoogleCalendarRecurrence(task) {

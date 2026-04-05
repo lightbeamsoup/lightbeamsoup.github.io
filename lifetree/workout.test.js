@@ -326,3 +326,131 @@ test("workout widget recovers a plan from recent archived-series evidence after 
   assert.equal(widget.settings.workoutPlans[0].recurrence?.timeOfDay, "18:30");
   assert.ok(store.tasks.some((task) => !task.templateId && task.widgetTaskKind === "workout-session" && task.name === "Dog walk" && task.ownerWidgetId === widget.id));
 });
+
+test("workout widget recovers a plan when generated evidence still points at an inactive archived template", () => {
+  const widget = workoutWidgetDefinition.normalizeWidget({
+    id: "workout-widget",
+    type: "workout",
+    slotIndex: 0,
+    settings: {
+      workoutPlans: [],
+      weightTracking: {
+        enabled: false
+      }
+    },
+    data: {
+      workoutEntries: [],
+      weightEntries: []
+    },
+    createdAt: 100,
+    updatedAt: 100
+  }, {
+    createId: () => "widget-id",
+    now: 100,
+    maxWidgets: 5
+  });
+
+  const store = {
+    tasks: [
+      {
+        id: "dog-walk-template",
+        templateId: "",
+        occurrenceIndex: 0,
+        name: "Dog walk",
+        details: "Created by Workout Coach.",
+        startDate: "2026-04-04",
+        dueDate: "2026-04-04",
+        timeOfDay: "18:30",
+        status: "done",
+        ownerWidgetId: "workout-widget-old",
+        ownerWidgetType: "workout",
+        ownerTaskKey: "workout-plan:dog-walk:slot:0",
+        widgetTaskKind: "workout-session",
+        widgetTaskMeta: {
+          planId: "dog-walk",
+          workoutType: "Dog walk",
+          durationMinutes: 30,
+          intensity: "low",
+          caloriesBurned: 150,
+          recurrenceType: "daily",
+          slotKey: "workout-plan:dog-walk:slot:0"
+        },
+        recurrence: {
+          type: "daily",
+          interval: 1,
+          weekday: 0,
+          day: 1,
+          ordinal: "first",
+          endDate: "",
+          count: null,
+          forever: true
+        },
+        archived: true,
+        history: [
+          {
+            id: "hist-template",
+            type: "completed",
+            at: Date.parse("2026-04-04T18:35:00-07:00")
+          }
+        ]
+      },
+      {
+        id: "dog-walk-generated",
+        templateId: "dog-walk-template",
+        occurrenceIndex: 2,
+        name: "Dog walk",
+        details: "Created by Workout Coach.",
+        startDate: "2026-04-04",
+        dueDate: "2026-04-04",
+        timeOfDay: "18:30",
+        status: "done",
+        ownerWidgetId: "workout-widget",
+        ownerWidgetType: "workout",
+        ownerTaskKey: "workout-plan:dog-walk:slot:0",
+        widgetTaskKind: "workout-session",
+        widgetTaskMeta: {
+          planId: "dog-walk",
+          workoutType: "Dog walk",
+          durationMinutes: 30,
+          intensity: "low",
+          caloriesBurned: 150,
+          recurrenceType: "daily",
+          slotKey: "workout-plan:dog-walk:slot:0"
+        },
+        recurrence: {
+          type: "generated",
+          sourceType: "daily"
+        },
+        archived: true,
+        history: [
+          {
+            id: "hist-generated",
+            type: "completed",
+            at: Date.parse("2026-04-04T18:35:00-07:00")
+          }
+        ]
+      }
+    ]
+  };
+
+  let createdTaskId = 0;
+  workoutWidgetDefinition.ensureTasks({
+    widget,
+    store,
+    helpers: {
+      createId: () => `task-${++createdTaskId}`,
+      todayString: () => "2026-04-04",
+      resolveCategorySnapshot: () => ({
+        key: "health",
+        label: "Health",
+        color: "#7dbf74"
+      }),
+      regenerateSeries: () => {},
+      retireWidgetOwnedSeries: () => {}
+    }
+  });
+
+  assert.equal(widget.settings.workoutPlans.length, 1);
+  assert.equal(widget.settings.workoutPlans[0].workoutType, "Dog walk");
+  assert.ok(store.tasks.some((task) => !task.templateId && task.widgetTaskKind === "workout-session" && task.name === "Dog walk" && task.ownerWidgetId === widget.id));
+});
