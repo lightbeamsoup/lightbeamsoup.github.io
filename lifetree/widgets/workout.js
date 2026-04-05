@@ -1101,6 +1101,7 @@ function stageAdHocWorkoutLog(widget, values, helpers) {
 }
 
 function syncWorkoutOwnedTaskTemplates(widget, store, helpers) {
+  recoverOrphanedWorkoutPlans(widget, store, helpers);
   const desiredTemplates = buildDesiredWorkoutTemplates(widget, store, helpers);
   const existingTemplates = store.tasks.filter((task) => isWorkoutOwnedTemplate(task, widget.id));
   const matchedExistingIds = new Set();
@@ -1143,6 +1144,42 @@ function syncWorkoutOwnedTaskTemplates(widget, store, helpers) {
       helpers.retireWidgetOwnedSeries(template);
     }
   }
+}
+
+function recoverOrphanedWorkoutPlans(widget, store, helpers) {
+  if (!widget?.id || !Array.isArray(store?.tasks)) {
+    return;
+  }
+
+  const tasksById = new Map(store.tasks.map((task) => [task.id, task]));
+  const existingPlans = normalizeWorkoutPlans(widget.settings?.workoutPlans, helpers?.createId);
+  const existingKeys = new Set(existingPlans.map((plan) => buildWorkoutPlanRecoveryKey(plan)).filter(Boolean));
+  const recoveredByKey = new Map();
+
+  for (const task of store.tasks) {
+    if (!isRecoverableOrphanedWorkoutTask(task, widget.id, tasksById)) {
+      continue;
+    }
+    const recoveredPlan = buildRecoveredWorkoutPlanFromTask(task, helpers);
+    if (!recoveredPlan) {
+      continue;
+    }
+    const recoveryKey = buildWorkoutPlanRecoveryKey(recoveredPlan);
+    if (!recoveryKey || existingKeys.has(recoveryKey)) {
+      continue;
+    }
+    const existingRecovered = recoveredByKey.get(recoveryKey) || null;
+    recoveredByKey.set(recoveryKey, existingRecovered
+      ? mergeRecoveredWorkoutPlans(existingRecovered, recoveredPlan)
+      : recoveredPlan);
+  }
+
+  if (recoveredByKey.size === 0) {
+    return;
+  }
+
+  widget.settings.workoutPlans = [...existingPlans, ...recoveredByKey.values()].sort(compareWorkoutPlanDisplay);
+  widget.updatedAt = Date.now();
 }
 
 function buildDesiredWorkoutTemplates(widget, store, helpers) {
@@ -1515,21 +1552,186 @@ function normalizeWorkoutPlans(value, createId = () => "") {
   }
   return value
     .filter((plan) => plan && typeof plan === "object")
-    .map((plan) => ({
-      id: typeof plan.id === "string" && plan.id.trim()
-        ? plan.id
-        : String(createId() || ""),
-      name: typeof plan.name === "string" ? plan.name.trim().slice(0, 80) : "",
-      workoutType: typeof plan.workoutType === "string" ? plan.workoutType.trim().slice(0, 80) : "",
-      durationMinutes: normalizeDurationMinutes(plan.durationMinutes),
-      intensity: normalizeWorkoutIntensity(plan.intensity),
-      caloriesBurned: normalizeCaloriesBurned(plan.caloriesBurned ?? DEFAULT_WORKOUT_CALORIES),
-      recurrence: normalizeWorkoutRecurrence(plan.recurrence),
-      categoryKey: typeof plan.categoryKey === "string" ? plan.categoryKey : "health",
-      points: normalizePoints(plan.points),
-      createdAt: typeof plan.createdAt === "number" ? plan.createdAt : 0,
-      updatedAt: typeof plan.updatedAt === "number" ? plan.updatedAt : 0
-    }));
+    .map((plan) => {
+      const name = typeof plan.name === "string" ? plan.name.trim().slice(0, 80) : "";
+      const workoutType = typeof plan.workoutType === "string" ? plan.workoutType.trim().slice(0, 80) : "";
+      const recurrence = normalizeWorkoutRecurrence(plan.recurrence);
+      return {
+        id: typeof plan.id === "string" && plan.id.trim()
+          ? plan.id
+          : (deriveLegacyWorkoutPlanId({
+            name,
+            workoutType,
+            recurrence
+          }) || String(createId() || "")),
+        name,
+        workoutType,
+        durationMinutes: normalizeDurationMinutes(plan.durationMinutes),
+        intensity: normalizeWorkoutIntensity(plan.intensity),
+        caloriesBurned: normalizeCaloriesBurned(plan.caloriesBurned ?? DEFAULT_WORKOUT_CALORIES),
+        recurrence,
+        categoryKey: typeof plan.categoryKey === "string" ? plan.categoryKey : "health",
+        points: normalizePoints(plan.points),
+        createdAt: typeof plan.createdAt === "number" ? plan.createdAt : 0,
+        updatedAt: typeof plan.updatedAt === "number" ? plan.updatedAt : 0
+      };
+    });
+}
+
+function deriveLegacyWorkoutPlanId(value) {
+  const recurrence = normalizeWorkoutRecurrence(value?.recurrence);
+  const namePart = slugWorkoutPlanIdSegment(value?.workoutType || value?.name || "workout");
+  const recurrenceType = recurrence?.type || "daily";
+  const timePart = slugWorkoutPlanIdSegment(recurrence?.timeOfDay || DEFAULT_WORKOUT_TIME);
+  const weekdayPart = recurrenceType === "weekly"
+    ? normalizeWeekdays(recurrence?.weekdays).join("-") || "0"
+    : normalizeAdditionalTimes(recurrence?.additionalTimes).join("-");
+  return `legacy-${namePart}-${recurrenceType}-${timePart}-${weekdayPart || "slot"}`;
+}
+
+function slugWorkoutPlanIdSegment(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "workout";
+}
+
+function isRecoverableOrphanedWorkoutTask(task, widgetId, tasksById) {
+  return Boolean(
+    task
+    && task.archived !== true
+    && task.ownerWidgetId === widgetId
+    && task.ownerWidgetType === WORKOUT_WIDGET_TYPE
+    && task.widgetTaskKind === "workout-session"
+    && task.templateId
+    && !tasksById.has(task.templateId)
+  );
+}
+
+function buildRecoveredWorkoutPlanFromTask(task, helpers) {
+  const recurrenceType = task?.recurrence?.type === "generated"
+    ? (task?.recurrence?.sourceType || task?.widgetTaskMeta?.recurrenceType || "")
+    : (task?.recurrence?.type || "");
+  if (recurrenceType !== "daily" && recurrenceType !== "weekly") {
+    return null;
+  }
+  const workoutType = typeof task?.widgetTaskMeta?.workoutType === "string" && task.widgetTaskMeta.workoutType.trim()
+    ? task.widgetTaskMeta.workoutType.trim().slice(0, 80)
+    : String(task?.name || "Workout").trim().slice(0, 80);
+  const scheduledDate = String(task?.dueDate || task?.startDate || "");
+  const scheduledWeekday = deriveWorkoutTaskWeekday(task, scheduledDate);
+  const recurrence = recurrenceType === "weekly"
+    ? {
+        type: "weekly",
+        interval: 1,
+        instancesPerPeriod: 1,
+        weekdays: scheduledWeekday >= 0 ? [scheduledWeekday] : [],
+        timeOfDay: normalizeTimeValue(task?.timeOfDay, DEFAULT_WORKOUT_TIME),
+        additionalTimes: []
+      }
+    : {
+        type: "daily",
+        interval: 1,
+        instancesPerPeriod: 1,
+        weekdays: [],
+        timeOfDay: normalizeTimeValue(task?.timeOfDay, DEFAULT_WORKOUT_TIME),
+        additionalTimes: []
+      };
+  const recovered = {
+    id: typeof task?.widgetTaskMeta?.planId === "string" && task.widgetTaskMeta.planId.trim()
+      ? task.widgetTaskMeta.planId.trim()
+      : (deriveLegacyWorkoutPlanId({
+        name: workoutType,
+        workoutType,
+        recurrence
+      }) || String(helpers?.createId?.() || "")),
+    name: workoutType,
+    workoutType,
+    durationMinutes: normalizeDurationMinutes(task?.widgetTaskMeta?.durationMinutes || 30),
+    intensity: normalizeWorkoutIntensity(task?.widgetTaskMeta?.intensity),
+    caloriesBurned: normalizeCaloriesBurned(task?.widgetTaskMeta?.caloriesBurned ?? DEFAULT_WORKOUT_CALORIES),
+    recurrence,
+    categoryKey: typeof task?.categoryKey === "string" && task.categoryKey ? task.categoryKey : "health",
+    points: normalizePoints(task?.pointsValue),
+    createdAt: typeof task?.createdAt === "number" ? task.createdAt : Date.now(),
+    updatedAt: typeof task?.updatedAt === "number" ? task.updatedAt : Date.now()
+  };
+  return recovered;
+}
+
+function deriveWorkoutTaskWeekday(task, scheduledDate = "") {
+  const recurrenceWeekday = Number(task?.recurrence?.weekday);
+  if (Number.isInteger(recurrenceWeekday) && recurrenceWeekday >= 0 && recurrenceWeekday <= 6) {
+    return recurrenceWeekday;
+  }
+  if (!scheduledDate) {
+    return -1;
+  }
+  const date = new Date(`${scheduledDate}T12:00:00`);
+  return Number.isNaN(date.getTime()) ? -1 : date.getDay();
+}
+
+function buildWorkoutPlanRecoveryKey(plan) {
+  if (!plan) {
+    return "";
+  }
+  const recurrence = normalizeWorkoutRecurrence(plan.recurrence);
+  return JSON.stringify({
+    name: String(plan.name || plan.workoutType || ""),
+    workoutType: String(plan.workoutType || plan.name || ""),
+    durationMinutes: normalizeDurationMinutes(plan.durationMinutes),
+    intensity: normalizeWorkoutIntensity(plan.intensity),
+    caloriesBurned: normalizeCaloriesBurned(plan.caloriesBurned ?? DEFAULT_WORKOUT_CALORIES),
+    recurrenceType: recurrence?.type || "",
+    weekdays: recurrence?.type === "weekly" ? normalizeWeekdays(recurrence?.weekdays) : [],
+    times: recurrence?.type === "daily"
+      ? [normalizeTimeValue(recurrence?.timeOfDay, DEFAULT_WORKOUT_TIME), ...normalizeAdditionalTimes(recurrence?.additionalTimes)]
+      : [normalizeTimeValue(recurrence?.timeOfDay, DEFAULT_WORKOUT_TIME)]
+  });
+}
+
+function mergeRecoveredWorkoutPlans(existingPlan, nextPlan) {
+  const existingRecurrence = normalizeWorkoutRecurrence(existingPlan.recurrence);
+  const nextRecurrence = normalizeWorkoutRecurrence(nextPlan.recurrence);
+  if (!existingRecurrence || !nextRecurrence || existingRecurrence.type !== nextRecurrence.type) {
+    return existingPlan;
+  }
+  if (existingRecurrence.type === "weekly") {
+    return {
+      ...existingPlan,
+      recurrence: {
+        ...existingRecurrence,
+        weekdays: normalizeWeekdays([
+          ...existingRecurrence.weekdays,
+          ...nextRecurrence.weekdays
+        ]),
+        instancesPerPeriod: normalizeWeekdays([
+          ...existingRecurrence.weekdays,
+          ...nextRecurrence.weekdays
+        ]).length || 1
+      },
+      updatedAt: Math.max(existingPlan.updatedAt || 0, nextPlan.updatedAt || 0)
+    };
+  }
+
+  const allTimes = [
+    normalizeTimeValue(existingRecurrence.timeOfDay, DEFAULT_WORKOUT_TIME),
+    ...normalizeAdditionalTimes(existingRecurrence.additionalTimes),
+    normalizeTimeValue(nextRecurrence.timeOfDay, DEFAULT_WORKOUT_TIME),
+    ...normalizeAdditionalTimes(nextRecurrence.additionalTimes)
+  ].filter(Boolean).sort();
+  const [timeOfDay, ...additionalTimes] = [...new Set(allTimes)];
+  return {
+    ...existingPlan,
+    recurrence: {
+      ...existingRecurrence,
+      timeOfDay: timeOfDay || DEFAULT_WORKOUT_TIME,
+      additionalTimes,
+      instancesPerPeriod: 1 + additionalTimes.length
+    },
+    updatedAt: Math.max(existingPlan.updatedAt || 0, nextPlan.updatedAt || 0)
+  };
 }
 
 function normalizeWeightTracking(value) {

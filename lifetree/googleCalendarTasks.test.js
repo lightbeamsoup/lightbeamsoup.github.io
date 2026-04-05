@@ -677,6 +677,7 @@ test("event payload mirrors lifecycle state into the Google description footer a
     calendarTimeZone: "America/Los_Angeles"
   });
 
+  assert.equal(payload.summary, "8:00 PM Pack for departure (Completed)");
   assert.match(payload.description, /Lifetree status: completed/);
   assert.equal(payload.extendedProperties.private.lifetreeStatus, "completed");
   assert.equal(payload.extendedProperties.private.lifetreeLifecycleType, "completed");

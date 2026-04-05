@@ -1768,15 +1768,13 @@ async function listGoogleCalendarEventsByTaskId(accessToken, calendarId, taskId)
 
 async function listGoogleCalendarRecurringInstances(accessToken, calendarId, recurringEventId, {
   timeMin = "",
-  timeMax = "",
-  showDeleted = false
+  timeMax = ""
 } = {}) {
   if (!recurringEventId) {
     return [];
   }
   const params = new URLSearchParams({
     maxResults: "100",
-    showDeleted: showDeleted ? "true" : "false",
     fields: "items(id,updated,htmlLink,recurringEventId,originalStartTime,status,summary,start,end)"
   });
   if (timeMin) {
@@ -1827,8 +1825,7 @@ function buildRecurringInstanceLookupWindow(originalStartDate) {
 async function findGoogleCalendarRecurringInstanceByOriginalStart(accessToken, calendarId, recurringEventId, {
   originalStartDate = "",
   originalTimeOfDay = "",
-  calendarTimeZone = "",
-  showDeleted = false
+  calendarTimeZone = ""
 } = {}) {
   if (!recurringEventId || !originalStartDate) {
     return null;
@@ -1836,8 +1833,7 @@ async function findGoogleCalendarRecurringInstanceByOriginalStart(accessToken, c
   const { timeMin, timeMax } = buildRecurringInstanceLookupWindow(originalStartDate);
   const instances = await listGoogleCalendarRecurringInstances(accessToken, calendarId, recurringEventId, {
     timeMin,
-    timeMax,
-    showDeleted
+    timeMax
   });
   const exact = instances.find((event) => {
     const originalStart = parseGoogleCalendarEventStart(event?.originalStartTime || {}, calendarTimeZone);
@@ -1903,8 +1899,7 @@ async function syncGoogleCalendarTaskInstanceStatusChange(accessToken, calendarI
     const matchingInstance = await findGoogleCalendarRecurringInstanceByOriginalStart(accessToken, calendarId, recurringEventId, {
       originalStartDate,
       originalTimeOfDay,
-      calendarTimeZone,
-      showDeleted: lifecycleType === "reopened"
+      calendarTimeZone
     });
     targetEventId = matchingInstance?.id || "";
   }
@@ -1913,34 +1908,29 @@ async function syncGoogleCalendarTaskInstanceStatusChange(accessToken, calendarI
     throw new Error(`Google Calendar occurrence lookup failed for ${originalStartDate}${originalTimeOfDay ? ` ${originalTimeOfDay}` : ""}.`);
   }
 
-  let event = lifecycleType === "completed" || lifecycleType === "skipped"
-    ? await patchGoogleCalendarEvent(accessToken, calendarId, targetEventId, { status: "cancelled" })
-    : await patchGoogleCalendarEvent(
-      accessToken,
-      calendarId,
-      targetEventId,
-      buildGoogleCalendarInstanceStatusPayload(instanceChange, { calendarTimeZone })
-    );
+  let event = await patchGoogleCalendarEvent(
+    accessToken,
+    calendarId,
+    targetEventId,
+    buildGoogleCalendarInstanceStatusPayload(instanceChange, { calendarTimeZone })
+  );
 
   if (!event) {
     const matchingInstance = await findGoogleCalendarRecurringInstanceByOriginalStart(accessToken, calendarId, recurringEventId, {
       originalStartDate,
       originalTimeOfDay,
-      calendarTimeZone,
-      showDeleted: lifecycleType === "reopened"
+      calendarTimeZone
     });
     const fallbackEventId = matchingInstance?.id || "";
     if (!fallbackEventId) {
       throw new Error(`Google Calendar occurrence lookup failed for ${originalStartDate}${originalTimeOfDay ? ` ${originalTimeOfDay}` : ""}.`);
     }
-    event = lifecycleType === "completed" || lifecycleType === "skipped"
-      ? await patchGoogleCalendarEvent(accessToken, calendarId, fallbackEventId, { status: "cancelled" })
-      : await patchGoogleCalendarEvent(
-        accessToken,
-        calendarId,
-        fallbackEventId,
-        buildGoogleCalendarInstanceStatusPayload(instanceChange, { calendarTimeZone })
-      );
+    event = await patchGoogleCalendarEvent(
+      accessToken,
+      calendarId,
+      fallbackEventId,
+      buildGoogleCalendarInstanceStatusPayload(instanceChange, { calendarTimeZone })
+    );
   }
 
   if (!event) {

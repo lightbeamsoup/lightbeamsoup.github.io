@@ -93,3 +93,120 @@ test("workout widget normalization backfills distinct ids for legacy plans befor
     ])
   );
 });
+
+test("workout widget recovers an orphaned daily plan from a generated task whose template is missing", () => {
+  const widget = workoutWidgetDefinition.normalizeWidget({
+    id: "workout-widget",
+    type: "workout",
+    slotIndex: 0,
+    settings: {
+      workoutPlans: [],
+      weightTracking: {
+        enabled: false
+      }
+    },
+    data: {
+      workoutEntries: [],
+      weightEntries: []
+    },
+    createdAt: 100,
+    updatedAt: 100
+  }, {
+    createId: () => "widget-id",
+    now: 100,
+    maxWidgets: 5
+  });
+
+  const store = {
+    tasks: [
+      {
+        id: "dog-walk-generated",
+        templateId: "missing-template",
+        occurrenceIndex: 5,
+        name: "Dog walk",
+        details: "Created by Workout Coach.",
+        startDate: "2026-04-04",
+        dueDate: "2026-04-04",
+        timeOfDay: "18:30",
+        lateGraceMinutes: 15,
+        notBeforeAt: 0,
+        pointsValue: 3,
+        pointsEntryId: "",
+        length: "medium",
+        categoryKey: "health",
+        categoryLabel: "Health",
+        categoryColor: "#7dbf74",
+        importance: "medium",
+        status: "done",
+        createdAt: 100,
+        updatedAt: 200,
+        ownerWidgetId: "workout-widget",
+        ownerWidgetType: "workout",
+        ownerTaskKey: "workout-plan:dog-walk:slot:0",
+        widgetTaskKind: "workout-session",
+        widgetTaskMeta: {
+          planId: "dog-walk",
+          workoutType: "Dog walk",
+          durationMinutes: 30,
+          intensity: "low",
+          caloriesBurned: 150,
+          recurrenceType: "daily",
+          slotKey: "workout-plan:dog-walk:slot:0"
+        },
+        linkedSeries: {
+          groupId: "workout-widget:workout-plan:dog-walk",
+          kind: "daily-window",
+          slotIndex: 0,
+          slotCount: 1
+        },
+        sequenceDependencyId: "",
+        widgetCompletion: {
+          mechanism: "workout-log",
+          lockout: "current-day"
+        },
+        skipRule: {
+          type: "widget-lockout",
+          policy: "workout-next-window"
+        },
+        dependencies: [],
+        recurrence: {
+          type: "generated",
+          sourceType: "daily"
+        },
+        archived: false,
+        historyOnly: false,
+        history: [
+          {
+            id: "hist-1",
+            type: "completed",
+            at: 200
+          }
+        ]
+      }
+    ]
+  };
+
+  let createdTaskId = 0;
+  workoutWidgetDefinition.ensureTasks({
+    widget,
+    store,
+    helpers: {
+      createId: () => `task-${++createdTaskId}`,
+      todayString: () => "2026-04-04",
+      resolveCategorySnapshot: () => ({
+        key: "health",
+        label: "Health",
+        color: "#7dbf74"
+      }),
+      regenerateSeries: () => {},
+      retireWidgetOwnedSeries: () => {}
+    }
+  });
+
+  assert.equal(widget.settings.workoutPlans.length, 1);
+  assert.equal(widget.settings.workoutPlans[0].id, "dog-walk");
+  assert.equal(widget.settings.workoutPlans[0].workoutType, "Dog walk");
+  assert.equal(widget.settings.workoutPlans[0].recurrence?.type, "daily");
+  assert.equal(widget.settings.workoutPlans[0].recurrence?.timeOfDay, "18:30");
+  assert.ok(store.tasks.some((task) => !task.templateId && task.widgetTaskKind === "workout-session" && task.name === "Dog walk"));
+});

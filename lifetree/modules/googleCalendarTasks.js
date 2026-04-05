@@ -329,7 +329,7 @@ export function buildGoogleCalendarEventPayload(task, { calendarTimeZone = "" } 
     calendarTimeZone
   });
   const timeZone = normalized.timeZone || calendarTimeZone || "";
-  const summary = normalized.name || "Untitled task";
+  const summary = buildGoogleCalendarEventSummary(normalized);
   const description = buildGoogleCalendarEventDescription(normalized);
   const recurrence = buildGoogleCalendarRecurrence(normalized);
   const reminders = buildGoogleCalendarEventReminders(normalized);
@@ -489,6 +489,34 @@ function buildGoogleCalendarEventDescription(task) {
   ].filter(Boolean).join("\n");
   parts.push(footer);
   return parts.filter(Boolean).join("\n\n");
+}
+
+function buildGoogleCalendarEventSummary(task) {
+  const baseName = String(task?.name || "").trim() || "Untitled task";
+  const statusState = getGoogleCalendarTaskStatusMirrorState(task);
+  if (statusState.lifecycleType !== "completed" && statusState.lifecycleType !== "skipped") {
+    return baseName;
+  }
+  const timePrefix = formatGoogleCalendarSummaryTimePrefix(task?.timeOfDay);
+  const suffix = statusState.lifecycleType === "completed" ? "Completed" : "Skipped";
+  return `${timePrefix}${baseName} (${suffix})`;
+}
+
+function formatGoogleCalendarSummaryTimePrefix(timeOfDay) {
+  const normalized = normalizeTimeString(timeOfDay);
+  if (!normalized) {
+    return "";
+  }
+  const [hourRaw, minuteRaw] = normalized.split(":");
+  const hour = Number(hourRaw);
+  const minute = Number(minuteRaw);
+  if (!Number.isInteger(hour) || !Number.isInteger(minute)) {
+    return "";
+  }
+  const meridiem = hour >= 12 ? "PM" : "AM";
+  const displayHour = hour % 12 || 12;
+  const displayMinute = String(minute).padStart(2, "0");
+  return `${displayHour}:${displayMinute} ${meridiem} `;
 }
 
 function humanizeWidgetLabel(widgetType) {
