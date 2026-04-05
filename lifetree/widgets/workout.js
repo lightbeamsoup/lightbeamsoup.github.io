@@ -1108,6 +1108,7 @@ function stageAdHocWorkoutLog(widget, values, helpers) {
 }
 
 function syncWorkoutOwnedTaskTemplates(widget, store, helpers) {
+  widget.settings.workoutPlans = normalizeWorkoutPlans(widget.settings?.workoutPlans, helpers?.createId);
   recoverOrphanedWorkoutPlans(widget, store, helpers);
   const desiredTemplates = buildDesiredWorkoutTemplates(widget, store, helpers);
   const existingTemplates = store.tasks.filter((task) => isWorkoutOwnedTemplate(task, widget.id));
@@ -1115,12 +1116,15 @@ function syncWorkoutOwnedTaskTemplates(widget, store, helpers) {
 
   for (const desired of desiredTemplates) {
     const existing = findMatchingWorkoutTemplate(existingTemplates, desired, matchedExistingIds) || null;
+    const shouldPreserveExistingSchedule = existing && existing.archived !== true && existing.status === "open";
     const nextDesired = existing
       ? {
           ...desired,
-          startDate: existing.startDate || desired.startDate,
-          dueDate: existing.dueDate || desired.dueDate,
-          notBeforeAt: typeof existing.notBeforeAt === "number" ? existing.notBeforeAt : desired.notBeforeAt
+          startDate: shouldPreserveExistingSchedule ? (existing.startDate || desired.startDate) : desired.startDate,
+          dueDate: shouldPreserveExistingSchedule ? (existing.dueDate || desired.dueDate) : desired.dueDate,
+          notBeforeAt: shouldPreserveExistingSchedule && typeof existing.notBeforeAt === "number"
+            ? existing.notBeforeAt
+            : desired.notBeforeAt
         }
       : desired;
     if (!existing) {
@@ -1139,9 +1143,10 @@ function syncWorkoutOwnedTaskTemplates(widget, store, helpers) {
       ...nextDesired,
       id: existing.id,
       createdAt: existing.createdAt,
-      status: existing.status,
+      status: "open",
+      archived: false,
       history: Array.isArray(existing.history) ? existing.history : [],
-      pointsEntryId: existing.pointsEntryId || ""
+      pointsEntryId: ""
     });
     helpers.regenerateSeries(existing.id, { preserveClosed: true });
   }
@@ -1478,10 +1483,11 @@ function repairWorkoutOwnedSkipRules(widget, store) {
 }
 
 function findMatchingWorkoutTemplate(existingTemplates, desired, matchedExistingIds = new Set()) {
-  const exact = existingTemplates.find((task) => (
+  const exactCandidates = existingTemplates.filter((task) => (
     !matchedExistingIds.has(task.id)
     && (task.ownerTaskKey || "") === (desired.ownerTaskKey || "")
   ));
+  const exact = exactCandidates.find(isActiveWorkoutOwnedTemplate) || exactCandidates[0];
   if (exact) {
     return exact;
   }
@@ -1490,7 +1496,7 @@ function findMatchingWorkoutTemplate(existingTemplates, desired, matchedExisting
   const desiredSlotIndex = desired.linkedSeries?.slotIndex ?? 0;
   const desiredWeekday = Number(desired.recurrence?.weekday ?? -1);
 
-  return existingTemplates.find((task) => {
+  const fallbackCandidates = existingTemplates.filter((task) => {
     if (matchedExistingIds.has(task.id) || task.widgetTaskKind !== desired.widgetTaskKind) {
       return false;
     }
@@ -1514,7 +1520,9 @@ function findMatchingWorkoutTemplate(existingTemplates, desired, matchedExisting
     }
 
     return (task.linkedSeries?.slotIndex ?? 0) === desiredSlotIndex;
-  }) || null;
+  });
+
+  return fallbackCandidates.find(isActiveWorkoutOwnedTemplate) || fallbackCandidates[0] || null;
 }
 
 function getWorkoutTemplateRecurrenceType(task) {
@@ -1543,7 +1551,13 @@ function workoutTemplateChanged(existing, desired) {
     || JSON.stringify(existing.skipRule || {}) !== JSON.stringify(desired.skipRule || {})
     || JSON.stringify(existing.widgetCompletion || {}) !== JSON.stringify(desired.widgetCompletion || {})
     || JSON.stringify(existing.recurrence || {}) !== JSON.stringify(desired.recurrence || {})
+    || existing.status !== "open"
+    || existing.archived === true
   );
+}
+
+function isActiveWorkoutOwnedTemplate(task) {
+  return task?.archived !== true && task?.status === "open";
 }
 
 function normalizeSlotIndex(value, maxWidgets) {
@@ -1558,13 +1572,16 @@ function normalizeWorkoutPlans(value, createId = () => "") {
   if (!Array.isArray(value)) {
     return [];
   }
-  return value
+  const normalizedPlans = [];
+  const planIndexById = new Map();
+
+  value
     .filter((plan) => plan && typeof plan === "object")
-    .map((plan) => {
+    .forEach((plan) => {
       const name = typeof plan.name === "string" ? plan.name.trim().slice(0, 80) : "";
       const workoutType = typeof plan.workoutType === "string" ? plan.workoutType.trim().slice(0, 80) : "";
       const recurrence = normalizeWorkoutRecurrence(plan.recurrence);
-      return {
+      const normalizedPlan = {
         id: typeof plan.id === "string" && plan.id.trim()
           ? plan.id
           : (deriveLegacyWorkoutPlanId({
@@ -1583,7 +1600,32 @@ function normalizeWorkoutPlans(value, createId = () => "") {
         createdAt: typeof plan.createdAt === "number" ? plan.createdAt : 0,
         updatedAt: typeof plan.updatedAt === "number" ? plan.updatedAt : 0
       };
+
+      const existingIndex = planIndexById.get(normalizedPlan.id);
+      if (existingIndex == null) {
+        planIndexById.set(normalizedPlan.id, normalizedPlans.length);
+        normalizedPlans.push(normalizedPlan);
+        return;
+      }
+
+      normalizedPlans[existingIndex] = pickPreferredDuplicateWorkoutPlan(normalizedPlans[existingIndex], normalizedPlan);
     });
+
+  return normalizedPlans;
+}
+
+function pickPreferredDuplicateWorkoutPlan(existingPlan, nextPlan) {
+  const existingUpdatedAt = Number(existingPlan?.updatedAt || 0);
+  const nextUpdatedAt = Number(nextPlan?.updatedAt || 0);
+  if (nextUpdatedAt !== existingUpdatedAt) {
+    return nextUpdatedAt > existingUpdatedAt ? nextPlan : existingPlan;
+  }
+  const existingCreatedAt = Number(existingPlan?.createdAt || 0);
+  const nextCreatedAt = Number(nextPlan?.createdAt || 0);
+  if (nextCreatedAt !== existingCreatedAt) {
+    return nextCreatedAt > existingCreatedAt ? nextPlan : existingPlan;
+  }
+  return nextPlan;
 }
 
 function deriveLegacyWorkoutPlanId(value) {

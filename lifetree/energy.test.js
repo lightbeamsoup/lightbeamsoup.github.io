@@ -127,6 +127,99 @@ test("energy reminder repair pulls future-drifted templates back to the current 
   assert.deepEqual(regenerated, ["energy-template"]);
 });
 
+test("energy ensureTasks recreates a live recurring reminder when only a closed same-slot task remains", () => {
+  const widget = {
+    id: "energy-widget",
+    type: "energy",
+    settings: {
+      reminderTimes: ["07:00", "12:00", "19:00"],
+      maxCheckins: 12
+    },
+    data: {
+      entries: []
+    }
+  };
+  const store = {
+    tasks: [
+      {
+        id: "energy-7am",
+        templateId: "",
+        ownerWidgetId: widget.id,
+        ownerWidgetType: "energy",
+        ownerTaskKey: "energy-reminder-0",
+        widgetTaskKind: "energy-checkin",
+        status: "open",
+        archived: false,
+        startDate: "2026-04-05",
+        dueDate: "2026-04-05",
+        timeOfDay: "07:00",
+        recurrence: { type: "daily", interval: 1, weekday: 0, day: 1, ordinal: "first", endDate: "", count: null, forever: true }
+      },
+      {
+        id: "energy-12pm",
+        templateId: "",
+        ownerWidgetId: widget.id,
+        ownerWidgetType: "energy",
+        ownerTaskKey: "energy-reminder-1",
+        widgetTaskKind: "energy-checkin",
+        status: "open",
+        archived: false,
+        startDate: "2026-04-05",
+        dueDate: "2026-04-05",
+        timeOfDay: "12:00",
+        recurrence: { type: "daily", interval: 1, weekday: 0, day: 1, ordinal: "first", endDate: "", count: null, forever: true }
+      },
+      {
+        id: "energy-7pm-completed",
+        templateId: "",
+        ownerWidgetId: widget.id,
+        ownerWidgetType: "energy",
+        ownerTaskKey: "energy-reminder-2",
+        widgetTaskKind: "energy-checkin",
+        status: "done",
+        archived: false,
+        startDate: "2026-04-04",
+        dueDate: "2026-04-04",
+        timeOfDay: "19:00",
+        recurrence: { type: "none", interval: 1, weekday: 0, day: 1, ordinal: "first", endDate: "", count: null, forever: false },
+        history: [
+          {
+            id: "completed-history",
+            type: "completed",
+            at: Date.parse("2026-04-04T17:31:00-07:00")
+          }
+        ]
+      }
+    ]
+  };
+  const regenerated = [];
+  let nextId = 0;
+
+  energyWidgetDefinition.ensureTasks({
+    widget,
+    store,
+    helpers: {
+      createId: () => `replacement-${++nextId}`,
+      todayString: () => "2026-04-04",
+      regenerateSeries: (templateId) => {
+        regenerated.push(templateId);
+      },
+      resolveCategorySnapshot: () => ({
+        key: "health",
+        label: "Health",
+        color: "#77aa77"
+      })
+    }
+  });
+
+  const recurringReminder = store.tasks.find((task) => task.id === "replacement-1");
+  assert.ok(recurringReminder);
+  assert.equal(recurringReminder.ownerTaskKey, "energy-reminder-2");
+  assert.equal(recurringReminder.recurrence?.type, "daily");
+  assert.equal(recurringReminder.status, "open");
+  assert.deepEqual(regenerated, ["replacement-1"]);
+});
+
 test("energy reminder settings recover missing slots from open widget tasks", () => {
   const widget = {
     id: "energy-widget",

@@ -94,6 +94,65 @@ test("workout widget normalization backfills distinct ids for legacy plans befor
   );
 });
 
+test("workout widget normalization dedupes duplicate plan ids for the same plan", () => {
+  const widget = workoutWidgetDefinition.normalizeWidget({
+    id: "workout-widget",
+    type: "workout",
+    slotIndex: 0,
+    settings: {
+      workoutPlans: [
+        {
+          id: "dog-walk",
+          name: "Dog walk",
+          workoutType: "Dog walk",
+          durationMinutes: 15,
+          intensity: "low",
+          caloriesBurned: 50,
+          recurrence: {
+            type: "daily",
+            interval: 1,
+            timeOfDay: "18:30",
+            additionalTimes: []
+          },
+          updatedAt: 100
+        },
+        {
+          id: "dog-walk",
+          name: "Dog walk",
+          workoutType: "Dog walk",
+          durationMinutes: 15,
+          intensity: "low",
+          caloriesBurned: 60,
+          recurrence: {
+            type: "daily",
+            interval: 1,
+            timeOfDay: "18:30",
+            additionalTimes: []
+          },
+          updatedAt: 200
+        }
+      ],
+      weightTracking: {
+        enabled: false
+      }
+    },
+    data: {
+      workoutEntries: [],
+      weightEntries: []
+    },
+    createdAt: 100,
+    updatedAt: 100
+  }, {
+    createId: () => "unused-id",
+    now: 100,
+    maxWidgets: 5
+  });
+
+  assert.equal(widget.settings.workoutPlans.length, 1);
+  assert.equal(widget.settings.workoutPlans[0].id, "dog-walk");
+  assert.equal(widget.settings.workoutPlans[0].caloriesBurned, 60);
+});
+
 test("workout widget recovers an orphaned daily plan from a generated task whose template is missing", () => {
   const widget = workoutWidgetDefinition.normalizeWidget({
     id: "workout-widget",
@@ -536,4 +595,186 @@ test("workout widget does not auto-skip the recurring master template itself", (
 
   assert.equal(shouldSkipTemplate, false);
   assert.equal(shouldSkipGenerated, true);
+});
+
+test("workout widget reopens matching skipped and archived recurring masters from widget settings", () => {
+  const widget = workoutWidgetDefinition.normalizeWidget({
+    id: "workout-widget",
+    type: "workout",
+    slotIndex: 0,
+    settings: {
+      workoutPlans: [
+        {
+          id: "yoga-wed",
+          name: "Yoga",
+          workoutType: "Yoga",
+          durationMinutes: 60,
+          intensity: "moderate",
+          caloriesBurned: 250,
+          recurrence: {
+            type: "weekly",
+            interval: 1,
+            weekdays: [3],
+            timeOfDay: "19:30",
+            additionalTimes: []
+          }
+        },
+        {
+          id: "yoga-sat",
+          name: "Yoga",
+          workoutType: "Yoga",
+          durationMinutes: 75,
+          intensity: "high",
+          caloriesBurned: 250,
+          recurrence: {
+            type: "weekly",
+            interval: 1,
+            weekdays: [6],
+            timeOfDay: "09:45",
+            additionalTimes: []
+          }
+        }
+      ],
+      weightTracking: {
+        enabled: false
+      }
+    },
+    data: {
+      workoutEntries: [],
+      weightEntries: []
+    },
+    createdAt: 100,
+    updatedAt: 100
+  }, {
+    createId: () => "widget-id",
+    now: 100,
+    maxWidgets: 5
+  });
+
+  const store = {
+    tasks: [
+      {
+        id: "yoga-wed-template",
+        templateId: "",
+        occurrenceIndex: 0,
+        name: "Yoga",
+        details: "Created by Workout Coach.",
+        startDate: "2026-04-01",
+        dueDate: "2026-04-01",
+        timeOfDay: "19:30",
+        lateGraceMinutes: 15,
+        notBeforeAt: 0,
+        pointsValue: 3,
+        pointsEntryId: "",
+        length: "medium",
+        categoryKey: "health",
+        categoryLabel: "Health",
+        categoryColor: "#7dbf74",
+        importance: "medium",
+        status: "skipped",
+        createdAt: 100,
+        updatedAt: 200,
+        ownerWidgetId: widget.id,
+        ownerWidgetType: "workout",
+        ownerTaskKey: "workout-plan:yoga-wed:weekday:3",
+        widgetTaskKind: "workout-session",
+        widgetTaskMeta: {
+          planId: "yoga-wed",
+          workoutType: "Yoga",
+          durationMinutes: 60,
+          intensity: "moderate",
+          caloriesBurned: 250,
+          recurrenceType: "weekly",
+          slotKey: "workout-plan:yoga-wed:weekday:3"
+        },
+        recurrence: {
+          type: "weekly",
+          interval: 1,
+          weekday: 3,
+          day: 1,
+          ordinal: "first",
+          endDate: "",
+          count: null,
+          forever: true
+        },
+        archived: false,
+        history: []
+      },
+      {
+        id: "yoga-sat-template",
+        templateId: "",
+        occurrenceIndex: 0,
+        name: "Yoga",
+        details: "Created by Workout Coach.",
+        startDate: "2026-03-28",
+        dueDate: "2026-03-28",
+        timeOfDay: "09:45",
+        lateGraceMinutes: 15,
+        notBeforeAt: 0,
+        pointsValue: 3,
+        pointsEntryId: "",
+        length: "long",
+        categoryKey: "health",
+        categoryLabel: "Health",
+        categoryColor: "#7dbf74",
+        importance: "medium",
+        status: "done",
+        createdAt: 100,
+        updatedAt: 200,
+        ownerWidgetId: widget.id,
+        ownerWidgetType: "workout",
+        ownerTaskKey: "workout-plan:yoga-sat:weekday:6",
+        widgetTaskKind: "workout-session",
+        widgetTaskMeta: {
+          planId: "yoga-sat",
+          workoutType: "Yoga",
+          durationMinutes: 75,
+          intensity: "high",
+          caloriesBurned: 250,
+          recurrenceType: "weekly",
+          slotKey: "workout-plan:yoga-sat:weekday:6"
+        },
+        recurrence: {
+          type: "weekly",
+          interval: 1,
+          weekday: 6,
+          day: 1,
+          ordinal: "first",
+          endDate: "",
+          count: null,
+          forever: true
+        },
+        archived: true,
+        history: []
+      }
+    ]
+  };
+
+  const regenerated = [];
+  workoutWidgetDefinition.ensureTasks({
+    widget,
+    store,
+    helpers: {
+      createId: () => "new-task",
+      todayString: () => "2026-04-04",
+      resolveCategorySnapshot: () => ({
+        key: "health",
+        label: "Health",
+        color: "#7dbf74"
+      }),
+      regenerateSeries: (taskId) => regenerated.push(taskId),
+      retireWidgetOwnedSeries: () => {}
+    }
+  });
+
+  const wednesdayTemplate = store.tasks.find((task) => task.id === "yoga-wed-template");
+  const saturdayTemplate = store.tasks.find((task) => task.id === "yoga-sat-template");
+
+  assert.equal(wednesdayTemplate.status, "open");
+  assert.equal(wednesdayTemplate.archived, false);
+  assert.equal(wednesdayTemplate.dueDate, "2026-04-08");
+  assert.equal(saturdayTemplate.status, "open");
+  assert.equal(saturdayTemplate.archived, false);
+  assert.equal(saturdayTemplate.dueDate, "2026-04-04");
+  assert.deepEqual(new Set(regenerated), new Set(["yoga-wed-template", "yoga-sat-template"]));
 });
