@@ -291,6 +291,325 @@ test("schedule sync request includes recurring instance status changes for gener
   });
 });
 
+test("schedule sync request includes recurring instance status changes when the current occurrence is the recurring master", () => {
+  const completedAt = 1775353763410;
+  const masterTask = {
+    id: "dog-walk-template",
+    name: "Dog walk",
+    details: "Created by Workout Coach.",
+    dueDate: "2026-04-04",
+    startDate: "2026-04-04",
+    timeOfDay: "18:30",
+    length: "medium",
+    recurrence: {
+      type: "daily",
+      interval: 1,
+      weekday: 0,
+      day: 1,
+      ordinal: "first",
+      endDate: "",
+      count: null,
+      forever: true
+    },
+    reminders: { enabled: false, dueSoonMinutes: 0, overdueMinutes: 0 },
+    importance: "medium",
+    categoryKey: "health",
+    lateGraceMinutes: 15,
+    ownerWidgetType: "workout",
+    ownerTaskKey: "workout-plan:dog-walk:slot:0",
+    widgetTaskKind: "workout-session",
+    widgetTaskMeta: {
+      planId: "dog-walk"
+    },
+    status: "done",
+    archived: false,
+    historyOnly: false,
+    templateId: "",
+    history: [
+      {
+        id: "history-1",
+        type: "completed",
+        at: completedAt
+      }
+    ],
+    googleCalendar: normalizeGoogleCalendarTaskLink({
+      calendarId: "lifetree-cal",
+      eventId: "dog-walk-master",
+      statusMirroredAt: 0
+    }, { calendarId: "lifetree-cal" })
+  };
+  masterTask.googleCalendar.scheduleFingerprint = buildGoogleCalendarTaskScheduleFingerprint({
+    ...masterTask,
+    userTimeZone: "America/Los_Angeles",
+    seriesAnchorDate: "2026-04-04"
+  });
+
+  const payload = buildGoogleCalendarScheduleSyncRequest({
+    tasks: [masterTask]
+  }, {
+    calendarId: "lifetree-cal",
+    calendarSummary: "Lifetree",
+    calendarTimeZone: "America/Los_Angeles"
+  }, {
+    userTimeZone: "America/Los_Angeles"
+  });
+
+  assert.equal(payload.totalEligibleTasks, 1);
+  assert.equal(payload.tasks.length, 1);
+  assert.equal(payload.tasks[0].taskId, "dog-walk-template");
+  assert.equal(payload.tasks[0].needsStatusPush, false);
+  assert.equal(payload.tasks[0].instanceStatusChanges.length, 1);
+  assert.deepEqual(payload.tasks[0].instanceStatusChanges[0], {
+    sourceTaskId: "dog-walk-template",
+    taskId: "dog-walk-template",
+    name: "Dog walk",
+    details: "Created by Workout Coach.",
+    startDate: "2026-04-04",
+    dueDate: "2026-04-04",
+    timeOfDay: "18:30",
+    length: "medium",
+    recurrence: { type: "none" },
+    reminders: { enabled: false, dueSoonMinutes: 0, overdueMinutes: 0 },
+    importance: "medium",
+    categoryKey: "health",
+    lateGraceMinutes: 15,
+    ownerWidgetType: "workout",
+    ownerTaskKey: "workout-plan:dog-walk:slot:0",
+    widgetTaskKind: "workout-session",
+    widgetTaskMeta: {},
+    userTimeZone: "America/Los_Angeles",
+    timeZoneMode: "floating-local",
+    googleCalendar: normalizeGoogleCalendarTaskLink({
+      calendarId: "lifetree-cal",
+      eventId: "",
+      recurringEventId: "",
+      originalStartDate: "2026-04-04",
+      originalTimeOfDay: "18:30",
+      scheduleFingerprint: masterTask.googleCalendar.scheduleFingerprint,
+      statusMirroredAt: 0
+    }, { calendarId: "lifetree-cal" }),
+    originalStartDate: "2026-04-04",
+    originalTimeOfDay: "18:30",
+    scheduleFingerprint: buildGoogleCalendarTaskScheduleFingerprint({
+      id: "dog-walk-template",
+      name: "Dog walk",
+      details: "Created by Workout Coach.",
+      startDate: "2026-04-04",
+      dueDate: "2026-04-04",
+      timeOfDay: "18:30",
+      length: "medium",
+      recurrence: { type: "none" },
+      reminders: { enabled: false, dueSoonMinutes: 0, overdueMinutes: 0 },
+      importance: "medium",
+      categoryKey: "health",
+      lateGraceMinutes: 15,
+      ownerWidgetType: "workout",
+      widgetTaskKind: "workout-session",
+      widgetTaskMeta: {
+        planId: "dog-walk"
+      },
+      userTimeZone: "America/Los_Angeles"
+    }),
+    statusMirrorVersion: completedAt,
+    statusMirrorLifecycleType: "completed"
+  });
+});
+
+test("schedule sync request prefers a generated recurring occurrence over the master when both point at the same day", () => {
+  const masterTask = {
+    id: "weight-template",
+    name: "Weight check-in",
+    details: "Created by Workout Coach. Log your weight in lbs.",
+    dueDate: "2026-04-04",
+    startDate: "2026-04-04",
+    timeOfDay: "07:00",
+    length: "very-short",
+    recurrence: {
+      type: "weekly",
+      interval: 1,
+      weekday: 6,
+      day: 1,
+      ordinal: "first",
+      endDate: "",
+      count: null,
+      forever: true
+    },
+    reminders: { enabled: false, dueSoonMinutes: 0, overdueMinutes: 0 },
+    importance: "medium",
+    categoryKey: "health",
+    lateGraceMinutes: 15,
+    ownerWidgetType: "workout",
+    ownerTaskKey: "weight-checkin:weekday:6",
+    widgetTaskKind: "weight-checkin",
+    widgetTaskMeta: {},
+    status: "done",
+    archived: false,
+    historyOnly: false,
+    templateId: "",
+    history: [
+      {
+        id: "history-master",
+        type: "completed",
+        at: 1774705685466
+      }
+    ],
+    googleCalendar: normalizeGoogleCalendarTaskLink({
+      calendarId: "lifetree-cal",
+      eventId: "weight-master",
+      statusMirroredAt: 0
+    }, { calendarId: "lifetree-cal" })
+  };
+
+  const payload = buildGoogleCalendarScheduleSyncRequest({
+    tasks: [
+      masterTask,
+      {
+        id: "weight-2026-04-04",
+        templateId: "weight-template",
+        occurrenceIndex: 1,
+        name: "7:00 AM Weight check-in (Completed)",
+        details: "Created by Workout Coach. Log your weight in lbs.",
+        dueDate: "2026-04-04",
+        startDate: "2026-04-04",
+        timeOfDay: "07:00",
+        length: "very-short",
+        recurrence: { type: "generated", sourceType: "weekly" },
+        reminders: { enabled: false, dueSoonMinutes: 0, overdueMinutes: 0 },
+        importance: "medium",
+        categoryKey: "health",
+        lateGraceMinutes: 15,
+        ownerWidgetType: "workout",
+        ownerTaskKey: "weight-checkin:weekday:6",
+        widgetTaskKind: "weight-checkin",
+        widgetTaskMeta: {},
+        status: "done",
+        archived: true,
+        historyOnly: false,
+        history: [
+          {
+            id: "history-generated",
+            type: "completed",
+            at: 1775312518007
+          }
+        ],
+        googleCalendar: normalizeGoogleCalendarTaskLink({
+          calendarId: "lifetree-cal",
+          statusMirroredAt: 0
+        }, { calendarId: "lifetree-cal" })
+      }
+    ]
+  }, {
+    calendarId: "lifetree-cal",
+    calendarSummary: "Lifetree",
+    calendarTimeZone: "America/Los_Angeles"
+  }, {
+    userTimeZone: "America/Los_Angeles"
+  });
+
+  assert.equal(payload.tasks.length, 1);
+  assert.equal(payload.tasks[0].instanceStatusChanges.length, 1);
+  assert.equal(payload.tasks[0].instanceStatusChanges[0].sourceTaskId, "weight-2026-04-04");
+  assert.equal(payload.tasks[0].instanceStatusChanges[0].name, "Weight check-in");
+  assert.equal(payload.tasks[0].instanceStatusChanges[0].statusMirrorVersion, 1775312518007);
+});
+
+test("schedule sync request does not remirror a recurring master when the same occurrence already exists as a mirrored generated task", () => {
+  const payload = buildGoogleCalendarScheduleSyncRequest({
+    tasks: [
+      {
+        id: "weight-template",
+        name: "Weight check-in",
+        details: "Created by Workout Coach. Log your weight in lbs.",
+        dueDate: "2026-04-04",
+        startDate: "2026-04-04",
+        timeOfDay: "07:00",
+        length: "very-short",
+        recurrence: {
+          type: "weekly",
+          interval: 1,
+          weekday: 6,
+          day: 1,
+          ordinal: "first",
+          endDate: "",
+          count: null,
+          forever: true
+        },
+        reminders: { enabled: false, dueSoonMinutes: 0, overdueMinutes: 0 },
+        importance: "medium",
+        categoryKey: "health",
+        lateGraceMinutes: 15,
+        ownerWidgetType: "workout",
+        ownerTaskKey: "weight-checkin:weekday:6",
+        widgetTaskKind: "weight-checkin",
+        widgetTaskMeta: {},
+        status: "done",
+        archived: false,
+        historyOnly: false,
+        templateId: "",
+        history: [
+          {
+            id: "history-master",
+            type: "completed",
+            at: 1774705685466
+          }
+        ],
+        googleCalendar: normalizeGoogleCalendarTaskLink({
+          calendarId: "lifetree-cal",
+          eventId: "weight-master",
+          statusMirroredAt: 0
+        }, { calendarId: "lifetree-cal" })
+      },
+      {
+        id: "weight-2026-04-04",
+        templateId: "weight-template",
+        occurrenceIndex: 1,
+        name: "7:00 AM Weight check-in (Completed)",
+        details: "Created by Workout Coach. Log your weight in lbs.",
+        dueDate: "2026-04-04",
+        startDate: "2026-04-04",
+        timeOfDay: "07:00",
+        length: "very-short",
+        recurrence: { type: "generated", sourceType: "weekly" },
+        reminders: { enabled: false, dueSoonMinutes: 0, overdueMinutes: 0 },
+        importance: "medium",
+        categoryKey: "health",
+        lateGraceMinutes: 15,
+        ownerWidgetType: "workout",
+        ownerTaskKey: "weight-checkin:weekday:6",
+        widgetTaskKind: "weight-checkin",
+        widgetTaskMeta: {},
+        status: "done",
+        archived: true,
+        historyOnly: false,
+        history: [
+          {
+            id: "history-generated",
+            type: "completed",
+            at: 1775312518007
+          }
+        ],
+        googleCalendar: normalizeGoogleCalendarTaskLink({
+          calendarId: "lifetree-cal",
+          eventId: "weight-master_20260404T140000Z",
+          recurringEventId: "weight-master",
+          originalStartDate: "2026-04-04",
+          originalTimeOfDay: "07:00",
+          statusMirroredAt: 1775312518007
+        }, { calendarId: "lifetree-cal" })
+      }
+    ]
+  }, {
+    calendarId: "lifetree-cal",
+    calendarSummary: "Lifetree",
+    calendarTimeZone: "America/Los_Angeles"
+  }, {
+    userTimeZone: "America/Los_Angeles"
+  });
+
+  assert.equal(payload.tasks.length, 1);
+  assert.equal(payload.tasks[0].instanceStatusChanges.length, 0);
+});
+
 test("schedule sync request matches archived recurring instance status changes after a series template is recreated", () => {
   const payload = buildGoogleCalendarScheduleSyncRequest({
     tasks: [

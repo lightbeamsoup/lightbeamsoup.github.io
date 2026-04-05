@@ -1344,6 +1344,24 @@ export function createNotificationSyncController({
       const sourceTaskId = typeof statusResult.sourceTaskId === "string" ? statusResult.sourceTaskId : "";
       const originalStartDate = typeof statusResult.originalStartDate === "string" ? statusResult.originalStartDate : "";
       const originalTimeOfDay = typeof statusResult.originalTimeOfDay === "string" ? statusResult.originalTimeOfDay : "";
+      if (sourceTaskId && sourceTaskId === templateTask.id) {
+        const currentLink = normalizeGoogleCalendarTaskLink(templateTask.googleCalendar, {
+          calendarId
+        });
+        templateTask.googleCalendar = normalizeGoogleCalendarTaskLink({
+          ...currentLink,
+          calendarId,
+          seriesAnchorDate: typeof statusResult.seriesAnchorDate === "string" ? statusResult.seriesAnchorDate : currentLink.seriesAnchorDate,
+          statusMirroredAt: typeof statusResult.statusMirroredAt === "number"
+            ? statusResult.statusMirroredAt
+            : (typeof currentLink.statusMirroredAt === "number" ? currentLink.statusMirroredAt : 0),
+          schemaVersion: 1
+        }, {
+          calendarId
+        });
+        appliedCount += 1;
+        continue;
+      }
       const instanceTask = (sourceTaskId
         ? store.tasks.find((candidate) => (
           String(candidate?.recurrence?.type || "") === "generated"

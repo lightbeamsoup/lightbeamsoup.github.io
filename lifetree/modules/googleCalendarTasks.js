@@ -508,8 +508,13 @@ function buildGoogleCalendarEventDescription(task) {
 }
 
 function buildGoogleCalendarEventSummary(task) {
-  const baseName = String(task?.name || "").trim() || "Untitled task";
+  const rawName = String(task?.name || "").trim();
   const statusState = getGoogleCalendarTaskStatusMirrorState(task);
+  const baseName = (
+    statusState.lifecycleType === "completed" || statusState.lifecycleType === "skipped"
+      ? normalizeGoogleCalendarRecurringInstanceMatchName(task)
+      : rawName
+  ) || "Untitled task";
   if (statusState.lifecycleType !== "completed" && statusState.lifecycleType !== "skipped") {
     return baseName;
   }
@@ -594,6 +599,10 @@ function getGoogleCalendarTaskStatusMirrorState(task) {
       changedAt: 0
     };
   }
+  return getGoogleCalendarTaskOccurrenceStatusMirrorState(task);
+}
+
+function getGoogleCalendarTaskOccurrenceStatusMirrorState(task) {
   const explicitLifecycleType = typeof task?.statusMirrorLifecycleType === "string" ? task.statusMirrorLifecycleType : "";
   const explicitVersion = Number.isFinite(Number(task?.statusMirrorVersion)) ? Number(task.statusMirrorVersion) : 0;
   if (explicitLifecycleType === "completed" || explicitLifecycleType === "skipped" || explicitLifecycleType === "reopened") {
@@ -641,14 +650,44 @@ function getGoogleCalendarTaskStatusMirrorVersion(task) {
 }
 
 function buildGoogleCalendarRecurringInstanceStatusChanges(tasks, templateTask, calendarId, userTimeZone) {
-  return (Array.isArray(tasks) ? tasks : [])
-    .filter((task) => isGoogleCalendarRecurringInstanceStatusCandidate(task, templateTask, calendarId))
-    .map((task) => buildGoogleCalendarRecurringInstanceStatusChange(templateTask, task, calendarId, userTimeZone))
+  const candidateTasks = (Array.isArray(tasks) ? tasks : [])
+    .filter((task) => isGoogleCalendarRecurringInstanceStatusCandidate(task, templateTask, calendarId));
+  const changes = candidateTasks
+    .map((task) => buildGoogleCalendarRecurringInstanceStatusChange(templateTask, task, calendarId, userTimeZone, candidateTasks))
     .filter(Boolean);
+  const deduped = new Map();
+  for (const change of changes) {
+    const key = `${change.originalStartDate || ""}::${change.originalTimeOfDay || ""}`;
+    const existing = deduped.get(key);
+    if (!existing || shouldPreferGoogleCalendarRecurringInstanceStatusChange(change, existing, templateTask.id)) {
+      deduped.set(key, change);
+    }
+  }
+  return Array.from(deduped.values());
+}
+
+function shouldPreferGoogleCalendarRecurringInstanceStatusChange(nextChange, currentChange, templateTaskId) {
+  const nextVersion = Number(nextChange?.statusMirrorVersion || 0);
+  const currentVersion = Number(currentChange?.statusMirrorVersion || 0);
+  if (nextVersion !== currentVersion) {
+    return nextVersion > currentVersion;
+  }
+  const nextIsTemplateOccurrence = String(nextChange?.sourceTaskId || "") === String(templateTaskId || "");
+  const currentIsTemplateOccurrence = String(currentChange?.sourceTaskId || "") === String(templateTaskId || "");
+  if (nextIsTemplateOccurrence !== currentIsTemplateOccurrence) {
+    return !nextIsTemplateOccurrence;
+  }
+  return false;
 }
 
 function isGoogleCalendarRecurringInstanceStatusCandidate(task, templateTask, calendarId) {
-  if (!task || String(task?.recurrence?.type || "") !== "generated") {
+  if (!task) {
+    return false;
+  }
+  if (task.id === templateTask.id) {
+    return true;
+  }
+  if (String(task?.recurrence?.type || "") !== "generated") {
     return false;
   }
   if (task.templateId === templateTask.id) {
@@ -677,7 +716,7 @@ function buildGoogleCalendarRecurringInstanceTemplateMatchKey(task) {
   }
   return JSON.stringify(sortObjectKeys({
     recurrenceType,
-    name: String(task?.name || ""),
+    name: normalizeGoogleCalendarRecurringInstanceMatchName(task),
     timeOfDay: String(task?.timeOfDay || ""),
     categoryKey: String(task?.categoryKey || ""),
     ownerWidgetType: String(task?.ownerWidgetType || ""),
@@ -691,17 +730,40 @@ function buildGoogleCalendarRecurringInstanceTemplateMatchKey(task) {
   }));
 }
 
-function buildGoogleCalendarRecurringInstanceStatusChange(templateTask, instanceTask, calendarId, userTimeZone) {
-  const googleCalendar = normalizeGoogleCalendarTaskLink(instanceTask.googleCalendar, { calendarId });
-  const statusMirrorState = getGoogleCalendarTaskStatusMirrorState(instanceTask);
+function normalizeGoogleCalendarRecurringInstanceMatchName(task) {
+  const rawName = String(task?.name || "").trim();
+  if (!rawName) {
+    return "";
+  }
+  const withoutLifecycleSuffix = rawName.replace(/\s+\((Completed|Skipped)\)$/i, "");
+  const timePrefix = formatGoogleCalendarSummaryTimePrefix(task?.timeOfDay);
+  if (timePrefix && withoutLifecycleSuffix.startsWith(timePrefix)) {
+    return withoutLifecycleSuffix.slice(timePrefix.length).trim();
+  }
+  return withoutLifecycleSuffix;
+}
+
+function buildGoogleCalendarRecurringInstanceStatusChange(templateTask, instanceTask, calendarId, userTimeZone, candidateTasks = []) {
+  const isTemplateOccurrence = String(instanceTask?.id || "") === String(templateTask?.id || "");
+  const instanceGoogleCalendar = normalizeGoogleCalendarTaskLink(instanceTask.googleCalendar, { calendarId });
+  const statusMirrorState = getGoogleCalendarTaskOccurrenceStatusMirrorState(instanceTask);
   const statusMirrorVersion = statusMirrorState.changedAt || 0;
-  if (!statusMirrorVersion || statusMirrorVersion <= (googleCalendar.statusMirroredAt || 0)) {
+  if (!statusMirrorVersion || statusMirrorVersion <= (instanceGoogleCalendar.statusMirroredAt || 0)) {
     return null;
   }
 
-  const originalStartDate = googleCalendar.originalStartDate || String(instanceTask.startDate || instanceTask.dueDate || "");
-  const originalTimeOfDay = googleCalendar.originalTimeOfDay || String(instanceTask.timeOfDay || "");
+  const originalStartDate = instanceGoogleCalendar.originalStartDate || String(instanceTask.startDate || instanceTask.dueDate || "");
+  const originalTimeOfDay = instanceGoogleCalendar.originalTimeOfDay || String(instanceTask.timeOfDay || "");
   if (!originalStartDate) {
+    return null;
+  }
+  if (
+    isTemplateOccurrence
+    && hasGoogleCalendarRecurringSiblingOccurrence(candidateTasks, templateTask, {
+      originalStartDate,
+      originalTimeOfDay
+    })
+  ) {
     return null;
   }
 
@@ -711,11 +773,20 @@ function buildGoogleCalendarRecurringInstanceStatusChange(templateTask, instance
     recurrence: { type: "none" },
     userTimeZone
   };
+  const googleCalendar = isTemplateOccurrence
+    ? normalizeGoogleCalendarTaskLink({
+      ...instanceGoogleCalendar,
+      eventId: "",
+      recurringEventId: "",
+      originalStartDate,
+      originalTimeOfDay
+    }, { calendarId })
+    : instanceGoogleCalendar;
 
   return {
     sourceTaskId: String(instanceTask.id || ""),
     taskId: templateTask.id,
-    name: String(instanceTask.name || ""),
+    name: normalizeGoogleCalendarRecurringInstanceMatchName(instanceTask) || String(instanceTask.name || ""),
     details: String(instanceTask.details || ""),
     startDate: String(instanceTask.startDate || ""),
     dueDate: String(instanceTask.dueDate || ""),
@@ -739,6 +810,19 @@ function buildGoogleCalendarRecurringInstanceStatusChange(templateTask, instance
     statusMirrorVersion,
     statusMirrorLifecycleType: statusMirrorState.lifecycleType
   };
+}
+
+function hasGoogleCalendarRecurringSiblingOccurrence(candidateTasks, templateTask, { originalStartDate = "", originalTimeOfDay = "" } = {}) {
+  return (Array.isArray(candidateTasks) ? candidateTasks : []).some((candidate) => {
+    if (!candidate || String(candidate?.id || "") === String(templateTask?.id || "")) {
+      return false;
+    }
+    const candidateLink = normalizeGoogleCalendarTaskLink(candidate.googleCalendar);
+    const candidateStartDate = candidateLink.originalStartDate || String(candidate?.startDate || candidate?.dueDate || "");
+    const candidateTimeOfDay = candidateLink.originalTimeOfDay || String(candidate?.timeOfDay || "");
+    return candidateStartDate === originalStartDate
+      && (!originalTimeOfDay || candidateTimeOfDay === originalTimeOfDay);
+  });
 }
 
 function getLatestGoogleCalendarLifecycleEntry(task) {
