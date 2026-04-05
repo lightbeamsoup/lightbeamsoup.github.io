@@ -8,6 +8,10 @@
 - Integrations: Add Apple Fitness integration.
 - Notifications: Move auth/session storage into a shared backend before re-enabling the dedicated Railway worker.
 
+### Integrations
+
+- Integrations: Simplify Google Drive and Google Calendar ownership so calendar-projected schedule state becomes calendar-first, Lifetree keeps widget/history/points state local, and manual task sync stops round-tripping fragile calendar linkage metadata through stale browser copies.
+
 ### Codebase Maintenance
 
 - Codebase: Continue extracting `app.js` orchestration into smaller feature modules.
