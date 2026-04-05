@@ -5,8 +5,13 @@ import {
   shouldTreatMissingLinkedGoogleCalendarEventAsRemoteDeletion
 } from "./modules/googleCalendarConflict.js";
 
-test("missing linked Google events become remote deletions only when local sync is otherwise clean", () => {
+test("missing linked Google events only become remote deletions for closed local tasks", () => {
   const baseTask = {
+    status: "done",
+    archived: false,
+    historyOnly: false,
+    templateId: "",
+    recurrence: { type: "none" },
     googleCalendar: {
       eventId: "event-1"
     },
@@ -21,6 +26,29 @@ test("missing linked Google events become remote deletions only when local sync 
   assert.equal(shouldTreatMissingLinkedGoogleCalendarEventAsRemoteDeletion({
     ...baseTask,
     needsPush: true
+  }, {
+    linkedEventMissing: true,
+    canonicalEvent: null
+  }), false);
+  assert.equal(shouldTreatMissingLinkedGoogleCalendarEventAsRemoteDeletion({
+    ...baseTask,
+    status: "open"
+  }, {
+    linkedEventMissing: true,
+    canonicalEvent: null
+  }), false);
+  assert.equal(shouldTreatMissingLinkedGoogleCalendarEventAsRemoteDeletion({
+    ...baseTask,
+    recurrence: {
+      type: "daily",
+      interval: 1,
+      weekday: 0,
+      day: 1,
+      ordinal: "first",
+      endDate: "",
+      count: null,
+      forever: true
+    }
   }, {
     linkedEventMissing: true,
     canonicalEvent: null

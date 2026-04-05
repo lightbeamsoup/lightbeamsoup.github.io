@@ -1440,6 +1440,21 @@ export function createNotificationSyncController({
         });
         announceRemoteStoreState();
         autosave.markCurrentAsSaved();
+      } else if (result?.staleRemote || result?.remoteChanged) {
+        observeRemoteStoreState({
+          updatedAt: result.remoteUpdatedAt || 0,
+          fingerprint: result.remoteFingerprint || "",
+          savedAt: result.remoteSavedAt || 0,
+          userUpdatedAt: result.remoteUserUpdatedAt || 0,
+          userFingerprint: result.remoteUserFingerprint || ""
+        });
+        remoteDriftState.remoteChangedSinceBase = true;
+        if (!quiet) {
+          setSyncStatus(
+            "Google Drive changed elsewhere before this save completed. Refresh from Drive or run Google sync before saving again.",
+            "error"
+          );
+        }
       }
       return result;
     } finally {

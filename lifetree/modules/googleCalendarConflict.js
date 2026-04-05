@@ -60,15 +60,26 @@ export function shouldTreatMissingLinkedGoogleCalendarEventAsRemoteDeletion(task
   linkedEventMissing = false,
   canonicalEvent = null
 } = {}) {
+  const recurrenceType = String(task?.recurrence?.type || "none");
   const linkedEventId = typeof task?.googleCalendar?.eventId === "string"
     ? task.googleCalendar.eventId
     : "";
+  const isRecurringMaster = Boolean(
+    !task?.templateId
+    && recurrenceType !== "none"
+    && recurrenceType !== "generated"
+    && recurrenceType !== "archived-series"
+  );
+  const shouldRecreateLocally = task?.archived !== true
+    && task?.historyOnly !== true
+    && (task?.status === "open" || isRecurringMaster);
   return Boolean(
     linkedEventMissing
     && linkedEventId
     && !canonicalEvent
     && task?.needsPush !== true
     && task?.needsStatusPush !== true
+    && !shouldRecreateLocally
   );
 }
 

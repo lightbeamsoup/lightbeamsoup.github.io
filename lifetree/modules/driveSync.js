@@ -439,11 +439,33 @@ export function createDriveSyncController({
         const remoteStore = normalizeStore(remotePayload.payload);
         remoteStore.driveFileId = remotePayload.fileId || "";
         preferredFileId = remotePayload.fileId || preferredFileId;
+        const remoteFingerprint = computeStoreFingerprint(remoteStore);
+        const remoteSavedAt = parseDriveModifiedTime(remotePayload.modifiedTime) || 0;
         const latestLocalStore = getStore();
         const localUserFingerprint = computeUserContentFingerprint(latestLocalStore);
         const remoteUserFingerprint = computeUserContentFingerprint(remoteStore);
         const localUserUpdatedAt = latestLocalStore.userUpdatedAt || latestLocalStore.updatedAt || 0;
         const remoteUserUpdatedAt = remoteStore.userUpdatedAt || remoteStore.updatedAt || 0;
+        const remoteChangedSinceKnown = Boolean(
+          quiet
+          && knownRemoteFingerprint
+          && remoteFingerprint
+          && remoteFingerprint !== knownRemoteFingerprint
+        );
+
+        if (remoteChangedSinceKnown) {
+          return {
+            success: false,
+            skipped: true,
+            staleRemote: true,
+            remoteChanged: true,
+            remoteUpdatedAt: remoteStore.updatedAt || 0,
+            remoteFingerprint,
+            remoteSavedAt,
+            remoteUserUpdatedAt,
+            remoteUserFingerprint
+          };
+        }
 
         if (localUserFingerprint !== remoteUserFingerprint) {
           const effectiveConflictStrategy = conflictStrategy === "prompt-if-auto-merge-fails"
@@ -467,8 +489,8 @@ export function createDriveSyncController({
               skipped: true,
               cancelled: true,
               remoteUpdatedAt: remoteStore.updatedAt || 0,
-              remoteFingerprint: computeStoreFingerprint(remoteStore),
-              remoteSavedAt: parseDriveModifiedTime(remotePayload.modifiedTime) || 0,
+              remoteFingerprint,
+              remoteSavedAt,
               remoteUserUpdatedAt,
               remoteUserFingerprint
             };
@@ -483,8 +505,8 @@ export function createDriveSyncController({
               success: true,
               skipped: true,
               remoteUpdatedAt: remoteStore.updatedAt || 0,
-              remoteFingerprint: computeStoreFingerprint(remoteStore),
-              remoteSavedAt: parseDriveModifiedTime(remotePayload.modifiedTime) || Date.now(),
+              remoteFingerprint,
+              remoteSavedAt: remoteSavedAt || Date.now(),
               remoteUserUpdatedAt,
               remoteUserFingerprint
             };
