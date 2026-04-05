@@ -46,6 +46,8 @@
 - When a feature already has a submit path or renderer helper, prefer extracting or expanding that shared helper instead of forking similar markup or commit logic in a second location.
 - Keep individual JS files under roughly `3000` lines when practical. If a script would exceed that limit, prefer extracting modular feature slices into focused modules instead of continuing to grow the file.
 - After each edit turn is complete and ready for a new prompt, create a local commit by default, but do not push unless the user explicitly asks.
+- When starting a local backend or debug server on an alternate port (for example `node server/app.js` on `3001`-`3004`), record the port in commentary and close it before ending the turn unless the user explicitly asks to keep it running.
+- Do not leave ad hoc local server ports open across turns after live debugging, sync repair, or connector checks. If a server must stay up temporarily for multi-step work, mention that explicitly and clean it up before the final response.
 - Never run `git add` and `git commit` in parallel. Git staging/commit commands should always be executed serially to avoid `.git/index.lock` races.
 - Keep git commits scoped to the files actually changed for the task, and check `git diff`/`git status` before committing when the working tree has unrelated files.
 - Drive sync behavior now has three layers:
