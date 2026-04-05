@@ -486,6 +486,65 @@ test("recurring google payload anchors the series to the earliest pending instan
   assert.equal(patch.dueDate, "2026-04-05");
 });
 
+test("recurring master lifecycle does not mark the whole Google series completed or skipped", () => {
+  const recurringMaster = {
+    taskId: "yoga-template",
+    name: "Yoga",
+    details: "Created by Workout Coach.",
+    dueDate: "2026-04-01",
+    startDate: "2026-04-01",
+    timeOfDay: "19:30",
+    length: "medium",
+    recurrence: {
+      type: "weekly",
+      interval: 1,
+      weekday: 3,
+      day: 1,
+      ordinal: "first",
+      endDate: "",
+      count: null,
+      forever: true
+    },
+    reminders: { enabled: false, dueSoonMinutes: 0, overdueMinutes: 0 },
+    importance: "medium",
+    categoryKey: "health",
+    lateGraceMinutes: 15,
+    ownerWidgetType: "workout",
+    ownerTaskKey: "workout-plan:yoga:weekday:3",
+    widgetTaskKind: "workout-session",
+    widgetTaskMeta: {},
+    status: "skipped",
+    history: [
+      {
+        id: "history-1",
+        type: "skipped",
+        at: 1775134003477
+      }
+    ],
+    userTimeZone: "America/Los_Angeles"
+  };
+
+  const payload = buildGoogleCalendarEventPayload(recurringMaster, {
+    calendarTimeZone: "America/Los_Angeles"
+  });
+  assert.equal(payload.summary, "Yoga");
+  assert.doesNotMatch(payload.description, /Lifetree status: skipped/);
+
+  const firstFingerprint = buildGoogleCalendarTaskScheduleFingerprint({
+    ...recurringMaster,
+    dueDate: "2026-04-01",
+    startDate: "2026-04-01",
+    seriesAnchorDate: "2026-04-01"
+  });
+  const movedFingerprint = buildGoogleCalendarTaskScheduleFingerprint({
+    ...recurringMaster,
+    dueDate: "2026-04-08",
+    startDate: "2026-04-08",
+    seriesAnchorDate: "2026-04-01"
+  });
+  assert.equal(firstFingerprint, movedFingerprint);
+});
+
 test("google calendar sync task normalization preserves push and remote-check flags", () => {
   const normalized = normalizeGoogleCalendarSyncTask({
     taskId: "energy-checkin",

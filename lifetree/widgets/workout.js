@@ -989,7 +989,14 @@ export const workoutWidgetDefinition = {
   },
 
   shouldAutoSkipOwnedTask({ task, now, store }) {
-    if (task?.widgetTaskKind !== "workout-session" || task.skipRule?.policy !== "workout-next-window") {
+    if (
+      task?.widgetTaskKind !== "workout-session"
+      || task.skipRule?.policy !== "workout-next-window"
+    ) {
+      return false;
+    }
+    const recurrenceType = String(task?.recurrence?.type || "");
+    if (!task?.templateId && recurrenceType && recurrenceType !== "generated") {
       return false;
     }
     const sequence = listWorkoutSeriesTasks(store?.tasks, task);

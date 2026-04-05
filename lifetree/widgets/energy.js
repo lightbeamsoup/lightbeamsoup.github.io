@@ -434,7 +434,7 @@ function collectEnergyReminderTimesFromTasks(tasks, widgetId, { includeRecentClo
     ) {
       continue;
     }
-    const slotIndex = parseReminderIndex(task.ownerTaskKey);
+    const slotIndex = resolveEnergyReminderSlotIndex(task);
     const timeOfDay = typeof task.timeOfDay === "string" ? task.timeOfDay.trim() : "";
     if (slotIndex < 0 || !/^\d{2}:\d{2}$/.test(timeOfDay)) {
       continue;
@@ -449,11 +449,24 @@ function collectEnergyReminderTimesFromTasks(tasks, widgetId, { includeRecentClo
     .map(([, timeOfDay]) => timeOfDay);
 }
 
+function resolveEnergyReminderSlotIndex(task) {
+  const ownerTaskKeyIndex = parseReminderIndex(task?.ownerTaskKey);
+  if (ownerTaskKeyIndex >= 0) {
+    return ownerTaskKeyIndex;
+  }
+  const linkedSeriesIndex = Number(task?.linkedSeries?.slotIndex);
+  return Number.isInteger(linkedSeriesIndex) && linkedSeriesIndex >= 0
+    ? linkedSeriesIndex
+    : -1;
+}
+
 function isEnergyReminderRecoveryCandidate(task, widgetId, { includeRecentClosed = false, now = Date.now() } = {}) {
   if (!task || task.ownerWidgetType !== ENERGY_WIDGET_TYPE) {
     return false;
   }
-  if (!String(task.ownerTaskKey || "").startsWith("energy-reminder-")) {
+  const hasReminderOwnerKey = String(task.ownerTaskKey || "").startsWith("energy-reminder-");
+  const hasLinkedSeriesSlot = Number.isInteger(Number(task?.linkedSeries?.slotIndex));
+  if (!hasReminderOwnerKey && !hasLinkedSeriesSlot) {
     return false;
   }
   if (task.ownerWidgetId === widgetId) {

@@ -102,12 +102,13 @@ export function buildGoogleCalendarTaskScheduleFingerprint(task) {
   const effectiveTimeZone = resolveGoogleCalendarTaskTimeZone(task, userTimeZone);
   const recurrence = normalizeExportRecurrence(task?.recurrence);
   const seriesAnchorDate = resolveGoogleCalendarRecurringSeriesAnchorDate(task, recurrence);
+  const scheduleDates = resolveGoogleCalendarTaskScheduleDates(task, recurrence, seriesAnchorDate);
   return JSON.stringify(sortObjectKeys({
     eventPayloadVersion: GOOGLE_CALENDAR_EVENT_PAYLOAD_VERSION,
     name: String(task?.name || ""),
     details: String(task?.details || ""),
-    startDate: String(task?.startDate || ""),
-    dueDate: String(task?.dueDate || ""),
+    startDate: scheduleDates.startDate,
+    dueDate: scheduleDates.dueDate,
     timeOfDay: String(task?.timeOfDay || ""),
     length: String(task?.length || "medium"),
     recurrence,
@@ -118,6 +119,7 @@ export function buildGoogleCalendarTaskScheduleFingerprint(task) {
     ownerWidgetType: String(task?.ownerWidgetType || ""),
     widgetTaskKind: String(task?.widgetTaskKind || ""),
     seriesAnchorDate,
+    statusMirrorMode: isGoogleCalendarRecurringMasterTask(task, recurrence) ? "instances-only" : "direct",
     timeZoneMode,
     timeZone: effectiveTimeZone,
     location: resolveGoogleCalendarTaskLocation(task)
@@ -585,6 +587,13 @@ function buildGoogleCalendarStatusDescription(task) {
 }
 
 function getGoogleCalendarTaskStatusMirrorState(task) {
+  if (isGoogleCalendarRecurringMasterTask(task)) {
+    return {
+      status: "open",
+      lifecycleType: "",
+      changedAt: 0
+    };
+  }
   const explicitLifecycleType = typeof task?.statusMirrorLifecycleType === "string" ? task.statusMirrorLifecycleType : "";
   const explicitVersion = Number.isFinite(Number(task?.statusMirrorVersion)) ? Number(task.statusMirrorVersion) : 0;
   if (explicitLifecycleType === "completed" || explicitLifecycleType === "skipped" || explicitLifecycleType === "reopened") {
@@ -801,12 +810,9 @@ function buildGoogleCalendarEventStartEnd(task, timeZone) {
   const hasTime = Boolean(task.timeOfDay);
   const recurrence = normalizeExportRecurrence(task.recurrence);
   const seriesAnchorDate = resolveGoogleCalendarRecurringSeriesAnchorDate(task, recurrence);
-  const startDate = recurrence.type !== "none"
-    ? (seriesAnchorDate || task.startDate || task.dueDate)
-    : (task.startDate || task.dueDate);
-  const dueDate = recurrence.type !== "none"
-    ? (seriesAnchorDate || task.dueDate || task.startDate)
-    : (task.dueDate || task.startDate);
+  const scheduleDates = resolveGoogleCalendarTaskScheduleDates(task, recurrence, seriesAnchorDate);
+  const startDate = scheduleDates.startDate;
+  const dueDate = scheduleDates.dueDate;
 
   if (!hasTime) {
     const eventStartDate = normalizeDateString(startDate || dueDate);
@@ -913,6 +919,31 @@ function resolveGoogleCalendarRecurringSeriesAnchorDate(task, recurrenceOverride
   }
 
   return normalizeDateString(task?.startDate || task?.dueDate || "");
+}
+
+function resolveGoogleCalendarTaskScheduleDates(task, recurrenceOverride = null, seriesAnchorOverride = "") {
+  const recurrence = recurrenceOverride || normalizeExportRecurrence(task?.recurrence);
+  if (isGoogleCalendarRecurringMasterTask(task, recurrence)) {
+    const anchor = normalizeDateString(seriesAnchorOverride || resolveGoogleCalendarRecurringSeriesAnchorDate(task, recurrence));
+    return {
+      startDate: anchor,
+      dueDate: anchor
+    };
+  }
+  return {
+    startDate: String(task?.startDate || task?.dueDate || ""),
+    dueDate: String(task?.dueDate || task?.startDate || "")
+  };
+}
+
+function isGoogleCalendarRecurringMasterTask(task, recurrenceOverride = null) {
+  const recurrence = recurrenceOverride || normalizeExportRecurrence(task?.recurrence);
+  return Boolean(
+    recurrence
+    && recurrence.type !== "none"
+    && recurrence.type !== "generated"
+    && recurrence.type !== "archived-series"
+  );
 }
 
 function buildGoogleCalendarRecurrence(task) {

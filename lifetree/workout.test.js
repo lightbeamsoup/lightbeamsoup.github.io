@@ -454,3 +454,86 @@ test("workout widget recovers a plan when generated evidence still points at an 
   assert.equal(widget.settings.workoutPlans[0].workoutType, "Dog walk");
   assert.ok(store.tasks.some((task) => !task.templateId && task.widgetTaskKind === "workout-session" && task.name === "Dog walk" && task.ownerWidgetId === widget.id));
 });
+
+test("workout widget does not auto-skip the recurring master template itself", () => {
+  const widget = workoutWidgetDefinition.normalizeWidget({
+    id: "workout-widget",
+    type: "workout",
+    slotIndex: 0,
+    settings: {
+      workoutPlans: [
+        {
+          id: "yoga-plan",
+          name: "Yoga",
+          workoutType: "Yoga",
+          durationMinutes: 60,
+          intensity: "moderate",
+          caloriesBurned: 250,
+          recurrence: {
+            type: "weekly",
+            interval: 1,
+            weekdays: [3],
+            timeOfDay: "19:30",
+            additionalTimes: []
+          }
+        }
+      ],
+      weightTracking: {
+        enabled: false
+      }
+    },
+    data: {
+      workoutEntries: [],
+      weightEntries: []
+    },
+    createdAt: 100,
+    updatedAt: 100
+  }, {
+    createId: () => "widget-id",
+    now: 100,
+    maxWidgets: 5
+  });
+
+  const store = { tasks: [] };
+  let createdTaskId = 0;
+  workoutWidgetDefinition.ensureTasks({
+    widget,
+    store,
+    helpers: {
+      createId: () => `task-${++createdTaskId}`,
+      todayString: () => "2026-04-01",
+      resolveCategorySnapshot: () => ({
+        key: "health",
+        label: "Health",
+        color: "#7dbf74"
+      }),
+      regenerateSeries: () => {},
+      retireWidgetOwnedSeries: () => {}
+    }
+  });
+
+  const template = store.tasks.find((task) => !task.templateId && task.widgetTaskKind === "workout-session");
+  const generated = {
+    ...template,
+    id: "generated-1",
+    templateId: template.id,
+    recurrence: { type: "generated", sourceType: "weekly" },
+    dueDate: "2026-04-08",
+    startDate: "2026-04-08"
+  };
+  store.tasks.push(generated);
+
+  const shouldSkipTemplate = workoutWidgetDefinition.shouldAutoSkipOwnedTask({
+    task: template,
+    now: new Date("2026-04-02T06:00:00-07:00"),
+    store
+  });
+  const shouldSkipGenerated = workoutWidgetDefinition.shouldAutoSkipOwnedTask({
+    task: generated,
+    now: new Date("2026-04-09T06:00:00-07:00"),
+    store
+  });
+
+  assert.equal(shouldSkipTemplate, false);
+  assert.equal(shouldSkipGenerated, true);
+});
