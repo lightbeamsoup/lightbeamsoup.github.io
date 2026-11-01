@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Goalroom · Employee goals sandbox</title>
+  <meta name="description" content="A synthetic employee goals tracker for comparing browser navigation, WebMCP, and direct API access.">
+  <link rel="stylesheet" href="style.css"><script type="module" src="app.js"></script>
+</head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="/agent-lab/" aria-label="Goalroom home"><span class="brand-icon">↗</span> goalroom<span class="lab">LAB</span></a>
+    <p class="sidebar-caption">PEOPLE & PROGRESS</p>
+    <nav aria-label="Tracker"><button data-tab="goals" class="active">◉ <span>Goals overview</span></button><button data-tab="people">♙ <span>People & hierarchy</span></button><button data-tab="compare">⇄ <span>Agent playground</span></button></nav>
+    <div class="sidebar-bottom"><span class="dot"></span> Synthetic data only<p>Isolated sandboxes expire after 24 hours.</p><a href="/">← Back to joshcodes</a><button id="signout" hidden>Sign out / switch account</button></div>
+  </aside>
+  <main>
+    <header class="topbar"><span>WORKSPACE <span class="slash">/</span> Employee goals</span><span id="identity-label">Not signed in</span></header>
+    <div class="content">
+      <div class="page-heading"><div><p class="eyebrow">A LITTLE CLARITY. A LOT OF PROGRESS.</p><h1 id="page-title">Goals overview</h1><p class="muted" id="page-description">A shared direction, with room for individual growth.</p></div><button id="new-goal" class="primary" hidden>＋ Assign a goal</button></div>
+      <p id="message" role="status" aria-live="polite" hidden></p>
+      <section id="auth" class="auth-layout">
+        <div class="intro-card"><span class="pill">THE AGENT INTERFACE EXPERIMENT</span><h2>Same goals.<br>Three ways to get there.</h2><p>Explore a realistic team workspace through the browser, callable page tools, or a direct API. Every path follows the same permissions.</p><div class="routes"><span>01 &nbsp; Browser</span><span>02 &nbsp; WebMCP</span><span>03 &nbsp; HTTP API</span></div><button id="create-sandbox" class="primary">Create a synthetic sandbox →</button><p class="fine">8 employees · 2 departments · 3 reporting levels<br>Plus an administrator. No real employee information.</p></div>
+        <form id="login-form" class="panel"><p class="eyebrow">YOUR TEST WORKSPACE</p><h2>Sign in to Goalroom</h2><p class="muted">Create a sandbox to receive generated test credentials, or sign in to an existing one.</p><label>Sandbox ID<input name="workspace" id="workspace" required autocomplete="off"></label><label>Test account<select id="account"><option value="">Enter credentials manually</option></select></label><label>Email<input name="email" id="email" type="email" required autocomplete="username"></label><label>Password<input name="password" id="password" type="password" required autocomplete="current-password"></label><button class="primary" type="submit">Sign in →</button><p class="fine">Accounts use example.test addresses. Credentials apply only to this sandbox.</p></form>
+      </section>
+      <div id="workspace-view" hidden>
+        <section id="tab-goals">
+          <div class="stats"><article><span>VISIBLE GOALS</span><strong id="stat-total">0</strong><small>Within your reporting scope</small></article><article><span>COMPLETED</span><strong id="stat-complete">0</strong><small>One step closer</small></article><article><span>NEED ATTENTION</span><strong id="stat-overdue">0</strong><small>Past their target date</small></article><article class="scope-card"><span>YOUR ACCESS</span><strong id="stat-role">—</strong><small id="scope-description"></small></article></div>
+          <div class="section-heading"><div><h2>Your team's momentum</h2><p class="muted">Clear outcomes. Visible progress.</p></div><span class="pill" id="visible-people"></span></div>
+          <form id="filters" class="filters"><label class="search-label"><span class="sr-only">Search goal titles</span><input name="query" placeholder="Search goals…"></label><label><span class="sr-only">Employee</span><select name="employee" id="employee-filter"><option value="">All visible employees</option></select></label><label><span class="sr-only">Status</span><select name="status"><option value="">All statuses</option><option value="overdue">Overdue</option><option value="in_progress">In progress</option><option value="complete">Complete</option></select></label><button type="submit">Apply filters</button></form>
+          <div id="goals-grid" class="goals-grid"></div>
+        </section>
+        <section id="tab-people" hidden><div class="panel"><h2>People & reporting lines</h2><p class="muted">Employees see themselves. Supervisors see direct reports. Department heads see their reporting subtree. Administrators see the sandbox.</p><div id="people-list"></div><form id="manager-form" hidden><h3>Change a reporting relationship</h3><label>Employee<select id="manager-employee" name="employee"></select></label><label>Reports to<select id="manager-target" name="manager"></select></label><button type="submit">Save relationship</button></form></div></section>
+        <section id="tab-compare" hidden>
+          <div class="compare-grid"><article class="panel"><span class="pill">THREE INTERFACES · ONE PERMISSION MODEL</span><h2>Put the paths to the test.</h2><p class="muted">Start each comparison with a fresh sandbox and the same role. This page records action requests and server processing time. Use the stopwatch for end-to-end time.</p><label>Run label<input id="run-label" placeholder="e.g. Employee progress / browser"></label><div class="button-row"><button id="start-timer" class="primary">Start run</button><button id="stop-timer" disabled>Finish run</button><strong id="timer">0.0s</strong></div><p id="run-summary" class="fine">No run in progress.</p><button id="export-results">Download comparison JSON</button><h3>Suggested scenarios</h3><ol class="scenarios"><li><b>Employee:</b> sign in as Alex Rivera. Find your release goal and set progress to 80% with a note.</li><li><b>Supervisor:</b> sign in as Evan. Assign Priya a training goal, then add feedback to her existing goal.</li><li><b>Department head:</b> sign in as Maya. Find overdue goals across your reporting subtree.</li><li><b>Permission check:</b> as Evan, request <code>alex-c-1</code>. Expect 404 and no record contents.</li><li><b>Retry:</b> repeat a write with the same idempotency key. Verify one resulting change.</li></ol></article>
+          <article class="panel"><h2>Connection desk</h2><h3>WebMCP</h3><p id="webmcp-status" class="muted">Checking browser support…</p><p class="fine">Open this page in a compatible agent browser and sign in. Tools reuse your signed-in session.</p><h3>Direct API</h3><p class="muted">Authenticate using your sandbox ID, email, and generated password. Use the returned bearer token for action calls.</p><pre id="api-example"></pre><a href="/api/agent-lab/v1/openapi.json" target="_blank" rel="noopener">Open API specification ↗</a><p class="fine">Tokens expire after one hour. The sandbox expires after 24 hours. No credentials are embedded in exported results.</p><details><summary>Test credentials for this sandbox</summary><p class="fine">These credentials allow switching between synthetic roles. Keep them for repeatable tests.</p><button id="download-credentials">Download test credentials</button><div id="credentials-list"></div></details></article></div>
+          <article class="panel telemetry"><div class="section-heading"><div><h2>Request activity</h2><p class="muted">Your account's latest 100 action requests. Channel labels are client supplied.</p></div><button id="refresh-events">Refresh</button></div><div id="channel-stats" class="channel-stats"></div><div class="table-scroll"><table><thead><tr><th>Time</th><th>Channel</th><th>Action</th><th>Status</th><th>Server time</th></tr></thead><tbody id="events"></tbody></table></div><p class="fine">Server time excludes network, browser navigation, and model reasoning. Results below are measured requests, not verified task-success scores.</p></article>
+        </section>
+      </div>
+      <footer>GOALROOM <span>Built for people. Callable by agents.</span><a href="/agent-lab/README.md">Experiment guide ↗</a></footer>
+    </div>
+  </main>
+  <dialog id="goal-dialog"><form id="goal-form"><div class="dialog-heading"><h2>Assign a goal</h2><button type="button" data-close="goal-dialog" aria-label="Close">×</button></div><label>Employee<select name="employee" id="assign-employee" required></select></label><label>Goal title<input name="title" required maxlength="160"></label><label>Measurable target<input name="target" required maxlength="300"></label><label>Due date<input name="due" type="date" required></label><p class="dialog-error" role="alert"></p><button class="primary" type="submit">Assign goal</button></form></dialog>
+  <dialog id="detail-dialog"><div id="goal-detail"></div></dialog>
+</body>
+</html>

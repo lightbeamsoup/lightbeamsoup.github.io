@@ -21,6 +21,10 @@
 
 ## Recently completed
 
+### Agent Playground
+
+- 2026-11-01: Add Goalroom at `/agent-lab/` with isolated synthetic employee sandboxes, SQLite persistence, hierarchy-based access, browser forms, WebMCP tools, direct HTTP API, request telemetry, and manual comparison exports.
+
 ### Drive Sync
 
 - 2026-04-04: Skip no-op autosave writes and stop first-load startup saves from firing after normalization-only repairs.

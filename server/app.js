@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";
+import { createGoalsRouter } from "./goals/router.js";
 import {
   buildEmailSummaryPreview,
   renderEmailSummaryBodyHtml,
@@ -132,6 +133,16 @@ const travelLiveCache = new Map();
 
 const app = express();
 app.set("trust proxy", 1);
+const goals = RUNS_WEB_SERVER ? createGoalsRouter({ filename: path.join(dataDir, "employee-goals.sqlite") }) : null;
+if (goals) app.use("/api/agent-lab/v1", goals.router);
+// Persistent databases and session files must never be exposed by the root static server.
+app.use((req, res, next) => {
+  let decoded;
+  try { decoded = decodeURIComponent(req.path).replaceAll("\\", "/").toLowerCase(); }
+  catch { return res.sendStatus(400); }
+  if (decoded === "/server/data" || decoded.startsWith("/server/data/") || /\.sqlite(?:-wal|-shm)?$/.test(decoded)) return res.sendStatus(404);
+  next();
+});
 app.use(express.json({ limit: REQUEST_BODY_LIMIT }));
 app.use(express.urlencoded({ extended: false, limit: REQUEST_BODY_LIMIT }));
 
