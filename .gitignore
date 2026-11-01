@@ -6,3 +6,5 @@ __pycache__/
 .wrangler/
 .dev.vars*
 cloudflare/.local-*
+companion/.schema/
+companion/.local-*

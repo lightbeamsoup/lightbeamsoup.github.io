@@ -1,0 +1,244 @@
+{
+  "measuredAt": "2026-11-01T17:31:43.148Z",
+  "methodology": "Single real Codex run per scenario, low reasoning effort; hosted Cloudflare/D1; one synthetic sandbox with independent employee/supervisor changes. Elapsed time includes app-server startup, model reasoning, tool and network latency. Success checked independently via snapshot. Not a statistical latency estimate. No browser/WebMCP speedup inferred.",
+  "runs": [
+    {
+      "scenario": "Employee progress update",
+      "role": "alex-r",
+      "success": true,
+      "model": "gpt-6.1-sol",
+      "elapsedMs": 10872,
+      "toolCalls": [
+        {
+          "name": "get_identity",
+          "input": {},
+          "elapsedMs": 164,
+          "status": 200
+        },
+        {
+          "name": "list_goals",
+          "input": {
+            "employee": "alex-r",
+            "query": "release reliability"
+          },
+          "elapsedMs": 293,
+          "status": 200
+        },
+        {
+          "name": "update_progress",
+          "input": {
+            "id": "alex-r-1",
+            "version": 1,
+            "progress": 80,
+            "note": "Benchmark: release checks complete",
+            "idempotencyKey": "alex-r-1-20261101-progress80-benchmark-release-checks"
+          },
+          "elapsedMs": 179,
+          "status": 200
+        },
+        {
+          "name": "get_goal",
+          "input": {
+            "id": "alex-r-1"
+          },
+          "elapsedMs": 189,
+          "status": 200
+        }
+      ],
+      "text": "Verified \u201cImprove release reliability\u201d is saved at **80%** with the note: \u201cBenchmark: release checks complete\u201d.",
+      "usage": {
+        "total": {
+          "totalTokens": 44445,
+          "inputTokens": 44279,
+          "cachedInputTokens": 34688,
+          "cacheWriteInputTokens": 0,
+          "outputTokens": 166,
+          "reasoningOutputTokens": 0
+        },
+        "last": {
+          "totalTokens": 9228,
+          "inputTokens": 9200,
+          "cachedInputTokens": 8960,
+          "cacheWriteInputTokens": 0,
+          "outputTokens": 28,
+          "reasoningOutputTokens": 0
+        },
+        "modelContextWindow": 475000
+      }
+    },
+    {
+      "scenario": "Supervisor assignment and feedback",
+      "role": "evan",
+      "success": true,
+      "model": "gpt-6.1-sol",
+      "elapsedMs": 15920,
+      "toolCalls": [
+        {
+          "name": "get_identity",
+          "input": {},
+          "elapsedMs": 254,
+          "status": 200
+        },
+        {
+          "name": "list_employees",
+          "input": {},
+          "elapsedMs": 148,
+          "status": 200
+        },
+        {
+          "name": "list_goals",
+          "input": {
+            "employee": "priya"
+          },
+          "elapsedMs": 163,
+          "status": 200
+        },
+        {
+          "name": "create_goal",
+          "input": {
+            "employee": "priya",
+            "title": "Benchmark training",
+            "target": "Complete 3 modules",
+            "due": "2026-12-15",
+            "idempotencyKey": "priya-benchmark-training-20261101-1215-a1"
+          },
+          "elapsedMs": 199,
+          "status": 200
+        },
+        {
+          "name": "add_feedback",
+          "input": {
+            "id": "priya-1",
+            "version": 1,
+            "note": "Benchmark: keep the release checklist current",
+            "idempotencyKey": "priya-release-feedback-20261101-a1"
+          },
+          "elapsedMs": 170,
+          "status": 200
+        },
+        {
+          "name": "get_goal",
+          "input": {
+            "id": "fabed4a8-3abe-4139-ab81-0470c14fa1c7"
+          },
+          "elapsedMs": 145,
+          "status": 200
+        },
+        {
+          "name": "get_goal",
+          "input": {
+            "id": "priya-1"
+          },
+          "elapsedMs": 125,
+          "status": 200
+        }
+      ],
+      "text": "Verified both changes for Priya Shah:\n\n- Created **Benchmark training**, target **Complete 3 modules**, due **2026-12-15**.\n- Added feedback to **Improve release reliability**: \u201cBenchmark: keep the release checklist current\u201d.",
+      "usage": {
+        "total": {
+          "totalTokens": 45731,
+          "inputTokens": 45452,
+          "cachedInputTokens": 35328,
+          "cacheWriteInputTokens": 0,
+          "outputTokens": 279,
+          "reasoningOutputTokens": 0
+        },
+        "last": {
+          "totalTokens": 9710,
+          "inputTokens": 9656,
+          "cachedInputTokens": 9216,
+          "cacheWriteInputTokens": 0,
+          "outputTokens": 54,
+          "reasoningOutputTokens": 0
+        },
+        "modelContextWindow": 475000
+      }
+    },
+    {
+      "scenario": "Department scope and permission boundary",
+      "role": "maya",
+      "success": true,
+      "model": "gpt-6.1-sol",
+      "elapsedMs": 9935,
+      "toolCalls": [
+        {
+          "name": "get_identity",
+          "input": {},
+          "elapsedMs": 210,
+          "status": 200
+        },
+        {
+          "name": "list_goals",
+          "input": {
+            "status": "overdue"
+          },
+          "elapsedMs": 138,
+          "status": 200
+        },
+        {
+          "name": "get_goal",
+          "input": {
+            "id": "alex-c-1"
+          },
+          "elapsedMs": 156,
+          "status": 404
+        }
+      ],
+      "text": "**4 overdue goals** in your reporting subtree, including your own:\n\n| Goal ID | Employee | Title | Due |\n|---|---|---|---|\n| alex-r-1 | alex-r | Improve release reliability | Oct 29, 2026 |\n| evan-1 | evan | Improve release reliability | Oct 29, 2026 |\n| maya-1 | maya | Improve release reliability | Oct 29, 2026 |\n| priya-1 | priya | Improve release reliability | Oct 29, 2026 |\n\nAccess to `alex-c-1` was **denied**: the tool returned 404, \u201cGoal not found in your scope.\u201d\n\nNothing was changed.",
+      "usage": {
+        "total": {
+          "totalTokens": 25716,
+          "inputTokens": 25505,
+          "cachedInputTokens": 16512,
+          "cacheWriteInputTokens": 0,
+          "outputTokens": 211,
+          "reasoningOutputTokens": 0
+        },
+        "last": {
+          "totalTokens": 8992,
+          "inputTokens": 8841,
+          "cachedInputTokens": 8320,
+          "cacheWriteInputTokens": 0,
+          "outputTokens": 151,
+          "reasoningOutputTokens": 0
+        },
+        "modelContextWindow": 475000
+      }
+    }
+  ],
+  "transport": [
+    {
+      "mode": "direct-api",
+      "elapsedMs": 646,
+      "actionCalls": 3,
+      "snapshotCalls": 0,
+      "success": true
+    },
+    {
+      "mode": "browser",
+      "elapsedMs": 1674,
+      "actionCalls": 3,
+      "snapshotCalls": 3,
+      "success": true
+    },
+    {
+      "mode": "native-webmcp",
+      "elapsedMs": 7914,
+      "actionCalls": 3,
+      "snapshotCalls": 3,
+      "success": true
+    }
+  ],
+  "transportMethodology": "One run per interface, each using a separate fresh synthetic sandbox, Alex Rivera employee role, alex-r-1 initially progress 60/version 1/no notes. Read goal, set progress 80 with the same note, read back progress 80/version 2/one note. Setup, sign-in, tool discovery and model reasoning excluded. Browser and native WebMCP use the local companion same-origin proxy to the hosted API, including 3 automatic snapshot refreshes; direct HTTP calls go straight to the hosted API. Browser uses batched semantic UI automation; native WebMCP uses the actual in-app browser capability, not an emulation, and includes its bridge overhead. Timers are driver wall clock. No repeated trials or statistical claims.",
+  "summary": "Measured November 1, 2026\n\nAsk AI (gpt-6.1-sol, low reasoning):\nEmployee progress: 10.87 s / 4 calls / PASS\nSupervisor goal + feedback: 15.92 s / 7 calls / PASS\nDepartment scope + denied access: 9.94 s / 3 calls / PASS\n\nRead-update-verify, without model reasoning:\nBrowser: 1.67 s / PASS\nNative WebMCP: 7.91 s / PASS\nDirect API: 0.65 s / PASS\n\nSingle runs, fresh data per interface. Login excluded. UI paths include page refreshes and local proxy; WebMCP includes native bridge overhead. These are initial measurements, not general speed guarantees.",
+  "developmentNotes": "Before these final measurements, development probes found and fixed Windows temporary-directory cleanup and a collision between the tracker create_goal name and Codex built-in goal tools. Those probes are excluded from final-version measurements.",
+  "uiSmoke": {
+    "mode": "Ask AI page, read-only",
+    "model": "gpt-6.1-sol",
+    "elapsedMs": 9800,
+    "approximate": true,
+    "toolCalls": 2,
+    "success": true,
+    "outcome": "Correctly reported Alex Rivera release reliability overdue at 60 percent, due 2026-10-29; no changes."
+  }
+}

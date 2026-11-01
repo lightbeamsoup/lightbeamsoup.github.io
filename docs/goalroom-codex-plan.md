@@ -1,3 +1,5 @@
+> Implemented November 1, 2026: the Ask AI panel now uses a paired local Codex app-server companion. See [setup and boundaries](../companion/README.md) and [measured benchmarks](goalroom-benchmarks.md). Model execution remains local; GitHub Pages and Cloudflare host the tracker UI/API.
+
 # Using Goalroom with an existing Codex plan
 
 The first version needs no model inference inside Cloudflare. Codex is the agent; Goalroom is the tool service. The site and database do not require an OpenAI API key.

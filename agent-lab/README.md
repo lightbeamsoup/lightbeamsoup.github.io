@@ -127,3 +127,9 @@ Set `ENABLE_NOTIFICATION_SCHEDULER=false` for local preview. Tests use isolated 
 ## Model usage
 
 The tracker makes no model calls. Use the existing Codex session/plan as the agent, with this service as its tool API. See [Codex plan integration design](../docs/goalroom-codex-plan.md) for repeatable runs, a proposed local companion, and the separately documented hosted Sign in with ChatGPT route.
+
+## Ask AI with your Codex plan
+
+Run `npm run companion` from the repository and open its printed paired URL. Sign in to a synthetic employee account, choose **Ask AI**, and submit a question. Enable **Allow goal changes** for an update. The companion uses your existing Codex ChatGPT login; no Codex credentials are sent to Cloudflare. The public page provides setup instructions; model execution runs in the local companion.
+
+[Full setup and boundaries](../companion/README.md) · [Benchmark methodology and results](../docs/goalroom-benchmarks.md) · [Raw benchmark JSON](benchmarks.json)

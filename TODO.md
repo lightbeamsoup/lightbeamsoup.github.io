@@ -21,6 +21,10 @@
 
 ## Recently completed
 
+### Goalroom
+
+- 2026-11-01: Implement Ask AI with a paired loopback Codex companion using ChatGPT sign-in, bounded Goalroom tools, read-only mode, cancellation, and verified model and transport benchmarks.
+
 ### Agent Playground
 
 - 2026-11-01: Deploy Goalroom's API on Cloudflare Workers and D1, add durable rate limits and atomic concurrent-write/retry handling, and document Codex-plan agent use without backend model calls.

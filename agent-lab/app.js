@@ -1,5 +1,6 @@
+import { setupAskAI } from './ask-ai.js?v=ask-ai-v1';
 import { tools } from './contracts.js';
-import { apiOrigin } from './config.js?v=cloudflare-v2';
+import { apiOrigin } from './config.js?v=ask-ai-v1';
 const $=selector=>document.querySelector(selector);
 const base=apiOrigin+'/api/agent-lab/v1';
 $('#openapi-link').href=base+'/openapi.json';
@@ -39,8 +40,9 @@ function fillCredentials(){
   $('#credentials-list').innerHTML=(credentials?.accounts||[]).map(p=>`<div class="credentials-row"><b>${escape(p.name)}</b> · ${escape(p.role)}<br>${escape(p.email)}<br><code>${escape(p.password)}</code></div>`).join('')||'<p>No locally saved credentials. Use the copy from sandbox creation.</p>';
 }
 function showTab(name){
-  for(const tab of ['goals','people','compare']){$(`#tab-${tab}`).hidden=tab!==name;document.querySelector(`[data-tab="${tab}"]`).classList.toggle('active',tab===name);}
-  const labels={goals:['Goals overview','A shared direction, with room for individual growth.'],people:['People & hierarchy','The right access, grounded in reporting relationships.'],compare:['Agent playground','Compare the journey. Keep the destination the same.']};
+  for(const tab of ['goals','people','compare','ai']){$(`#tab-${tab}`).hidden=tab!==name;document.querySelector(`[data-tab="${tab}"]`).classList.toggle('active',tab===name);}
+  if(!state){$('#workspace-view').hidden=name!=='ai';$('#auth').hidden=name==='ai';}
+  const labels={ai:['Ask AI','A little help, within your team permissions.'],goals:['Goals overview','A shared direction, with room for individual growth.'],people:['People & hierarchy','The right access, grounded in reporting relationships.'],compare:['Agent playground','Compare the journey. Keep the destination the same.']};
   $('#page-title').textContent=labels[name][0];$('#page-description').textContent=labels[name][1];
   $('#new-goal').hidden=!state||name!=='goals'||!state.employees.some(p=>p.canManage);
 }
@@ -101,7 +103,7 @@ $('#create-sandbox').onclick=e=>busy(e.currentTarget,async()=>{
 $('#account').onchange=()=>{const p=credentials?.accounts.find(p=>p.id===$('#account').value);if(p){$('#workspace').value=credentials.workspace;$('#email').value=p.email;$('#password').value=p.password;}};
 $('#login-form').onsubmit=e=>{e.preventDefault();busy(e.submitter,async()=>{const body=Object.fromEntries(new FormData(e.currentTarget));session=await request('/login',{method:'POST',body});save('goalroom.session',session);await refresh();await registerTools();showTab('goals');message('Signed in. Your visible records follow your hierarchy permissions.');});};
 $('#signout').onclick=e=>busy(e.currentTarget,async()=>{await request('/logout',{method:'POST',body:{}});session=null;sessionStorage.removeItem('goalroom.session');registration?.abort();state=null;timerStart=null;$('#start-timer').disabled=false;$('#stop-timer').disabled=true;render();await registerTools();message('Signed out. Select another test account to compare permissions.');});
-document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{if(state)showTab(b.dataset.tab);});
+document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{if(state||b.dataset.tab==='ai')showTab(b.dataset.tab);else{showTab('goals');}});
 $('#filters').onsubmit=async e=>{e.preventDefault();await busy(e.submitter,async()=>{const filters=Object.fromEntries([...new FormData($('#filters'))].filter(([,v])=>v));filteredGoals=await action('list_goals',filters);renderGoals(filteredGoals);});};
 document.addEventListener('click',async e=>{
   const close=e.target.closest('[data-close]');if(close)$(`#${close.dataset.close}`).close();
@@ -123,6 +125,7 @@ setInterval(()=>{if(timerStart)$('#timer').textContent=`${((Date.now()-timerStar
 function download(name,data){const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 $('#export-results').onclick=()=>download('goalroom-comparisons.json',{runs,latestEvents:state.events,measurement:'Server action endpoints only. Channels are client supplied. Runs are manually timed; success is not automatically evaluated.'});
 $('#download-credentials').onclick=()=>{if(credentials)download('goalroom-test-credentials.json',credentials);else message('Credentials are only available in the browser that created this sandbox.',true);};
+setupAskAI({getSession:()=>session,refresh});
 fillCredentials();
 try{await refresh();showTab('goals');}catch(error){state=null;render();if(error.status!==401)message(error.message,true);}
 await registerTools();
