@@ -1,5 +1,5 @@
 import { tools } from './contracts.js';
-import { apiOrigin } from './config.js';
+import { apiOrigin } from './config.js?v=cloudflare-v2';
 const $=selector=>document.querySelector(selector);
 const base=apiOrigin+'/api/agent-lab/v1';
 $('#openapi-link').href=base+'/openapi.json';
