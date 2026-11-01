@@ -21,14 +21,27 @@ const cookieName='goals_session';
 const bearer = req => req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7) : null;
 const cookie = req => { try { return decodeURIComponent((req.headers.cookie||'').split(';').map(x=>x.trim()).find(x=>x.startsWith(`${cookieName}=`))?.slice(cookieName.length+1)||''); } catch { return ''; } };
 
-export function createGoalsRouter({filename, store=createStore(filename), secureCookies=process.env.NODE_ENV==='production'||Boolean(process.env.RAILWAY_ENVIRONMENT_ID)}={}) {
+export function createGoalsRouter({filename, store=createStore(filename), secureCookies=process.env.NODE_ENV==='production'||Boolean(process.env.RAILWAY_ENVIRONMENT_ID), allowedOrigins=(process.env.GOALS_ALLOWED_ORIGINS||'https://www.joshcodes.ai,https://joshcodes.ai').split(',').map(x=>x.trim()).filter(Boolean)}={}) {
   const router=express.Router();
   const limits=new Map();
+  router.use((req,res,next)=>{
+    const origin=req.get('origin');
+    const sameOrigin=origin===`${req.protocol}://${req.get('host')}`;
+    if(origin && !sameOrigin && !allowedOrigins.includes(origin)) return res.status(403).json({error:'Origin not allowed.'});
+    if(origin){
+      res.set('Access-Control-Allow-Origin',origin);
+      res.vary('Origin');
+      res.set('Access-Control-Allow-Headers','Content-Type, Authorization, X-Goals-Channel, Idempotency-Key');
+      res.set('Access-Control-Allow-Methods','GET, POST, PATCH, OPTIONS');
+    }
+    if(req.method==='OPTIONS') return res.sendStatus(204);
+    next();
+  });
   router.use(express.json({limit:'16kb'}));
   router.use((req,res,next)=>{
     res.set({'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
     // Cookie-based writes must originate from the same site. API clients use bearer tokens.
-    if (!['GET','HEAD','OPTIONS'].includes(req.method) && !bearer(req)) {
+    if (!['GET','HEAD','OPTIONS'].includes(req.method) && !bearer(req) && cookie(req)) {
       const expected=`${req.protocol}://${req.get('host')}`;
       if (req.get('origin') ? req.get('origin')!==expected : cookie(req)) return res.status(403).json({error:'Same-origin request required.'});
     }

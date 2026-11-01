@@ -4,7 +4,18 @@ Open `/agent-lab/`, create a synthetic sandbox, and sign in with a generated tes
 
 ## Storage and deployment
 
-The current public domain was verified to serve GitHub Pages on 2026-11-01. GitHub Pages publishes the frontend but cannot execute this server or SQLite API. The repository's Railway configuration alone does not establish a live backend. Serve the site from the Express service to keep the page and API on the same origin, or configure a separate API host and explicit CORS/token handling before using split hosting. The page reports a missing backend rather than pretending to save data locally.
+The public domain serves GitHub Pages. Keep it there: the frontend uses a separate API at `https://api.joshcodes.ai` (configured in `agent-lab/config.js`). Local previews use their own origin. Browser API sessions use bearer tokens in tab session storage, so cross-origin operation does not depend on third-party cookies. CORS allows the exact www and apex website origins by default. The page reports an unavailable backend rather than pretending to save data locally.
+
+### Separate Railway backend (no website migration)
+
+1. Create a Railway service from this repository, branch `main`, root directory `/`.
+2. Set the service build command to `npm ci --omit=dev`, start command to `npm run start:goals`, and health check to `/healthz`. Railway's current documentation says new services cannot use legacy config-as-code JSON files. Configure the service directly (or through its connected plugin). Do not start the full Lifetree server for this dedicated service.
+3. Add a persistent volume mounted at `/data`. Set `DATA_DIR=/data`, `NODE_ENV=production`, and `GOALS_ALLOWED_ORIGINS=https://www.joshcodes.ai,https://joshcodes.ai`. Node 24 is selected by the repository. Let Railway supply `PORT`.
+4. Deploy. The standalone service needs no Google OAuth or Lifetree secrets. Its `/healthz` returns `{ "ok": true, "service": "goalroom" }`.
+5. Add the custom domain `api.joshcodes.ai` to that service. Add only the DNS record Railway specifies for the **api** subdomain. Preserve the apex and www GitHub Pages records.
+6. Verify `/api/agent-lab/v1/openapi.json`, then create and sign in to a sandbox at the existing `/agent-lab/` page.
+
+Provisioning the Railway service and DNS record requires access to those accounts and has not been performed by merely pushing this repository. If using a generated Railway hostname instead, replace the production `apiOrigin` in `agent-lab/config.js`; no DNS change is necessary for that option.
 
 - Node 24 is required (`node:sqlite`, no extra database package).
 - SQLite lives at `DATA_DIR/employee-goals.sqlite`, or `server/data/employee-goals.sqlite` locally. Use the existing Railway persistent volume and one web service instance. Do not share the file between separate instances/workers.
@@ -31,7 +42,7 @@ Every operation checks the current identity and hierarchy on the server. Records
 
 ### API examples
 
-Base URL: `https://www.joshcodes.ai/api/agent-lab/v1`
+Production API URL (after backend deployment): `https://api.joshcodes.ai/api/agent-lab/v1`
 
 Create a fixture. Save the response: credentials are returned once.
 
@@ -72,7 +83,7 @@ Content-Type: application/json
 {"id":"alex-r-1","version":1,"progress":80,"note":"Two improvements delivered.","idempotencyKey":"unique-progress-request-001"}
 ```
 
-Reuse the same key and exact input on retries. Different input with the same key returns 409. Stale versions return 409; read the goal again. Transactions make the mutation and retry record atomic. Browser clients use an HttpOnly SameSite=Strict cookie; cookie writes require a matching Origin. Bearer clients need no Origin. Secure cookies are enabled in production/Railway.
+Reuse the same key and exact input on retries. Different input with the same key returns 409. Stale versions return 409; read the goal again. Transactions make the mutation and retry record atomic. The page stores its bearer session in tab session storage. Same-origin clients can also use an HttpOnly SameSite=Strict cookie; cookie writes require a matching Origin. Cross-origin page clients use bearer tokens, and CORS checks the exact website origin. Bearer clients outside browsers need no Origin. Secure cookies are enabled in production/Railway.
 
 Additional routes: `GET /me`, `GET /employees`, `GET /goals`, `GET /goals/:id`, `POST /goals`, `PATCH /goals/:id/progress`, `POST /goals/:id/feedback`, `GET /events`, `POST /logout`. REST writes use an `Idempotency-Key` header instead of JSON `idempotencyKey`. `GET /openapi.json` documents the canonical action endpoints. Login and fixture setup are documented above.
 

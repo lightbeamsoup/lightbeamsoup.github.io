@@ -8,6 +8,7 @@
     "start": "node server/app.js",
     "dev": "node server/app.js",
     "start:worker": "node server/app.js --worker",
+    "start:goals": "node server/goals/app.js",
     "test": "node --test lifetree/*.test.js server/goals/*.test.js",
     "test:goals": "node --test server/goals/*.test.js"
   },

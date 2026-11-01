@@ -1,18 +1,24 @@
 import { tools } from './contracts.js';
+import { apiOrigin } from './config.js';
 const $=selector=>document.querySelector(selector);
-const base='/api/agent-lab/v1';
+const base=apiOrigin+'/api/agent-lab/v1';
+$('#openapi-link').href=base+'/openapi.json';
 const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const load=(key,fallback)=>{try{return JSON.parse(sessionStorage.getItem(key))??fallback;}catch{return fallback;}};
 let credentials=load('goalroom.credentials',null);
+let session=load('goalroom.session',null);
+if(session?.expires<Date.now()){session=null;sessionStorage.removeItem('goalroom.session');}
 let runs=load('goalroom.runs',[]);
 let state=null, selectedGoal=null, filteredGoals=null, registration=null, timerStart=null, runStartEvents=[];
 const save=(key,value)=>sessionStorage.setItem(key,JSON.stringify(value));
 function message(text,error=false){$('#message').hidden=!text;$('#message').textContent=text;$('#message').classList.toggle('error',error);}
 async function request(path,{method='GET',body,channel='browser'}={}){
   const start=performance.now();
-  const response=await fetch(base+path,{method,credentials:'same-origin',headers:{...(body?{'Content-Type':'application/json'}:{}),'X-Goals-Channel':channel},...(body?{body:JSON.stringify(body)}:{})});
+  let response;
+  try{response=await fetch(base+path,{method,credentials:'same-origin',headers:{...(body?{'Content-Type':'application/json'}:{}),...(session?{Authorization:`Bearer ${session.token}`}:{ }),'X-Goals-Channel':channel},...(body?{body:JSON.stringify(body)}:{})});}
+  catch{throw new Error('The tracker API is not reachable yet. The separate backend must be connected at '+(apiOrigin||location.origin)+'.');}
   if(!response.headers.get('content-type')?.includes('application/json')){
-    const error=new Error('The tracker page is available, but its database/API backend is not connected on this host yet. GitHub Pages cannot run the Express server.');error.status=503;throw error;
+    const error=new Error('The tracker page is available, but its database/API backend is not connected yet. GitHub Pages cannot run the Express server.');error.status=503;throw error;
   }
   const result=await response.json();
   if(!response.ok){const error=new Error(result.error||'Request failed.');error.status=response.status;throw error;}
@@ -62,7 +68,7 @@ function render(){
   renderGoals(visible);
   $('#people-list').innerHTML=state.employees.map(p=>`<div class="person-row"><span class="person"><span class="avatar">${escape(initials(p.name))}</span><span><b>${escape(p.name)}</b><small>${escape(p.id)} · ${escape(p.department)}</small></span></span><span class="status">${escape(p.role)}</span><span>Reports to ${escape(p.manager?names(p.manager):'—')}</span></div>`).join('');
   $('#manager-form').hidden=identity.role!=='admin';$('#manager-employee').innerHTML=options(state.employees.filter(p=>p.role!=='admin'));$('#manager-target').innerHTML='<option value="">No manager</option>'+options(state.employees.filter(p=>['head','supervisor'].includes(p.role)));
-  $('#api-example').textContent=`POST ${location.origin}${base}/login\nContent-Type: application/json\n\n{"workspace":"${identity.workspace}",\n "email":"${identity.email}",\n "password":"YOUR_TEST_PASSWORD"}\n\nPOST ${base}/actions/list_goals\nAuthorization: Bearer YOUR_TOKEN\nContent-Type: application/json\n\n{"status":"overdue"}`;
+  $('#api-example').textContent=`POST ${apiOrigin||location.origin}/api/agent-lab/v1/login\nContent-Type: application/json\n\n{"workspace":"${identity.workspace}",\n "email":"${identity.email}",\n "password":"YOUR_TEST_PASSWORD"}\n\nPOST ${base}/actions/list_goals\nAuthorization: Bearer YOUR_TOKEN\nContent-Type: application/json\n\n{"status":"overdue"}`;
   renderEvents();
   $('#new-goal').hidden=!$('#tab-goals').hidden? !state.employees.some(p=>p.canManage):true;
 }
@@ -93,8 +99,8 @@ $('#create-sandbox').onclick=e=>busy(e.currentTarget,async()=>{
   credentials=await request('/workspaces',{method:'POST',body:{}});save('goalroom.credentials',credentials);fillCredentials();$('#account').value='maya';$('#account').dispatchEvent(new Event('change'));message('Your sandbox is ready. Sign in with a generated test account.');
 });
 $('#account').onchange=()=>{const p=credentials?.accounts.find(p=>p.id===$('#account').value);if(p){$('#workspace').value=credentials.workspace;$('#email').value=p.email;$('#password').value=p.password;}};
-$('#login-form').onsubmit=e=>{e.preventDefault();busy(e.submitter,async()=>{const body=Object.fromEntries(new FormData(e.currentTarget));await request('/login',{method:'POST',body});await refresh();await registerTools();showTab('goals');message('Signed in. Your visible records follow your hierarchy permissions.');});};
-$('#signout').onclick=e=>busy(e.currentTarget,async()=>{await request('/logout',{method:'POST',body:{}});registration?.abort();state=null;timerStart=null;$('#start-timer').disabled=false;$('#stop-timer').disabled=true;render();await registerTools();message('Signed out. Select another test account to compare permissions.');});
+$('#login-form').onsubmit=e=>{e.preventDefault();busy(e.submitter,async()=>{const body=Object.fromEntries(new FormData(e.currentTarget));session=await request('/login',{method:'POST',body});save('goalroom.session',session);await refresh();await registerTools();showTab('goals');message('Signed in. Your visible records follow your hierarchy permissions.');});};
+$('#signout').onclick=e=>busy(e.currentTarget,async()=>{await request('/logout',{method:'POST',body:{}});session=null;sessionStorage.removeItem('goalroom.session');registration?.abort();state=null;timerStart=null;$('#start-timer').disabled=false;$('#stop-timer').disabled=true;render();await registerTools();message('Signed out. Select another test account to compare permissions.');});
 document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{if(state)showTab(b.dataset.tab);});
 $('#filters').onsubmit=async e=>{e.preventDefault();await busy(e.submitter,async()=>{const filters=Object.fromEntries([...new FormData($('#filters'))].filter(([,v])=>v));filteredGoals=await action('list_goals',filters);renderGoals(filteredGoals);});};
 document.addEventListener('click',async e=>{

@@ -78,6 +78,11 @@ test('HTTP contract rejects identity spoofing, cross-origin cookie writes, inval
   assert.equal((await call('/login',{workspace:workspace.workspace,email:account.email,password:'wrong'})).status,401);
   const login=await call('/login',{workspace:workspace.workspace,email:account.email,password:account.password});
   const token=login.data.token;const cookie=login.cookie.split(';')[0];
+  assert.equal((await call('/login',{workspace:workspace.workspace,email:account.email,password:account.password},null,{Origin:'https://www.joshcodes.ai'})).status,200);
+  const preflight=await fetch(origin+'/api/actions/list_goals',{method:'OPTIONS',headers:{Origin:'https://www.joshcodes.ai','Access-Control-Request-Headers':'authorization,content-type'}});
+  assert.equal(preflight.status,204);assert.equal(preflight.headers.get('access-control-allow-origin'),'https://www.joshcodes.ai');
+  assert.equal((await call('/actions/list_goals',{},token,{Origin:'https://www.joshcodes.ai'})).status,200);
+  assert.equal((await call('/actions/list_goals',{},token,{Origin:'https://evil.example'})).status,403);
   assert.equal((await call('/actions/list_goals',{})).status,401);
   assert.equal((await call('/actions/list_goals',{role:'admin'},token)).status,400);
   assert.equal((await call('/actions/get_goal',{id:'alex-c-1'},token)).status,404);
