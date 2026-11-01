@@ -11,6 +11,9 @@ function message(text,error=false){$('#message').hidden=!text;$('#message').text
 async function request(path,{method='GET',body,channel='browser'}={}){
   const start=performance.now();
   const response=await fetch(base+path,{method,credentials:'same-origin',headers:{...(body?{'Content-Type':'application/json'}:{}),'X-Goals-Channel':channel},...(body?{body:JSON.stringify(body)}:{})});
+  if(!response.headers.get('content-type')?.includes('application/json')){
+    const error=new Error('The tracker page is available, but its database/API backend is not connected on this host yet. GitHub Pages cannot run the Express server.');error.status=503;throw error;
+  }
   const result=await response.json();
   if(!response.ok){const error=new Error(result.error||'Request failed.');error.status=response.status;throw error;}
   window.dispatchEvent(new CustomEvent('goalroom:request',{detail:{path,channel,status:response.status,roundTripMs:performance.now()-start}}));
@@ -50,7 +53,7 @@ function render(){
   $('#stat-total').textContent=state.goals.length;$('#stat-complete').textContent=state.goals.filter(g=>g.status==='complete').length;$('#stat-overdue').textContent=state.goals.filter(g=>g.status==='overdue').length;
   $('#stat-role').textContent=identity.role==='head'?'Department head':identity.role;
   $('#scope-description').textContent={admin:'All sandbox employees',head:'Your reporting subtree',supervisor:'You and your direct reports',employee:'Your own goals'}[identity.role];
-  $('#visible-people').textContent=`${state.employees.length} people in scope`;
+  $('#visible-people').textContent=`${state.employees.length} ${state.employees.length===1?'person':'people'} in scope`;
   const prior=$('#employee-filter').value;
   $('#employee-filter').innerHTML='<option value="">All visible employees</option>'+options(state.employees);$('#employee-filter').value=prior;
   $('#assign-employee').innerHTML=options(state.employees.filter(p=>p.canManage));

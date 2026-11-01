@@ -4,6 +4,8 @@ Open `/agent-lab/`, create a synthetic sandbox, and sign in with a generated tes
 
 ## Storage and deployment
 
+The current public domain was verified to serve GitHub Pages on 2026-11-01. GitHub Pages publishes the frontend but cannot execute this server or SQLite API. The repository's Railway configuration alone does not establish a live backend. Serve the site from the Express service to keep the page and API on the same origin, or configure a separate API host and explicit CORS/token handling before using split hosting. The page reports a missing backend rather than pretending to save data locally.
+
 - Node 24 is required (`node:sqlite`, no extra database package).
 - SQLite lives at `DATA_DIR/employee-goals.sqlite`, or `server/data/employee-goals.sqlite` locally. Use the existing Railway persistent volume and one web service instance. Do not share the file between separate instances/workers.
 - Sandboxes expire after 24 hours; expired records are removed at the next creation/login. Sessions expire after one hour or at sandbox expiry.
