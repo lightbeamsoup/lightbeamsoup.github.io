@@ -3,20 +3,8 @@ import { performance } from 'node:perf_hooks';
 import { createStore, AppError, fail } from './store.js';
 import { tools } from '../../agent-lab/contracts.js';
 
-export function validate(schema, input) {
-  if (!input || typeof input !== 'object' || Array.isArray(input)) fail(400,'Expected a JSON object.');
-  for (const key of Object.keys(input)) if (!Object.hasOwn(schema.properties,key)) fail(400,`Unknown field: ${key}`);
-  for (const key of schema.required) if (!(key in input)) fail(400,`Missing field: ${key}`);
-  for (const [key,value] of Object.entries(input)) {
-    const s=schema.properties[key];
-    if (s.type==='string' && (typeof value!=='string' || value.length<(s.minLength||0) || value.length>(s.maxLength||10000) || (s.minLength && !value.trim()))) fail(400,`Invalid ${key}.`);
-    if (s.type==='integer' && (!Number.isInteger(value) || value<s.minimum || (s.maximum!==undefined && value>s.maximum))) fail(400,`Invalid ${key}.`);
-    if (s.enum && !s.enum.includes(value)) fail(400,`Invalid ${key}.`);
-    if (s.format==='date' && (!/^\d{4}-\d{2}-\d{2}$/.test(value) || !Number.isFinite(Date.parse(value)) || new Date(value).toISOString().slice(0,10)!==value)) fail(400,`Invalid ${key}. Use YYYY-MM-DD.`);
-  }
-  return input;
-}
-const authSchema={type:'object',properties:{workspace:{type:'string',minLength:1,maxLength:100},email:{type:'string',minLength:1,maxLength:150},password:{type:'string',minLength:1,maxLength:200}},required:['workspace','email','password']};
+import { validate, authSchema } from './shared.js';
+export { validate } from './shared.js';
 const cookieName='goals_session';
 const bearer = req => req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7) : null;
 const cookie = req => { try { return decodeURIComponent((req.headers.cookie||'').split(';').map(x=>x.trim()).find(x=>x.startsWith(`${cookieName}=`))?.slice(cookieName.length+1)||''); } catch { return ''; } };

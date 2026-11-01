@@ -4,24 +4,26 @@ Open `/agent-lab/`, create a synthetic sandbox, and sign in with a generated tes
 
 ## Storage and deployment
 
-The public domain serves GitHub Pages. Keep it there: the frontend uses a separate API at `https://api.joshcodes.ai` (configured in `agent-lab/config.js`). Local previews use their own origin. Browser API sessions use bearer tokens in tab session storage, so cross-origin operation does not depend on third-party cookies. CORS allows the exact www and apex website origins by default. The page reports an unavailable backend rather than pretending to save data locally.
+The page stays on GitHub Pages at `https://www.joshcodes.ai/agent-lab/`. Its production API runs on Cloudflare Workers at `https://goalroom-api.joshcodes-ai.workers.dev` with persistent Cloudflare D1 storage. `agent-lab/config.js` selects this endpoint. No Railway service, domain move, or OpenAI API key is required.
 
-### Separate Railway backend (no website migration)
+Browser sessions use bearer tokens in tab session storage, so cross-origin operation does not depend on third-party cookies. CORS allows only the exact www and apex website origins by default. Local Express previews remain available using Node 24 and `npm start`.
 
-1. Create a Railway service from this repository, branch `main`, root directory `/`.
-2. Set the service build command to `npm ci --omit=dev`, start command to `npm run start:goals`, and health check to `/healthz`. Railway's current documentation says new services cannot use legacy config-as-code JSON files. Configure the service directly (or through its connected plugin). Do not start the full Lifetree server for this dedicated service.
-3. Add a persistent volume mounted at `/data`. Set `DATA_DIR=/data`, `NODE_ENV=production`, and `GOALS_ALLOWED_ORIGINS=https://www.joshcodes.ai,https://joshcodes.ai`. Node 24 is selected by the repository. Let Railway supply `PORT`.
-4. Deploy. The standalone service needs no Google OAuth or Lifetree secrets. Its `/healthz` returns `{ "ok": true, "service": "goalroom" }`.
-5. Add the custom domain `api.joshcodes.ai` to that service. Add only the DNS record Railway specifies for the **api** subdomain. Preserve the apex and www GitHub Pages records.
-6. Verify `/api/agent-lab/v1/openapi.json`, then create and sign in to a sandbox at the existing `/agent-lab/` page.
+### Cloudflare maintenance
 
-Provisioning the Railway service and DNS record requires access to those accounts and has not been performed by merely pushing this repository. If using a generated Railway hostname instead, replace the production `apiOrigin` in `agent-lab/config.js`; no DNS change is necessary for that option.
+- Configuration: `cloudflare/wrangler.jsonc`; runtime: `cloudflare/worker.js`; schema: `cloudflare/migrations/`.
+- Authenticate with the official Wrangler CLI. Credentials stay outside the repository.
+- Apply new schema migrations with `npx wrangler d1 migrations apply goalroom --remote --config cloudflare/wrangler.jsonc`.
+- Publish changed backend code with `npm run deploy:cloudflare`. A GitHub push updates the frontend but does not redeploy the Worker automatically.
+- Test the real local D1 binding with `npm run test:cloudflare`. `node cloudflare/smoke.mjs` tests the hosted API using disposable synthetic records.
+- `npm run dev:cloudflare` starts a local Worker at port 8787. Local and hosted D1 databases are separate. Apply migrations with `--local` for local preview. Keep `ALLOW_LOCAL_PREVIEW=false` in production; enable it only in a local development override when the page is served at port 3004.
 
-- Node 24 is required (`node:sqlite`, no extra database package).
-- SQLite lives at `DATA_DIR/employee-goals.sqlite`, or `server/data/employee-goals.sqlite` locally. Use the existing Railway persistent volume and one web service instance. Do not share the file between separate instances/workers.
-- Sandboxes expire after 24 hours; expired records are removed at the next creation/login. Sessions expire after one hour or at sandbox expiry.
-- Limits: 10 sandboxes per source IP per hour, 100 login attempts per IP per hour, 100 active sandboxes. These in-process limits are for the synthetic experiment.
-- This does not use Lifetree accounts or Google permissions. All synthetic role credentials are intentionally available to the sandbox creator. Do not put real employee information here.
+D1 stores each sandbox as a bounded JSON aggregate with an optimistic revision. A conditional SQL update commits goal changes, hierarchy changes, and their retry record together. Conflicts reload current data and recheck authorization; repeated conflicts return 409. Authentication sessions and indexed action telemetry use separate tables. The Node/Express and Cloudflare runtimes share fixture definitions, validation, and hierarchy predicates.
+
+Generated credentials are random 192-bit sandbox access keys, labeled passwords by the UI. The Worker stores only a contextual SHA-256 digest of each key. It does not accept user-chosen passwords or reset them. This avoids expensive password derivation inside the free Worker's CPU budget without weakening protection of low-entropy human passwords, because there are none. Do not extend this scheme to real employee passwords; use managed identity for that scope.
+
+Sandboxes expire after 24 hours, sessions after one hour or at sandbox expiry. Expired data is cleaned during later sandbox creation. Cloudflare limits per sandbox: 200 goals, 1,000 notes, 500 committed writes, and 1 MB of serialized state. The service caps active sandboxes at 100, creation at 10 per source IP/hour, login attempts at 100/hour, and authenticated requests at 5,000/hour. Rate counters are durable D1 records and do not store raw IP addresses. Quotas protect this small experiment; provider free-plan limits can still temporarily reject requests.
+
+This does not use Lifetree accounts or Google permissions. Every synthetic role's credentials are intentionally available to its sandbox creator. Do not put real employee information here. The earlier Express/SQLite backend is retained for local development; it is not the production host.
 
 ## Permissions
 
@@ -42,7 +44,7 @@ Every operation checks the current identity and hierarchy on the server. Records
 
 ### API examples
 
-Production API URL (after backend deployment): `https://api.joshcodes.ai/api/agent-lab/v1`
+Production API URL: `https://goalroom-api.joshcodes-ai.workers.dev/api/agent-lab/v1`
 
 Create a fixture. Save the response: credentials are returned once.
 
@@ -83,7 +85,7 @@ Content-Type: application/json
 {"id":"alex-r-1","version":1,"progress":80,"note":"Two improvements delivered.","idempotencyKey":"unique-progress-request-001"}
 ```
 
-Reuse the same key and exact input on retries. Different input with the same key returns 409. Stale versions return 409; read the goal again. Transactions make the mutation and retry record atomic. The page stores its bearer session in tab session storage. Same-origin clients can also use an HttpOnly SameSite=Strict cookie; cookie writes require a matching Origin. Cross-origin page clients use bearer tokens, and CORS checks the exact website origin. Bearer clients outside browsers need no Origin. Secure cookies are enabled in production/Railway.
+Reuse the same key and exact input on retries. Different input with the same key returns 409. Stale versions return 409; read the goal again. Transactions make the mutation and retry record atomic. The page stores its bearer session in tab session storage. The Cloudflare API accepts bearer authentication only. The optional local Express backend also supports an HttpOnly SameSite=Strict cookie with same-origin write checks. Cross-origin page clients use bearer tokens, and CORS checks the exact website origin. Bearer clients outside browsers need no Origin. Secure cookies are enabled in production/Railway.
 
 Additional routes: `GET /me`, `GET /employees`, `GET /goals`, `GET /goals/:id`, `POST /goals`, `PATCH /goals/:id/progress`, `POST /goals/:id/feedback`, `GET /events`, `POST /logout`. REST writes use an `Idempotency-Key` header instead of JSON `idempotencyKey`. `GET /openapi.json` documents the canonical action endpoints. Login and fixture setup are documented above.
 
@@ -115,8 +117,13 @@ Do not infer end-to-end speed from server milliseconds alone. WebMCP needs an op
 ```text
 npm ci
 npm run test:goals
+npm run test:cloudflare
 npm test
 npm start
 ```
 
 Set `ENABLE_NOTIFICATION_SCHEDULER=false` for local preview. Tests use isolated SQLite databases to check auth, cross-sandbox scope, hierarchy changes, versions, retries, CSRF, and persistence. Native WebMCP registration and execution also require a compatible browser.
+
+## Model usage
+
+The tracker makes no model calls. Use the existing Codex session/plan as the agent, with this service as its tool API. See [Codex plan integration design](../docs/goalroom-codex-plan.md) for repeatable runs, a proposed local companion, and the separately documented hosted Sign in with ChatGPT route.

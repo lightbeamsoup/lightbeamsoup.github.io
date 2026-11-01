@@ -3,18 +3,28 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "engines": { "node": ">=24 <25" },
+  "engines": {
+    "node": ">=24 <25"
+  },
   "scripts": {
     "start": "node server/app.js",
     "dev": "node server/app.js",
     "start:worker": "node server/app.js --worker",
     "start:goals": "node server/goals/app.js",
-    "test": "node --test lifetree/*.test.js server/goals/*.test.js",
-    "test:goals": "node --test server/goals/*.test.js"
+    "test": "node --test lifetree/*.test.js server/goals/*.test.js cloudflare/*.test.js",
+    "test:goals": "node --test server/goals/*.test.js",
+    "test:cloudflare": "node --test cloudflare/*.test.js",
+    "dev:cloudflare": "wrangler dev --config cloudflare/wrangler.jsonc --port 8787",
+    "deploy:cloudflare": "wrangler deploy --config cloudflare/wrangler.jsonc"
   },
-  "overrides": { "qs": "^6.16.2" },
+  "overrides": {
+    "qs": "^6.16.2"
+  },
   "dependencies": {
     "dotenv": "^16.4.7",
     "express": "^4.21.2"
+  },
+  "devDependencies": {
+    "wrangler": "^4.156.0"
   }
 }

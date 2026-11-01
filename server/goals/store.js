@@ -3,10 +3,8 @@ import { randomBytes, randomUUID, scryptSync, timingSafeEqual, createHash } from
 import fs from 'node:fs';
 import path from 'node:path';
 
-export class AppError extends Error {
-  constructor(status, message) { super(message); this.status = status; }
-}
-export const fail = (status, message) => { throw new AppError(status, message); };
+import { AppError, fail, fixtures, canSee, manages } from './shared.js';
+export { AppError, fail } from './shared.js';
 const hash = value => createHash('sha256').update(value).digest('hex');
 const passwordHash = (password, salt) => scryptSync(password, salt, 32).toString('hex');
 const dateOffset = days => new Date(Date.now() + days * 86400000).toISOString().slice(0, 10);
@@ -36,21 +34,8 @@ export function createStore(filename) {
     }
   };
   const employees = actor => all('SELECT id,name,email,department,role,manager FROM employees WHERE workspace=? ORDER BY name', actor.workspace);
-  const within = (actor, id) => {
-    if (actor.role === 'admin' || actor.id === id) return true;
-    const people = employees(actor);
-    let person = people.find(p => p.id === id);
-    if (actor.role === 'supervisor') return person?.manager === actor.id;
-    if (actor.role !== 'head') return false;
-    const seen = new Set();
-    while (person?.manager && !seen.has(person.id)) {
-      seen.add(person.id);
-      if (person.manager === actor.id) return true;
-      person = people.find(p => p.id === person.manager);
-    }
-    return false;
-  };
-  const canManage = (actor, id) => actor.role === 'admin' || (actor.id !== id && within(actor, id) && ['head','supervisor'].includes(actor.role));
+  const within=(actor,id)=>canSee(employees(actor),actor,id);
+  const canManage=(actor,id)=>manages(employees(actor),actor,id);
   const employee = (actor, id) => {
     const person = employees(actor).find(p => p.id === id);
     if (!person || !within(actor, id)) fail(404, 'Employee not found in your scope.');
@@ -70,17 +55,6 @@ export function createStore(filename) {
       if (get('SELECT COUNT(*) AS count FROM workspaces').count >= 100) fail(429, 'Sandbox capacity reached. Try again later.');
       const workspace = randomUUID();
       const expires = Date.now() + 86400000;
-      const fixtures = [
-        ['admin','Jordan Blake','Operations','admin',null],
-        ['maya','Maya Patel','Engineering','head',null],
-        ['evan','Evan Brooks','Engineering','supervisor','maya'],
-        ['alex-r','Alex Rivera','Engineering','employee','evan'],
-        ['priya','Priya Shah','Engineering','employee','evan'],
-        ['noah','Noah Williams','Customer Success','head',null],
-        ['lena','Lena Ortiz','Customer Success','supervisor','noah'],
-        ['alex-c','Alex Chen','Customer Success','employee','lena'],
-        ['sam','Sam Taylor','Customer Success','employee','lena']
-      ];
       const accounts = [];
       db.exec('BEGIN IMMEDIATE');
       try {

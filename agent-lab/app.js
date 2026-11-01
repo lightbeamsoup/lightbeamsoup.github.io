@@ -18,7 +18,7 @@ async function request(path,{method='GET',body,channel='browser'}={}){
   try{response=await fetch(base+path,{method,credentials:'same-origin',headers:{...(body?{'Content-Type':'application/json'}:{}),...(session?{Authorization:`Bearer ${session.token}`}:{ }),'X-Goals-Channel':channel},...(body?{body:JSON.stringify(body)}:{})});}
   catch{throw new Error('The tracker API is not reachable yet. The separate backend must be connected at '+(apiOrigin||location.origin)+'.');}
   if(!response.headers.get('content-type')?.includes('application/json')){
-    const error=new Error('The tracker page is available, but its database/API backend is not connected yet. GitHub Pages cannot run the Express server.');error.status=503;throw error;
+    const error=new Error('The tracker API returned an unexpected response. Please try again shortly.');error.status=503;throw error;
   }
   const result=await response.json();
   if(!response.ok){const error=new Error(result.error||'Request failed.');error.status=response.status;throw error;}

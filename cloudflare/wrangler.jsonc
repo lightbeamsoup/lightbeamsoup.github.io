@@ -1,0 +1,17 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "goalroom-api",
+  "main": "worker.js",
+  "compatibility_date": "2026-11-01",
+  "workers_dev": true,
+  "vars": {
+    "GOALS_ALLOWED_ORIGINS": "https://www.joshcodes.ai,https://joshcodes.ai",
+    "ALLOW_LOCAL_PREVIEW": "false"
+  },
+  "d1_databases": [{
+    "binding": "DB",
+    "database_name": "goalroom",
+    "database_id": "276bcc03-bae8-4121-95a2-617c3644b197",
+    "migrations_dir": "migrations"
+  }]
+}

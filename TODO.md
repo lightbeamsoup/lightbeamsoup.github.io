@@ -23,6 +23,8 @@
 
 ### Agent Playground
 
+- 2026-11-01: Deploy Goalroom's API on Cloudflare Workers and D1, add durable rate limits and atomic concurrent-write/retry handling, and document Codex-plan agent use without backend model calls.
+
 - 2026-11-01: Add Goalroom at `/agent-lab/` with isolated synthetic employee sandboxes, SQLite persistence, hierarchy-based access, browser forms, WebMCP tools, direct HTTP API, request telemetry, and manual comparison exports.
 
 ### Drive Sync
