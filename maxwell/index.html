@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#17141f" />
+    <title>Maxwell · Entropy Arcade</title>
+    <link rel="icon" href="assets/maxwell.png" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header>
+      <div class="navwrap">
+        <a class="brand" href="./" aria-label="Maxwell home"
+          ><img src="assets/maxwell.png" alt="" /><span
+            >maxwell<span class="brand-dot">.</span></span
+          ></a
+        >
+        <nav aria-label="Game modes">
+          <button class="nav active" id="campaign">
+            <i data-icon="pad"></i><span>Campaign</span></button
+          ><button class="nav" id="daily">
+            <i data-icon="bolt"></i><span>Daily challenge</span></button
+          ><button class="nav" id="ranks">
+            <i data-icon="cup"></i><span>Leaderboards</span>
+          </button>
+        </nav>
+        <div class="utilities">
+          <button
+            class="iconbtn"
+            id="audio"
+            title="Enable sound"
+            aria-label="Enable sound"
+          >
+            <i data-icon="mute"></i></button
+          ><button
+            class="iconbtn"
+            id="help"
+            title="How to play"
+            aria-label="How to play"
+          >
+            <i data-icon="help"></i>
+          </button>
+        </div>
+      </div>
+    </header>
+    <main>
+      <section class="intro">
+        <div>
+          <div class="eyebrow">
+            <span class="light"></span><span id="modeLabel">CAMPAIGN</span
+            ><span class="slash">/</span><span id="levelLabel">LEVEL 01</span>
+          </div>
+          <h1 id="title">The Split</h1>
+          <p id="subtitle">Two colors. Two chambers. One little demon.</p>
+        </div>
+        <div class="progressBox">
+          <div>
+            <span>Campaign progress</span
+            ><strong id="progressText">0 / 10</strong>
+          </div>
+          <div id="progressBars" class="progressBars"></div>
+        </div>
+      </section>
+      <div class="playgrid">
+        <section class="console" aria-label="Game board">
+          <div class="console-head">
+            <span><i data-icon="scope"></i>CHAMBER VIEW</span
+            ><span class="status" id="status"><b></b>Ready</span>
+          </div>
+          <div id="screen">
+            <svg
+              id="board"
+              viewBox="0 0 840 400"
+              role="group"
+              aria-label="Colored chambers and gates"
+            ></svg>
+          </div>
+          <div class="console-bottom">
+            <div class="actionrow">
+              <button class="primary" id="start">
+                <i data-icon="play"></i><span>Start level</span></button
+              ><button class="secondary" id="restart">
+                <i data-icon="restart"></i><span>Restart</span>
+              </button>
+            </div>
+            <span class="keyboard"
+              ><kbd>Space</kbd> <span>play / pause</span></span
+            >
+          </div>
+        </section>
+        <aside>
+          <section class="panel stats">
+            <h2><i data-icon="stats"></i>Run stats</h2>
+            <div class="stat">
+              <span class="sicon violet"><i data-icon="clock"></i></span>
+              <div>
+                <small>Time elapsed</small><strong id="time">00:00.00</strong>
+              </div>
+            </div>
+            <div class="stat">
+              <span class="sicon mint"><i data-icon="balls"></i></span>
+              <div>
+                <small>Balls sorted</small><strong id="sorted"></strong>
+              </div>
+            </div>
+            <div class="stat">
+              <span class="sicon gold"><i data-icon="gate"></i></span>
+              <div>
+                <small>Gate toggles</small><strong id="moves">0</strong>
+              </div>
+            </div>
+          </section>
+          <section class="panel notes">
+            <div class="notes-head">
+              <i data-icon="note"></i>
+              <h2>Lab notes</h2>
+            </div>
+            <p id="tip">
+              Click Maxwell to open or close a gate. Match each ball to its
+              chamber color.
+            </p>
+            <div class="signature">— Maxwell <span>✧</span></div>
+            <img src="assets/maxwell.png" alt="" class="note-imp" />
+          </section>
+        </aside>
+      </div>
+      <section class="levels">
+        <div class="levelhead">
+          <h2><i data-icon="grid"></i>Level select</h2>
+          <span id="levelCount">10 campaign levels</span>
+        </div>
+        <div id="levelList"></div>
+      </section>
+      <div class="foot">
+        <span
+          ><span class="save-dot"></span
+          ><span id="saveText">Progress saved on this device</span></span
+        ><span>MAXWELL <b>✦</b> ENTROPY ARCADE</span>
+      </div>
+    </main>
+    <dialog id="modal">
+      <button id="dismiss" class="iconbtn" aria-label="Close">
+        <i data-icon="close"></i>
+      </button>
+      <div id="modalBody"></div>
+    </dialog>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

@@ -11,7 +11,7 @@
     "dev": "node server/app.js",
     "start:worker": "node server/app.js --worker",
     "start:goals": "node server/goals/app.js",
-    "test": "node --test lifetree/*.test.js server/goals/*.test.js cloudflare/*.test.js companion/*.test.js",
+    "test": "node --test lifetree/*.test.js server/goals/*.test.js cloudflare/*.test.js companion/*.test.js maxwell-service/*.test.js",
     "test:goals": "node --test server/goals/*.test.js",
     "test:cloudflare": "node --test cloudflare/*.test.js",
     "dev:cloudflare": "wrangler dev --config cloudflare/wrangler.jsonc --port 8787",
