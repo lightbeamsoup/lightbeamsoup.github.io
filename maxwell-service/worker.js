@@ -3,6 +3,7 @@ import {
   validBoard,
   step,
   toggle,
+  flick,
   hasWon,
   dailyBoardKey,
 } from "../maxwell/engine.js";
@@ -32,9 +33,12 @@ export function replayChunk(game, from, to, events) {
       Array.isArray(events[i]) &&
       events[i][0] === game.tick
     ) {
-      const id = events[i++][1];
-      if (!Number.isInteger(id) || !toggle(game, id))
+      const input = events[i++];
+      if (input[1] === "flick") {
+        if (input.length !== 4 || !flick(game, input[2], input[3])) fail("Invalid flick in replay.");
+      } else if (input.length !== 2 || !Number.isInteger(input[1]) || !toggle(game, input[1])) {
         fail("Gate replay did not match.");
+      }
     }
     step(game);
     if (hasWon(game) && game.tick !== to)
@@ -124,6 +128,7 @@ async function api(request, env, url) {
     const state = JSON.parse(row.state);
     g.balls = state.balls;
     g.moves = state.moves;
+    g.flickReadyAt = state.flickReadyAt;
     g.tick = row.tick;
     state.open.forEach((open, i) => (g.gates[i].open = open));
   }
@@ -142,6 +147,7 @@ async function api(request, env, url) {
     const state = JSON.stringify({
       balls: g.balls,
       moves: g.moves,
+      flickReadyAt: g.flickReadyAt,
       open: g.gates.map((s) => s.open),
     });
     const result = await env.DB.prepare(

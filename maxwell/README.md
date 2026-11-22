@@ -2,9 +2,11 @@
 
 [Play Maxwell](https://www.joshcodes.ai/maxwell/)
 
-Maxwell is a top-down gate-timing game. Balls bounce off the walls and each other. Each ball keeps its own speed through head-on hits and glancing rebounds. Click a seated demon or its striped barrier to toggle the gate. A gate waits for a clear doorway before it can close. The run ends on the first simulation step when every ball is in its own colored chamber and every gate is closed. The timer keeps running while any gate is open.
+Maxwell is a top-down gate-timing game. Balls bounce off the walls and each other. Balls travel 15% faster than in the previous edition and keep their individual speed through rebounds and flicks. Click a seated demon or its striped barrier to toggle the gate. A gate waits for a clear doorway before it can close. The run ends on the first simulation step when every ball is in its own colored chamber and every gate is closed. The timer keeps running while any gate is open.
 
 ## Interface
+
+Drag a ball and release in the direction you want it to travel. A gold arrow previews your aim. On a keyboard, Tab to a ball and press an arrow key. The first flick is ready immediately. One charge is shared across the board and recharges after ten seconds of active simulation time. A flick changes heading at the current speed and leaves the gate-toggle count alone.
 
 The chamber view shows the entire arena, colored chamber labels, moving balls and their direction trails. Each gate changes from a striped barrier to a dotted opening. Run stats show active time, sorted balls and gate toggles. Pause or resume with the play control or Space when the board has focus. Use Tab and Enter for gates, or the numbered keys 1–9 for the first nine gates. The level strip previews each layout. All ten levels are available from the start.
 
@@ -27,7 +29,7 @@ Run `node maxwell-service/playtest.js 12` for a repeatable timing and routing pl
 
 ## Saves and daily challenges
 
-A first-party cookie stores campaign completion, selected level, personal bests, sound preference, an anonymous player identifier and the last leaderboard name for one year. An unfinished run starts over on reload. Clearing cookies creates a new player identity. Finishing a level saves the personal best automatically. Posting a public time is optional. Earlier campaign completions carry forward. Personal and global time rankings compare finishes on the current course layout with all gates closed. The constant-speed edition has its own campaign and daily time rankings.
+A first-party cookie stores campaign completion, selected level, personal bests, sound preference, an anonymous player identifier and the last leaderboard name for one year. An unfinished run starts over on reload. Clearing cookies creates a new player identity. Finishing a level saves the personal best automatically. Posting a public time is optional. Earlier campaign completions carry forward. Personal and global time rankings compare finishes on the current course layout with all gates closed. The flick edition has its own campaign and daily time rankings.
 
 Ten Toggles uses the same UTC-date seed for everyone and permits ten successful gate changes, counting each open and close separately. The final gate closure counts toward the limit. The daily ranking is separate from every campaign ranking. Each board lists the fastest twenty players and keeps each player's best verified run. Time measures active simulation time and excludes pauses.
 
@@ -41,7 +43,7 @@ npx wrangler d1 migrations apply maxwell-scores --local --config maxwell-service
 npx wrangler dev --config maxwell-service/wrangler.jsonc --port 8787
 ```
 
-GitHub Pages serves the static game from the site's main branch. The dedicated Cloudflare Worker replays each submitted gate sequence in segments against the shared fixed-step engine. D1 stores the verified best times and temporary verification state. Worker and client must use matching simulation rules. Preserve old board versions or start fresh rankings when changing those rules.
+GitHub Pages serves the static game from the site's main branch. The dedicated Cloudflare Worker replays each submitted gate and flick input in segments against the shared fixed-step engine. D1 stores the verified best times and temporary verification state. Worker and client must use matching simulation rules. Preserve old board versions or start fresh rankings when changing those rules.
 
 ```sh
 npx wrangler d1 migrations apply maxwell-scores --remote --config maxwell-service/wrangler.jsonc

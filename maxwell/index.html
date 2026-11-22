@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#17141f" />
     <title>Maxwell · Entropy Arcade</title>
     <link rel="icon" href="assets/maxwell.png" />
-    <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="style.css?campaign=5" />
   </head>
   <body>
     <header>
@@ -84,9 +84,9 @@
                 <i data-icon="restart"></i><span>Restart</span>
               </button>
             </div>
-            <span class="keyboard"
-              ><kbd>Space</kbd> <span>play / pause</span></span
-            >
+            <div class="flick-meter" id="flickMeter" title="Drag and release a ball to aim, or Tab to it and press an arrow key.">
+              <i data-icon="bolt"></i><span><strong id="flickState">Flick ready</strong><small>Drag a ball to aim</small></span>
+            </div>
           </div>
         </section>
         <aside>
@@ -144,6 +144,6 @@
       </button>
       <div id="modalBody"></div>
     </dialog>
-    <script type="module" src="app.js?campaign=4"></script>
+    <script type="module" src="app.js?campaign=5"></script>
   </body>
 </html>

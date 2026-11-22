@@ -2,6 +2,8 @@
 export const WIDTH = 780,
   HEIGHT = 316,
   HZ = 60;
+export const FLICK_COOLDOWN = 10 * HZ;
+const SPEED_MULTIPLIER = 1.15;
 export const colors = [
   ["Coral", "#ff917f", "#502e3c", "●"],
   ["Mint", "#79e3c3", "#254448", "◆"],
@@ -73,7 +75,7 @@ const lessons = [
   ],
   // Three travelers approach three different openings around the elbow.
   [
-    [253, 86, 1.4, 0.074, 1],
+    [293, 62, 1.4, 0.074, 1],
     [390, 114, 0.028, -0.82, 1],
     [681, 72, -1.28, 0.062, 0],
     [565, 257, -1.26, -0.045, 0],
@@ -82,7 +84,7 @@ const lessons = [
   [
     [86, 110, 1.46, 0.11, 2],
     [104, 243, -1.22, -0.32, 0],
-    [357, 209, 0.83, -0.25, 1],
+    [317, 193, 0.83, -0.25, 1],
     [447, 85, -0.79, 0.48, 1],
     [721, 176, -1.39, -0.11, 0],
     [650, 66, 0.93, 0.49, 2],
@@ -117,12 +119,12 @@ const transfers = [
   ],
 ];
 // Fixed starts tested at 200, 300 and 400 ms between possible gate inputs.
-const campaignSeeds = [214, 92, 176, 99, 245, 244];
-export const campaignKey = (index) => "level-" + (index + 1) + "-v4";
+const campaignSeeds = [214, 4, 43, 77, 126, 244];
+export const campaignKey = (index) => "level-" + (index + 1) + "-v5";
 export const dayKey = (date = new Date()) => date.toISOString().slice(0, 10);
-export const dailyBoardKey = (date) => "daily-v4-" + dayKey(date);
+export const dailyBoardKey = (date) => "daily-v5-" + dayKey(date);
 export const validBoard = (key) =>
-  /^level-(?:[1-9]|10)-v4$/.test(key) || /^daily-v4-\d{4}-\d\d-\d\d$/.test(key);
+  /^level-(?:[1-9]|10)-v5$/.test(key) || /^daily-v5-\d{4}-\d\d-\d\d$/.test(key);
 function rng(seed) {
   return () => {
     seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
@@ -239,7 +241,12 @@ export function createGame(key) {
           target,
         });
       }
+  for (const ball of balls) {
+    ball.vx *= SPEED_MULTIPLIER;
+    ball.vy *= SPEED_MULTIPLIER;
+  }
   return {
+    flickReadyAt: 0,
     key,
     daily,
     level,
@@ -277,6 +284,30 @@ function nearest(b, s) {
   const dx = b.x - Math.max(s.x1, Math.min(s.x2, b.x)),
     dy = b.y - Math.max(s.y1, Math.min(s.y2, b.y));
   return [dx, dy];
+}
+// Integer degrees keep replay input compact and avoid client-supplied velocities.
+export function flick(g, id, heading) {
+  if (
+    !Number.isInteger(id) ||
+    id < 0 ||
+    id >= g.balls.length ||
+    !Number.isInteger(heading) ||
+    heading < 0 ||
+    heading >= 360 ||
+    g.tick < g.flickReadyAt
+  )
+    return false;
+  const ball = g.balls[id],
+    speed = Math.hypot(ball.vx, ball.vy);
+  const radians = (heading * Math.PI) / 180;
+  // Fix the unit vector precision so browser and Worker use the same direction.
+  const x = Math.round(Math.cos(radians) * 1e8),
+    y = Math.round(Math.sin(radians) * 1e8);
+  const magnitude = Math.hypot(x, y);
+  ball.vx = (speed * x) / magnitude;
+  ball.vy = (speed * y) / magnitude;
+  g.flickReadyAt = g.tick + FLICK_COOLDOWN;
+  return true;
 }
 export function toggle(g, id) {
   const gate = g.gates[id];

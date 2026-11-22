@@ -99,7 +99,7 @@ const text = (x, y, content, fill, style = "") =>
   ">" +
   content +
   "</text>";
-export function drawBoard(svg, g, onToggle) {
+export function drawBoard(svg, g, onToggle, canFlick, onFlick) {
   const shape = "M12 0H768L780 12V304L768 316H12L0 304V12Z";
   let defs =
     '<clipPath id="arenaClip"><path d="' +
@@ -230,6 +230,7 @@ export function drawBoard(svg, g, onToggle) {
     })
     .join("");
   const nodes = [...orbs.children];
+  const cancelAim = bindFlicks(nodes, g, canFlick, onFlick);
   const portalSize = g.rooms < 3 ? 58 : g.rooms < 5 ? 40 : 31;
   const gateNodes = [];
   doors.innerHTML = g.gates
@@ -318,5 +319,85 @@ export function drawBoard(svg, g, onToggle) {
   }
   paintGates();
   paintBalls();
-  return { paintGates, paintBalls };
+  return { paintGates, paintBalls, cancelAim };
+}
+
+function bindFlicks(nodes, game, canFlick, onFlick) {
+  const keys = { ArrowRight: 0, ArrowDown: 90, ArrowLeft: 180, ArrowUp: 270 };
+  let drag = null;
+
+  function cancelAim() {
+    if (!drag) return;
+    const { node, pointer } = drag;
+    drag = null;
+    node.classList.remove("aiming");
+    node.querySelector(".aim-arrow").style.display = "none";
+    if (node.hasPointerCapture(pointer)) node.releasePointerCapture(pointer);
+  }
+
+  function direction(e) {
+    const dx = e.clientX - drag.x;
+    const dy = e.clientY - drag.y;
+    if (Math.hypot(dx, dy) < 8) return null;
+    return (360 + Math.round((Math.atan2(dy, dx) * 180) / Math.PI)) % 360;
+  }
+
+  nodes.forEach((node, id) => {
+    node.classList.add("flick-ball");
+    node.setAttribute("tabindex", "0");
+    node.setAttribute("role", "button");
+    node.setAttribute(
+      "aria-label",
+      colors[game.balls[id].target][0] +
+        " ball " +
+        (id + 1) +
+        ". Drag or use an arrow key to flick.",
+    );
+    // Keep the trail as the first child: paintBalls rotates it each frame.
+    node.insertAdjacentHTML(
+      "beforeend",
+      '<circle class="flick-target" fill="transparent" r="' +
+        (game.radius + 5) +
+        '"/>' +
+        '<circle class="aim-ring" r="' +
+        (game.radius + 2) +
+        '"/>' +
+        '<g class="aim-arrow" style="display:none"><path d="M' +
+        (game.radius + 5) +
+        ' 0h30m-7 -6 7 6-7 6"/></g>',
+    );
+
+    node.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0 || !e.isPrimary || drag || !canFlick()) return;
+      e.preventDefault();
+      node.setPointerCapture(e.pointerId);
+      drag = { node, pointer: e.pointerId, x: e.clientX, y: e.clientY };
+      node.classList.add("aiming");
+    });
+    node.addEventListener("pointermove", (e) => {
+      if (!drag || drag.pointer !== e.pointerId || drag.node !== node) return;
+      const heading = direction(e),
+        arrow = node.querySelector(".aim-arrow");
+      arrow.style.display = heading === null ? "none" : "";
+      if (heading !== null)
+        arrow.setAttribute("transform", "rotate(" + heading + ")");
+    });
+    node.addEventListener("pointerup", (e) => {
+      if (!drag || drag.pointer !== e.pointerId || drag.node !== node) return;
+      const heading = direction(e);
+      cancelAim();
+      if (heading !== null) onFlick(id, heading);
+    });
+    for (const type of ["pointercancel", "lostpointercapture"]) {
+      node.addEventListener(type, (e) => {
+        if (drag?.pointer === e.pointerId && drag.node === node) cancelAim();
+      });
+    }
+    node.addEventListener("keydown", (e) => {
+      if (!Object.hasOwn(keys, e.key)) return;
+      e.preventDefault();
+      if (!e.repeat && canFlick()) onFlick(id, keys[e.key]);
+    });
+  });
+  return cancelAim;
 }

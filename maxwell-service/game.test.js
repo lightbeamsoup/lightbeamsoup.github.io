@@ -7,6 +7,8 @@ import {
   campaignKey,
   createGame,
   toggle,
+  flick,
+  FLICK_COOLDOWN,
   step,
   roomAt,
   hasWon,
@@ -98,13 +100,53 @@ test("The resident Mint ball can escape through a gate left open after the first
   for (let tick = 0; tick < secondOpen; tick++) {
     if (tick === firstOpen) assert.ok(toggle(g, 0));
     step(g);
-    if (tick > firstClose && roomAt(g, resident.x, resident.y) === 0) escaped = true;
+    if (tick > firstClose && roomAt(g, resident.x, resident.y) === 0)
+      escaped = true;
   }
   assert.ok(escaped);
 });
+test("A flick toward the doorway recovers a missed level-two arrival", () => {
+  const game = createGame(campaignKey(1));
+  for (let t = 0; t < 60; t++) step(game);
+  const gatesOnly = playtest(structuredClone(game));
+  const ball = game.balls[1],
+    gate = game.gates[0];
+  assert.ok(ball.x > gate.x1 && ball.vx > 0);
+  const speed = Math.hypot(ball.vx, ball.vy);
+  const heading = Math.round(
+    (Math.atan2((gate.y1 + gate.y2) / 2 - ball.y, gate.x1 - ball.x) * 180) /
+      Math.PI,
+  );
+  assert.ok(flick(game, 1, heading));
+  assert.equal(game.moves, 0);
+  assert.ok(Math.abs(Math.hypot(ball.vx, ball.vy) - speed) < 1e-12);
+  const redirected = playtest(game);
+  assert.ok(redirected.won && gatesOnly.won);
+  assert.ok(redirected.ticks + 120 <= gatesOnly.ticks);
+  const inputs = [[60, "flick", 1, heading], ...redirected.events];
+  assert.ok(replayChunk(createGame(game.key), 0, redirected.ticks, inputs));
+});
+test("Flicks share one charge and recharge only on the exact active tick", () => {
+  const g = createGame(campaignKey(1));
+  for (const [id, heading] of [
+    [-1, 0],
+    [g.balls.length, 90],
+    [0, 360],
+    [0, 1.5],
+  ]) {
+    assert.equal(flick(g, id, heading), false);
+  }
+  assert.ok(flick(g, 0, 180));
+  assert.ok(!flick(g, 1, 90));
+  for (let i = 0; i < FLICK_COOLDOWN - 1; i++) step(g);
+  assert.ok(!flick(g, 1, 90));
+  step(g);
+  assert.ok(flick(g, 1, 90));
+  assert.ok(Math.abs(g.balls[1].vx) < 1e-12 && g.balls[1].vy > 0);
+});
 test("Individual ball speeds stay stable through repeated collisions and wall rebounds", () => {
   const g = createGame(campaignKey(9));
-  const speeds = g.balls.map(b => Math.hypot(b.vx, b.vy));
+  const speeds = g.balls.map((b) => Math.hypot(b.vx, b.vy));
   let impacts = 0;
   for (let tick = 0; tick < 6000; tick++) {
     impacts += step(g);
@@ -136,9 +178,9 @@ test("A sorted board finishes only after the last open gate closes", () => {
   assert.equal(hasWon(g), false);
 });
 test("Daily boards repeat for everyone and enforce ten toggles", () => {
-  const daily = playtest(createGame("daily-v4-2026-11-22"));
+  const daily = playtest(createGame("daily-v5-2026-11-22"));
   assert.ok(daily.won && daily.events.length <= 10);
-  const g = createGame("daily-v4-2026-11-21");
+  const g = createGame("daily-v5-2026-11-21");
   for (let color = 0; color < g.rooms; color++) {
     assert.equal(
       g.balls.filter((b) => b.target === color).length,
@@ -197,6 +239,20 @@ test("D1 SQL stores one verified best per player, isolates boards, and rejects i
     board = campaignKey(0),
     alias = "Test Imp";
   const { ticks, events } = playtest(createGame(board));
+  const { token: flickReview } = await (
+    await send("/reviews", { board, alias, player })
+  ).json();
+  const segment = (from, to, inputs) =>
+    send("/segment", { token: flickReview, from, to, events: inputs });
+  assert.equal((await segment(0, 600, [[550, "flick", 0, 42]])).status, 200);
+  assert.equal(
+    (await segment(600, 1151, [[1149, "flick", 1, 270]])).status,
+    400,
+  );
+  assert.equal(
+    (await segment(600, 1151, [[1150, "flick", 1, 270]])).status,
+    200,
+  );
   db.prepare("INSERT INTO scores VALUES(?,?,?,?,?,?)").run(
     "sealed/level-1",
     player,

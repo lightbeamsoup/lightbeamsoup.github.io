@@ -4,13 +4,14 @@ import {
   createGame,
   step,
   toggle,
+  flick,
   countSorted,
   hasWon,
   formatTime,
   dailyBoardKey,
   HZ,
-} from "./engine.js?campaign=4";
-import { icon, icons, miniMap, drawBoard } from "./art.js";
+} from "./engine.js?campaign=5";
+import { icon, icons, miniMap, drawBoard } from "./art.js?campaign=5";
 const $ = (id) => document.getElementById(id),
   modal = $("modal"),
   body = $("modalBody");
@@ -35,8 +36,8 @@ if (typeof saved !== "object" || Array.isArray(saved)) saved = {};
 // earned under the current rule with one another.
 if (!saved.sealedBest || typeof saved.sealedBest !== "object") saved.sealedBest = {};
 const clearedLevel = (key) => {
-  const original = key.replace(/-v4$/, "");
-  const editions = [key, original + "-v3", original + "-v2", original];
+  const original = key.replace(/-v5$/, "");
+  const editions = [key, original + "-v4", original + "-v3", original + "-v2", original];
   return editions.some((edition) => Number.isFinite(saved.sealedBest[edition])) ||
     Number.isFinite(saved.best?.[original]);
 };
@@ -72,7 +73,7 @@ let game,
   tipTimer;
 const levelNotes = [
   "Open for both travelers. Watch their trails change when they bump, then close the clear gate.",
-  "One Mint ball is already home. Watch its return trip before letting the next traveler through.",
+  "Missed the opening? Drag a traveler toward the gate, then click Maxwell to let it through.",
   "Watch where each trail points. The elbow has an upper, a lower and a sideways opening.",
   "Coral and Honey need to trade ends. Pass them through Mint and seal the gate behind each crossing.",
   "A ball headed past Mint needs a second gate. Follow it around the bend before admitting the next color.",
@@ -159,6 +160,10 @@ function updateRun() {
   $("start").setAttribute("aria-label", name);
 }
 function stats() {
+  const seconds = Math.max(0, Math.ceil((game.flickReadyAt - game.tick) / HZ));
+  const flickText = seconds ? "Flick in " + seconds + "s" : "Flick ready";
+  if ($("flickState").textContent !== flickText) $("flickState").textContent = flickText;
+  $("flickMeter").classList.toggle("cooling", seconds > 0);
   $("time").textContent = formatTime(game.tick);
   const sorted = countSorted(game);
   if (mode === "running") {
@@ -228,7 +233,7 @@ function load(key) {
     ? "One daily board. Ten gate toggles. Fastest time wins."
     : levels[game.level][1];
   $("tip").textContent = notes();
-  art = drawBoard($("board"), game, gateClick);
+  art = drawBoard($("board"), game, gateClick, canFlick, flickBall);
   stats();
   updateRun();
   campaignProgress();
@@ -236,6 +241,7 @@ function load(key) {
 function pause() {
   if (mode === "running") {
     mode = "paused";
+    art.cancelAim();
     acc = 0;
     updateRun();
   }
@@ -272,6 +278,18 @@ function start() {
   updateRun();
   chirp(330);
 }
+function canFlick() {
+  return !modal.open && (mode === "running" || mode === "ready") && game.tick >= game.flickReadyAt;
+}
+function flickBall(id, heading) {
+  if (!canFlick() || !flick(game, id, heading)) return false;
+  if (mode === "ready") start();
+  events.push([game.tick, "flick", id, heading]);
+  art.paintBalls();
+  stats();
+  chirp(630);
+  return true;
+}
 function gateClick(i) {
   if (modal.open || ["won", "failed"].includes(mode)) return;
   if (mode === "paused") {
@@ -300,6 +318,7 @@ function advance(now) {
       step(game);
       if (hasWon(game)) {
         mode = "won";
+        art.cancelAim();
         if (game.daily)
           Object.keys(saved.sealedBest)
             .filter((k) => k.startsWith("daily-") && k !== game.key)
@@ -315,6 +334,7 @@ function advance(now) {
         result();
       } else if (game.moves === game.limit) {
         mode = "failed";
+        art.cancelAim();
         updateRun();
         tip("Ten toggles used. Sort the balls and close every gate within the limit.");
       }
@@ -391,7 +411,7 @@ function result() {
     saved.alias = name;
     persist();
     $("post").disabled = true;
-    $("postMsg").textContent = "Checking your gate replay…";
+    $("postMsg").textContent = "Checking your replay…";
     try {
       await submit(name, g, log, (p) => {
         if (ticket === id)
@@ -492,7 +512,7 @@ $("audio").onclick = () => {
 $("help").onclick = () => {
   pause();
   show(
-    '<img class="modal-sprite" src="assets/maxwell.png" alt=""><div class="eyebrow">FIELD GUIDE</div><h2>How to play</h2><p>Get every ball into the chamber that matches its color. Balls change direction on impact and keep their own speed. You control the gates.</p><ol><li>Start the level and watch the balls approach.</li><li>Click a demon or the striped gate to let balls through. Click again to close it once the doorway is clear.</li><li>The timer stops when every ball is home and every gate is closed. Post your time to compete worldwide.</li></ol><p><kbd>Space</kbd> pauses or resumes. Tab to a gate and press Enter to toggle it. Daily challenges reset at midnight UTC.</p>',
+    '<img class="modal-sprite" src="assets/maxwell.png" alt=""><div class="eyebrow">FIELD GUIDE</div><h2>How to play</h2><p>Get every ball into the chamber that matches its color. Balls change direction on impact and keep their own speed. You control the gates and have one ball flick.</p><ol><li>Start the level and watch the balls approach.</li><li>Click a demon or the striped gate to let balls through. Click again to close it once the doorway is clear.</li><li>Drag a ball and release in the direction you want it to go. A flick preserves its speed and recharges after ten seconds of play. You can also Tab to a ball and press an arrow key.</li><li>The timer stops when every ball is home and every gate is closed. Post your time to compete worldwide.</li></ol><p><kbd>Space</kbd> pauses or resumes. Tab to a gate and press Enter to toggle it. Daily challenges reset at midnight UTC.</p>',
   );
 };
 $("dismiss").onclick = endDialog;

@@ -816,3 +816,64 @@ dialog .actionrow {
     animation: none !important;
   }
 }
+
+.flick-meter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--mint);
+}
+.flick-meter strong,
+.flick-meter small {
+  display: block;
+}
+.flick-meter strong {
+  font: 700 13px var(--mono);
+}
+.flick-meter small {
+  font-size: 12px;
+  color: var(--muted);
+}
+.flick-meter.cooling {
+  color: var(--purple);
+}
+.flick-ball {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.flick-ball.aiming {
+  cursor: grabbing;
+}
+.aim-ring,
+.aim-arrow {
+  pointer-events: none;
+  fill: none;
+  stroke: #fff2ac;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.aim-ring {
+  opacity: 0;
+}
+.flick-ball.aiming .aim-ring,
+.flick-ball:focus-visible .aim-ring {
+  opacity: 1;
+}
+@media (max-width: 390px) {
+  .console-bottom {
+    flex-wrap: wrap;
+  }
+}
+
+@media (pointer: coarse) {
+  .flick-target {
+    stroke: transparent;
+    stroke-width: 18px;
+    vector-effect: non-scaling-stroke;
+  }
+}
+#screen {
+  touch-action: none;
+}
