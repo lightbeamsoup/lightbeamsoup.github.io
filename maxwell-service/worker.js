@@ -4,7 +4,7 @@ import {
   step,
   toggle,
   hasWon,
-  dayKey,
+  dailyBoardKey,
 } from "../maxwell/engine.js";
 
 const origins = new Set(["https://www.joshcodes.ai", "https://joshcodes.ai"]);
@@ -83,8 +83,8 @@ async function api(request, env, url) {
     if (
       !validBoard(String(board)) ||
       (board.startsWith("daily-") &&
-        ![dayKey(), dayKey(new Date(now - 86400000))].some(
-          (d) => board === "daily-" + d,
+        ![dailyBoardKey(), dailyBoardKey(new Date(now - 86400000))].some(
+          (key) => board === key,
         ))
     )
       fail("Unknown or expired board.");

@@ -39,6 +39,7 @@ export function playtest(game, interval = 12, maxTicks = HZ * 600) {
     0,
   );
   const events = [];
+  let impacts = 0;
   let longestWait = 0,
     lastInput = game.tick;
   while (game.tick < maxTicks) {
@@ -79,11 +80,12 @@ export function playtest(game, interval = 12, maxTicks = HZ * 600) {
         }
       }
     }
-    step(game);
+    impacts += step(game);
     if (hasWon(game)) break;
   }
   return {
     won: hasWon(game),
+    impacts,
     ticks: game.tick,
     events,
     minimumTransfers,
@@ -104,6 +106,7 @@ if (
     return {
       level: i + 1,
       won: r.won,
+      impacts: r.impacts,
       seconds: +(r.ticks / HZ).toFixed(1),
       toggles: r.events.length,
       distinctGates: new Set(r.events.map((e) => e[1])).size,

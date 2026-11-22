@@ -7,9 +7,9 @@ import {
   countSorted,
   hasWon,
   formatTime,
-  dayKey,
+  dailyBoardKey,
   HZ,
-} from "./engine.js?campaign=2";
+} from "./engine.js?campaign=3";
 import { icon, icons, miniMap, drawBoard } from "./art.js";
 const $ = (id) => document.getElementById(id),
   modal = $("modal"),
@@ -35,8 +35,8 @@ if (typeof saved !== "object" || Array.isArray(saved)) saved = {};
 // earned under the current rule with one another.
 if (!saved.sealedBest || typeof saved.sealedBest !== "object") saved.sealedBest = {};
 const clearedLevel = (key) => {
-  const original = key.replace(/-v2$/, "");
-  return Number.isFinite(saved.sealedBest[key]) || Number.isFinite(saved.sealedBest[original]) || Number.isFinite(saved.best?.[original]);
+  const original = key.replace(/-v3$/, "");
+  return Number.isFinite(saved.sealedBest[key]) || Number.isFinite(saved.sealedBest[original + "-v2"]) || Number.isFinite(saved.sealedBest[original]) || Number.isFinite(saved.best?.[original]);
 };
 if (!/^[a-f\d-]{36}$/i.test(saved.player || ""))
   saved.player = crypto.randomUUID();
@@ -69,8 +69,8 @@ let game,
   ticket = 0,
   tipTimer;
 const levelNotes = [
-  "Watch the two travelers near the middle. Open for both, then close once their tails clear the doorway.",
-  "A second pair is on its way. Close between pairs to keep the home colors inside.",
+  "Open for both travelers. Watch their trails change when they bump, then close the clear gate.",
+  "A second pair is on its way. Close between pairs to keep the first arrivals home.",
   "Watch where each trail points. The elbow has an upper, a lower and a sideways opening.",
   "Coral and Honey need to trade ends. Pass them through Mint and seal the gate behind each crossing.",
   "A ball headed past Mint needs a second gate. Follow it around the bend before admitting the next color.",
@@ -219,7 +219,7 @@ function load(key) {
   $("daily").classList.toggle("active", game.daily);
   $("modeLabel").textContent = game.daily ? "DAILY CHALLENGE" : "CAMPAIGN";
   $("levelLabel").textContent = game.daily
-    ? game.key.slice(6) + " UTC"
+    ? game.key.slice(-10) + " UTC"
     : "LEVEL " + String(game.level + 1).padStart(2, "0");
   $("title").textContent = game.daily ? "Ten Toggles" : levels[game.level][0];
   $("subtitle").textContent = game.daily
@@ -406,7 +406,7 @@ function result() {
 }
 function rankings(key) {
   pause();
-  const today = "daily-" + dayKey();
+  const today = dailyBoardKey();
   const dailyKey = key.startsWith("daily-") ? key : today;
   const options =
     levels
@@ -424,7 +424,7 @@ function rankings(key) {
     '<option value="' +
     dailyKey +
     '">Daily · ' +
-    dailyKey.slice(6) +
+    dailyKey.slice(-10) +
     " UTC</option>";
   show(
     '<div class="eyebrow">GLOBAL TIMES</div><h2>Leaderboards</h2><label for="boardChoice">Choose a board</label><select id="boardChoice">' +
@@ -477,7 +477,7 @@ function rankings(key) {
   refresh();
 }
 $("campaign").onclick = () => changeBoard(keyFor(saved.level || 0));
-$("daily").onclick = () => changeBoard("daily-" + dayKey());
+$("daily").onclick = () => changeBoard(dailyBoardKey());
 $("ranks").onclick = () => rankings(game.key);
 $("start").onclick = start;
 $("restart").onclick = () => changeBoard(game.key, true);
@@ -490,7 +490,7 @@ $("audio").onclick = () => {
 $("help").onclick = () => {
   pause();
   show(
-    '<img class="modal-sprite" src="assets/maxwell.png" alt=""><div class="eyebrow">FIELD GUIDE</div><h2>How to play</h2><p>Get every ball into the chamber that matches its color. They bounce on their own. You control the gates.</p><ol><li>Start the level and watch the balls approach.</li><li>Click a demon or the striped gate to let balls through. Click again to close it once the doorway is clear.</li><li>The timer stops when every ball is home and every gate is closed. Post your time to compete worldwide.</li></ol><p><kbd>Space</kbd> pauses or resumes. Tab to a gate and press Enter to toggle it. Daily challenges reset at midnight UTC.</p>',
+    '<img class="modal-sprite" src="assets/maxwell.png" alt=""><div class="eyebrow">FIELD GUIDE</div><h2>How to play</h2><p>Get every ball into the chamber that matches its color. Balls ricochet off the walls and each other. You control the gates.</p><ol><li>Start the level and watch the balls approach.</li><li>Click a demon or the striped gate to let balls through. Click again to close it once the doorway is clear.</li><li>The timer stops when every ball is home and every gate is closed. Post your time to compete worldwide.</li></ol><p><kbd>Space</kbd> pauses or resumes. Tab to a gate and press Enter to toggle it. Daily challenges reset at midnight UTC.</p>',
   );
 };
 $("dismiss").onclick = endDialog;

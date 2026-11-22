@@ -11,90 +11,81 @@ export const colors = [
   ["Rose", "#f4a1d2", "#50384c", "♥"],
 ];
 export const levels = [
-  ["The Split", "Two colors. Two chambers. One little demon.", ["01"], 2],
+  ["The Split", "Two colors. Two chambers. One little demon.", ["01"], 1],
   [
     "Short Circuit",
     "One small room makes timing the return trip trickier.",
     ["001", "001"],
-    3,
+    2,
   ],
   [
     "The Elbow",
     "Watch for rebounds around the first corner.",
     ["001", "011"],
-    3,
+    2,
   ],
   [
     "Three’s Company",
     "Route the outer colors through Mint in the middle.",
     ["012"],
-    3,
+    2,
   ],
-  ["Dogleg", "Two bends break up the straight route.", ["0012", "0112"], 3],
-  ["Cross Purposes", "Four chambers share a loop of gates.", ["01", "32"], 3],
+  ["Dogleg", "Two bends break up the straight route.", ["0012", "0112"], 2],
+  ["Cross Purposes", "Four chambers share a loop of gates.", ["01", "32"], 2],
   [
     "Pocket Change",
     "The small Honey pocket fills up quickly.",
     ["0011", "0221", "3331"],
-    3,
+    2,
   ],
   [
     "Switchboard",
     "Use the middle chamber to connect four neighbors.",
     ["00111", "04441", "22233"],
-    3,
+    2,
   ],
   [
     "The Detour",
     "Plan a route through five uneven chambers.",
     ["00112", "03122", "33344"],
-    4,
+    3,
   ],
   [
     "Grand Central",
     "Six colors compete for space at the junctions.",
     ["00011222", "00111122", "55444433", "55544333"],
-    4,
+    3,
   ],
 ];
 // Each teaching ball is [x, y, vx, vy, destination] in board units per tick.
 const lessons = [
-  // Both travelers fit through one opening.
+  // The two travelers glance off one another at the open gate.
   [
-    [176, 121, 1.45, 0.126, 1],
-    [105, 224, -1.05, -0.45, 0],
-    [633, 201, -1.48, -0.154, 0],
-    [682, 78, 0.9, 0.54, 1],
+    [188, 153, 1.45, -0.06, 1],
+    [635, 162, -1.48, 0.06, 0],
   ],
-  // Two exchanges with a home ball approaching in between.
+  // Two pairs exchange chambers on staggered approaches.
   [
-    [372, 126, 1.42, 0.113, 1],
-    [67, 201, 1.35, -0.074, 1],
-    [261, 105, 1.34, 0.25, 0],
-    [674, 183, -1.4, -0.113, 0],
-    [608, 62, 1.25, 0.176, 0],
-    [666, 218, -0.78, -0.36, 1],
+    [380, 150, 1.42, 0.08, 1],
+    [62, 183, 1.35, 0.06, 1],
+    [678, 187, -1.4, -0.02, 0],
+    [618, 152, 1.25, -0.08, 0],
   ],
   // Three travelers approach three different openings around the elbow.
   [
-    [333, 62, 1.4, 0.074, 1],
+    [293, 94, 1.4, 0.074, 1],
     [390, 114, 0.028, -0.82, 1],
-    [128, 111, -1.1, 0.363, 0],
     [681, 72, -1.28, 0.062, 0],
-    [721, 196, 0.95, -0.346, 1],
     [565, 257, -1.26, -0.045, 0],
   ],
   // Outer colors cross two boundaries. Mint belongs in the middle.
   [
     [86, 110, 1.46, 0.11, 2],
-    [170, 64, -1.08, 0.47, 0],
     [104, 243, -1.22, -0.32, 0],
     [357, 209, 0.83, -0.25, 1],
     [447, 85, -0.79, 0.48, 1],
-    [405, 260, 0.74, 0.63, 1],
-    [701, 200, -1.39, -0.11, 0],
+    [721, 176, -1.39, -0.11, 0],
     [650, 66, 0.93, 0.49, 2],
-    [728, 252, 0.85, -0.54, 2],
   ],
 ];
 
@@ -126,11 +117,12 @@ const transfers = [
   ],
 ];
 // Fixed starts tested at 200, 300 and 400 ms between possible gate inputs.
-const campaignSeeds = [38, 66, 61, 116, 109, 119];
-export const campaignKey = (index) => "level-" + (index + 1) + "-v2";
+const campaignSeeds = [26, 92, 229, 64, 148, 154];
+export const campaignKey = (index) => "level-" + (index + 1) + "-v3";
 export const dayKey = (date = new Date()) => date.toISOString().slice(0, 10);
+export const dailyBoardKey = (date) => "daily-v3-" + dayKey(date);
 export const validBoard = (key) =>
-  /^level-(?:[1-9]|10)-v2$/.test(key) || /^daily-\d{4}-\d\d-\d\d$/.test(key);
+  /^level-(?:[1-9]|10)-v3$/.test(key) || /^daily-v3-\d{4}-\d\d-\d\d$/.test(key);
 function rng(seed) {
   return () => {
     seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
@@ -145,7 +137,7 @@ export function createGame(key) {
   const level = daily ? seed % 3 : Number(key.split("-")[1]) - 1;
   const random = rng(daily ? seed : (campaignSeeds[level - 4] ?? seed));
   const [, , map, campaignCount] = levels[level];
-  const perRoom = daily ? [4, 5, 5][level] : campaignCount;
+  const perRoom = daily ? [3, 4, 4][level] : campaignCount;
   const rows = map.length,
     cols = map[0].length,
     cw = WIDTH / cols,
@@ -240,8 +232,10 @@ export function createGame(key) {
         balls.push({
           x,
           y,
-          vx: Math.cos(angle) * speed * (room % 2 ? -1 : 1),
-          vy: Math.sin(angle) * speed,
+          vx: Number(
+            (Math.cos(angle) * speed * (room % 2 ? -1 : 1)).toFixed(6),
+          ),
+          vy: Number((Math.sin(angle) * speed).toFixed(6)),
           target,
         });
       }
@@ -312,14 +306,67 @@ function bounce(b, s, r) {
     b.vy -= 2 * dot * ny;
   }
 }
+function contain(ball, game) {
+  for (const wall of game.walls) bounce(ball, wall, game.radius);
+  for (const gate of game.gates)
+    if (!gate.open) bounce(ball, gate, game.radius);
+}
+
+function collide(a, b, diameter) {
+  const dx = b.x - a.x,
+    dy = b.y - a.y;
+  const distanceSquared = dx * dx + dy * dy;
+  if (distanceSquared >= diameter * diameter) return null;
+  const distance = Math.sqrt(distanceSquared);
+  const vx = a.vx - b.vx,
+    vy = a.vy - b.vy;
+  // At coincident centers, use the incoming relative velocity as the normal.
+  const relativeSpeed = distance === 0 ? Math.hypot(vx, vy) : 0;
+  const nx = distance ? dx / distance : relativeSpeed ? vx / relativeSpeed : 1;
+  const ny = distance ? dy / distance : relativeSpeed ? vy / relativeSpeed : 0;
+  const correction = (diameter - distance) / 2;
+  a.x -= nx * correction;
+  a.y -= ny * correction;
+  b.x += nx * correction;
+  b.y += ny * correction;
+  const approach = vx * nx + vy * ny;
+  if (approach <= 0) return 0;
+  // Equal masses exchange normal velocity and retain their tangential velocity.
+  a.vx -= approach * nx;
+  a.vy -= approach * ny;
+  b.vx += approach * nx;
+  b.vy += approach * ny;
+  return 1;
+}
+
 export function step(g) {
-  for (const b of g.balls) {
-    b.x += b.vx;
-    b.y += b.vy;
-    for (const s of g.walls) bounce(b, s, g.radius);
-    for (const gate of g.gates) if (!gate.open) bounce(b, gate, g.radius);
+  for (const ball of g.balls) {
+    ball.x += ball.vx;
+    ball.y += ball.vy;
+    contain(ball, g);
+  }
+  let impacts = 0;
+  const diameter = 2 * g.radius;
+  // Recheck walls immediately after separation, including at a closed gate.
+  // A second pass settles simultaneous contacts in a cluster.
+  for (let pass = 0; pass < 2; pass++) {
+    let contact = false;
+    for (let i = 0; i < g.balls.length; i++) {
+      const a = g.balls[i];
+      for (let j = i + 1; j < g.balls.length; j++) {
+        const b = g.balls[j];
+        const impact = collide(a, b, diameter);
+        if (impact === null) continue;
+        impacts += impact;
+        contain(a, g);
+        contain(b, g);
+        contact = true;
+      }
+    }
+    if (!contact) break;
   }
   g.tick++;
+  return impacts;
 }
 export const formatTime = (ticks) => {
   const cs = Math.floor((ticks * 100) / HZ);

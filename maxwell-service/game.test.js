@@ -21,6 +21,17 @@ for (let i = 0; i < levels.length; i++)
       solution = playtest(createGame(key)),
       g = createGame(key);
     const slower = playtest(createGame(key), 24);
+    const previousPerColor = [2, 3, 3, 3, 3, 3, 3, 3, 4, 4][i];
+    for (let color = 0; color < g.rooms; color++) {
+      assert.equal(
+        g.balls.filter((ball) => ball.target === color).length,
+        previousPerColor - 1,
+      );
+    }
+    assert.ok(
+      solution.impacts > 0,
+      "The winning run includes a ball collision",
+    );
     assert.ok(slower.won && slower.longestWait <= 15 * 60);
     assert.ok(solution.won);
     assert.ok(solution.longestWait <= 15 * 60, "long idle stretch");
@@ -37,6 +48,39 @@ for (let i = 0; i < levels.length; i++)
       );
     }
   });
+test("Head-on balls exchange velocity, separate, and can pass once the gate opens", () => {
+  const g = createGame(campaignKey(0));
+  const [a, b] = g.balls;
+  Object.assign(a, { x: 200, y: 160, vx: 2, vy: 0 });
+  Object.assign(b, { x: 228, y: 160, vx: -1, vy: 0 });
+  assert.equal(step(g), 1);
+  assert.equal(a.vx, -1);
+  assert.equal(b.vx, 2);
+  assert.equal(b.x - a.x, 2 * g.radius);
+  assert.equal(step(g), 0);
+  Object.assign(a, { x: 350, y: 160, vx: 2, vy: 0 });
+  Object.assign(b, { x: 432, y: 160, vx: 0, vy: 0 });
+  for (let i = 0; i < 30; i++) step(g);
+  assert.equal(b.vx, 0);
+  assert.equal(roomAt(g, a.x, a.y), 0);
+  assert.ok(toggle(g, 0));
+  Object.assign(a, { x: 350, y: 160, vx: 2, vy: 0 });
+  for (let i = 0; i < 30; i++) step(g);
+  assert.equal(b.vx, 2);
+  assert.equal(roomAt(g, a.x, a.y), 1);
+});
+test("A glancing contact conserves momentum and kinetic energy", () => {
+  const g = createGame(campaignKey(0));
+  const [a, b] = g.balls;
+  Object.assign(a, { x: 200, y: 160, vx: 2, vy: 0 });
+  Object.assign(b, { x: 224, y: 175, vx: -1, vy: 0 });
+  assert.equal(step(g), 1);
+  assert.ok(Math.abs(a.vy) > 0.1 && Math.abs(b.vy) > 0.1);
+  assert.ok(Math.abs(a.vx + b.vx - 1) < 1e-12 && Math.abs(a.vy + b.vy) < 1e-12);
+  assert.ok(
+    Math.abs(a.vx ** 2 + a.vy ** 2 + b.vx ** 2 + b.vy ** 2 - 5) < 1e-12,
+  );
+});
 test("The opening lessons offer another pass after missing the first window", () => {
   for (let i = 0; i < 3; i++) {
     const game = createGame(campaignKey(i));
@@ -67,9 +111,15 @@ test("A sorted board finishes only after the last open gate closes", () => {
   assert.equal(hasWon(g), false);
 });
 test("Daily boards repeat for everyone and enforce ten toggles", () => {
-  const daily = playtest(createGame("daily-2026-11-22"));
+  const daily = playtest(createGame("daily-v3-2026-11-22"));
   assert.ok(daily.won && daily.events.length <= 10);
-  const g = createGame("daily-2026-11-21");
+  const g = createGame("daily-v3-2026-11-21");
+  for (let color = 0; color < g.rooms; color++) {
+    assert.equal(
+      g.balls.filter((b) => b.target === color).length,
+      [3, 4, 4][g.level],
+    );
+  }
   assert.deepEqual(g, createGame(g.key));
   g.balls.forEach((b) => {
     b.x = 25;
