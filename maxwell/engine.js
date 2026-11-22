@@ -201,6 +201,9 @@ export function countSorted(g) {
     0,
   );
 }
+export function hasWon(g) {
+  return g.gates.every((gate) => !gate.open) && countSorted(g) === g.balls.length;
+}
 function nearest(b, s) {
   const dx = b.x - Math.max(s.x1, Math.min(s.x2, b.x)),
     dy = b.y - Math.max(s.y1, Math.min(s.y2, b.y));

@@ -2,7 +2,7 @@
 
 [Play Maxwell](https://www.joshcodes.ai/maxwell/)
 
-Maxwell is a top-down gate-timing game. Every ball moves on its own. Click a seated demon or its striped barrier to toggle the gate. A gate waits for a clear doorway before it can close. The run ends on the first simulation step when every ball is in its own colored chamber.
+Maxwell is a top-down gate-timing game. Every ball moves on its own. Click a seated demon or its striped barrier to toggle the gate. A gate waits for a clear doorway before it can close. The run ends on the first simulation step when every ball is in its own colored chamber and every gate is closed. The timer keeps running while any gate is open.
 
 ## Interface
 
@@ -25,9 +25,9 @@ The chamber view shows the entire arena, colored chamber labels, moving balls an
 
 ## Saves and daily challenges
 
-A first-party cookie stores campaign completion, selected level, personal bests, sound preference, an anonymous player identifier and the last leaderboard name for one year. An unfinished run starts over on reload. Clearing cookies creates a new player identity. Finishing a level saves the personal best automatically. Posting a public time is optional.
+A first-party cookie stores campaign completion, selected level, personal bests, sound preference, an anonymous player identifier and the last leaderboard name for one year. An unfinished run starts over on reload. Clearing cookies creates a new player identity. Finishing a level saves the personal best automatically. Posting a public time is optional. Earlier campaign completions carry forward. Personal and global time rankings compare finishes under the current closed-gate rule.
 
-Ten Toggles uses the same UTC-date seed for everyone and permits ten successful gate changes, counting each open and close separately. The daily ranking is separate from every campaign ranking. Each board lists the fastest twenty players and keeps each player's best verified run. Time measures active simulation time and excludes pauses.
+Ten Toggles uses the same UTC-date seed for everyone and permits ten successful gate changes, counting each open and close separately. The final gate closure counts toward the limit. The daily ranking is separate from every campaign ranking. Each board lists the fastest twenty players and keeps each player's best verified run. Time measures active simulation time and excludes pauses.
 
 ## Development and deployment
 

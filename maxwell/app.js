@@ -4,10 +4,11 @@ import {
   step,
   toggle,
   countSorted,
+  hasWon,
   formatTime,
   dayKey,
   HZ,
-} from "./engine.js";
+} from "./engine.js?rules=sealed";
 import { icon, icons, miniMap, drawBoard } from "./art.js";
 const $ = (id) => document.getElementById(id),
   modal = $("modal"),
@@ -30,7 +31,10 @@ try {
     ) || {};
 } catch {}
 if (typeof saved !== "object" || Array.isArray(saved)) saved = {};
-if (!saved.best || typeof saved.best !== "object") saved.best = {};
+// Original finishes still count toward campaign progress. Only compare times
+// earned under the current rule with one another.
+if (!saved.sealedBest || typeof saved.sealedBest !== "object") saved.sealedBest = {};
+const clearedLevel = (key) => Number.isFinite(saved.sealedBest[key]) || Number.isFinite(saved.best?.[key]);
 if (!/^[a-f\d-]{36}$/i.test(saved.player || ""))
   saved.player = crypto.randomUUID();
 let cookieOK = true;
@@ -62,7 +66,7 @@ let game,
   ticket = 0,
   tipTimer;
 const levelNotes = [
-  "Click Maxwell to open or close a gate. Match each ball to its chamber color.",
+  "Click Maxwell to toggle the gate. Sort the balls by color, then close the gate.",
   "The smaller room sends balls back sooner. Keep an eye on the return trip.",
   "Follow the corner wall. Each shared opening has its own gatekeeper.",
   "The middle chamber doubles as a passage for the two outer colors.",
@@ -75,7 +79,7 @@ const levelNotes = [
 ];
 const notes = () =>
   game.daily
-    ? "Every open or close counts. Sort all the balls using at most ten gate toggles."
+    ? "Sort the balls and close every gate in ten toggles or fewer."
     : levelNotes[game.level];
 function tip(message) {
   clearTimeout(tipTimer);
@@ -151,29 +155,36 @@ function updateRun() {
 }
 function stats() {
   $("time").textContent = formatTime(game.tick);
+  const sorted = countSorted(game);
+  if (mode === "running") {
+    const label = sorted === game.balls.length && game.gates.some((gate) => gate.open)
+      ? "Close every gate to finish"
+      : "Live";
+    if ($("status").lastChild.textContent !== label) $("status").lastChild.textContent = label;
+  }
   $("sorted").innerHTML =
-    countSorted(game) + " <em>/ " + game.balls.length + "</em>";
+    sorted + " <em>/ " + game.balls.length + "</em>";
   $("moves").innerHTML = game.moves + (game.daily ? " <em>/ 10</em>" : "");
 }
 function campaignProgress() {
   const cleared = levels.filter((_, i) =>
-    Number.isFinite(saved.best[keyFor(i)]),
+    clearedLevel(keyFor(i)),
   ).length;
   $("progressText").textContent = cleared + " / 10";
   $("progressBars").innerHTML = levels
     .map(
-      (_, i) => '<b class="' + (saved.best[keyFor(i)] ? "done" : "") + '"></b>',
+      (_, i) => '<b class="' + (clearedLevel(keyFor(i)) ? "done" : "") + '"></b>',
     )
     .join("");
   $("levelList").innerHTML = "";
   levels.forEach(([name, , map], i) => {
     const el = document.createElement("button"),
       key = keyFor(i),
-      best = saved.best[key];
+      best = saved.sealedBest[key];
     el.className =
       "levelTile" +
       (key === game.key ? " current" : "") +
-      (best ? " cleared" : "");
+      (clearedLevel(key) ? " cleared" : "");
     el.title =
       "Level " +
       (i + 1) +
@@ -187,8 +198,8 @@ function campaignProgress() {
     el.onclick = () => changeBoard(key);
     $("levelList").append(el);
   });
-  $("levelCount").textContent = saved.best[game.key]
-    ? "Personal best · " + formatTime(saved.best[game.key])
+  $("levelCount").textContent = saved.sealedBest[game.key]
+    ? "Personal best · " + formatTime(saved.sealedBest[game.key])
     : "10 campaign levels";
 }
 function load(key) {
@@ -266,7 +277,7 @@ function gateClick(i) {
   if (!toggle(game, i)) {
     tip(
       game.moves >= game.limit
-        ? "All ten toggles used. Watch the remaining balls."
+        ? "All ten toggles used."
         : "A ball is in the doorway. Try again when it passes.",
     );
     return;
@@ -282,14 +293,14 @@ function advance(now) {
     while (acc >= 1000 / HZ && mode === "running") {
       acc -= 1000 / HZ;
       step(game);
-      if (countSorted(game) === game.balls.length) {
+      if (hasWon(game)) {
         mode = "won";
         if (game.daily)
-          Object.keys(saved.best)
+          Object.keys(saved.sealedBest)
             .filter((k) => k.startsWith("daily-") && k !== game.key)
-            .forEach((k) => delete saved.best[k]);
-        saved.best[game.key] = Math.min(
-          saved.best[game.key] || Infinity,
+            .forEach((k) => delete saved.sealedBest[k]);
+        saved.sealedBest[game.key] = Math.min(
+          saved.sealedBest[game.key] || Infinity,
           game.tick,
         );
         persist();
@@ -297,13 +308,10 @@ function advance(now) {
         chirp(770, 0.22);
         updateRun();
         result();
-      } else if (
-        game.moves === game.limit &&
-        game.gates.every((g) => !g.open)
-      ) {
+      } else if (game.moves === game.limit) {
         mode = "failed";
         updateRun();
-        tip("Ten toggles used and all gates are closed. Try a new run.");
+        tip("Ten toggles used. Sort the balls and close every gate within the limit.");
       }
     }
     art.paintBalls();
@@ -357,7 +365,7 @@ function result() {
       "</div><p>" +
       g.moves +
       " gate toggles · Best on this device " +
-      formatTime(saved.best[g.key]) +
+      formatTime(saved.sealedBest[g.key]) +
       '</p><form id="scoreForm"><label for="alias">Leaderboard name</label><input id="alias" required maxlength="18" autocomplete="nickname" placeholder="Little Demon"><div class="actionrow"><button class="primary" type="submit" id="post">Post time</button><button class="secondary" id="next" type="button">' +
       (g.daily ? "View daily ranks" : next < 10 ? "Next level" : "View ranks") +
       '</button></div><p id="postMsg" role="status"></p></form>',
@@ -427,7 +435,7 @@ function rankings(key) {
       which = choice.value;
     $("localBest").textContent =
       "Your best · " +
-      (saved.best[which] ? formatTime(saved.best[which]) : "No finish yet");
+      (saved.sealedBest[which] ? formatTime(saved.sealedBest[which]) : "No finish yet");
     $("results").textContent = "Loading times…";
     try {
       const { scores } = await api(
@@ -479,7 +487,7 @@ $("audio").onclick = () => {
 $("help").onclick = () => {
   pause();
   show(
-    '<img class="modal-sprite" src="assets/maxwell.png" alt=""><div class="eyebrow">FIELD GUIDE</div><h2>How to play</h2><p>Get every ball into the chamber that matches its color. They bounce on their own. You control the gates.</p><ol><li>Start the level and watch the balls approach.</li><li>Click a demon or the striped gate to let balls through. Click again to close it once the doorway is clear.</li><li>The timer stops when every ball is home. Post your time to compete worldwide.</li></ol><p><kbd>Space</kbd> pauses or resumes. Tab to a gate and press Enter to toggle it. Daily challenges reset at midnight UTC.</p>',
+    '<img class="modal-sprite" src="assets/maxwell.png" alt=""><div class="eyebrow">FIELD GUIDE</div><h2>How to play</h2><p>Get every ball into the chamber that matches its color. They bounce on their own. You control the gates.</p><ol><li>Start the level and watch the balls approach.</li><li>Click a demon or the striped gate to let balls through. Click again to close it once the doorway is clear.</li><li>The timer stops when every ball is home and every gate is closed. Post your time to compete worldwide.</li></ol><p><kbd>Space</kbd> pauses or resumes. Tab to a gate and press Enter to toggle it. Daily challenges reset at midnight UTC.</p>',
   );
 };
 $("dismiss").onclick = endDialog;

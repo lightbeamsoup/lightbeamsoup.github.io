@@ -3,7 +3,7 @@ import {
   validBoard,
   step,
   toggle,
-  countSorted,
+  hasWon,
   dayKey,
 } from "../maxwell/engine.js";
 
@@ -37,18 +37,18 @@ export function replayChunk(game, from, to, events) {
         fail("Gate replay did not match.");
     }
     step(game);
-    if (countSorted(game) === game.balls.length && game.tick !== to)
+    if (hasWon(game) && game.tick !== to)
       fail("Run already finished.");
   }
   if (i !== events.length) fail("Gate inputs out of order.");
-  return countSorted(game) === game.balls.length;
+  return hasWon(game);
 }
 async function api(request, env, url) {
   const board = url.searchParams.get("board") || "";
   if (request.method === "GET" && url.pathname === "/scores") {
     if (!validBoard(board)) fail("Unknown board.");
     const { results } = await env.DB.prepare(
-      "SELECT alias,ticks,moves FROM scores WHERE board=? ORDER BY ticks,created,player LIMIT 20",
+      "SELECT alias,ticks,moves FROM scores WHERE board=('sealed/' || ?) ORDER BY ticks,created,player LIMIT 20",
     )
       .bind(board)
       .all();
@@ -130,7 +130,7 @@ async function api(request, env, url) {
   if (won) {
     await env.DB.batch([
       env.DB.prepare(
-        "INSERT INTO scores(board,player,alias,ticks,moves,created) SELECT board,player,alias,?,?,? FROM reviews WHERE token=? AND tick=? ON CONFLICT(board,player) DO UPDATE SET ticks=excluded.ticks,moves=excluded.moves,alias=excluded.alias,created=excluded.created WHERE excluded.ticks<scores.ticks",
+        "INSERT INTO scores(board,player,alias,ticks,moves,created) SELECT 'sealed/' || board,player,alias,?,?,? FROM reviews WHERE token=? AND tick=? ON CONFLICT(board,player) DO UPDATE SET ticks=excluded.ticks,moves=excluded.moves,alias=excluded.alias,created=excluded.created WHERE excluded.ticks<scores.ticks",
       ).bind(g.tick, g.moves, now, token, from),
       env.DB.prepare("DELETE FROM reviews WHERE token=? AND tick=?").bind(
         token,

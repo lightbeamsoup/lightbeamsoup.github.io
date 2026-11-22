@@ -8,6 +8,7 @@ import {
   toggle,
   step,
   roomAt,
+  hasWon,
   countSorted,
 } from "../maxwell/engine.js";
 import worker, { replayChunk } from "./worker.js";
@@ -56,7 +57,7 @@ function solve(key) {
       if (s.open !== (open && !deny) && toggle(g, i)) events.push([g.tick, i]);
     });
     step(g);
-    if (countSorted(g) === g.balls.length) return { ticks: g.tick, events };
+    if (hasWon(g)) return { ticks: g.tick, events };
   }
   throw new Error(key + " did not finish");
 }
@@ -78,6 +79,21 @@ for (let i = 0; i < levels.length; i++)
       );
     }
   });
+test("A sorted board finishes only after the last open gate closes", () => {
+  const g = createGame("level-4");
+  // Assign every ball to its starting chamber and keep the doorways clear.
+  g.balls.forEach((ball) => {
+    ball.target = roomAt(g, ball.x, ball.y);
+    ball.x = (ball.target + 0.5) * g.cw;
+    ball.y = g.ch / 2;
+  });
+  assert.equal(countSorted(g), g.balls.length);
+  assert.equal(replayChunk(g, 0, 1, [[0, 0], [0, 1]]), false);
+  assert.equal(replayChunk(g, 1, 2, [[1, 0]]), false);
+  assert.equal(replayChunk(g, 2, 3, [[2, 1]]), true);
+  g.balls[0].target = (g.balls[0].target + 1) % g.rooms;
+  assert.equal(hasWon(g), false);
+});
 test("Daily boards repeat for everyone and enforce ten toggles", () => {
   assert.ok(solve("daily-2026-11-22").events.length <= 10);
   const g = createGame("daily-2026-11-21");
@@ -133,6 +149,9 @@ test("D1 SQL stores one verified best per player, isolates boards, and rejects i
     board = "level-1",
     alias = "Test Imp";
   const { ticks, events } = solve(board);
+  db.prepare("INSERT INTO scores VALUES(?,?,?,?,?,?)").run(
+    board, player, alias, 1, 1, 1,
+  );
   for (let run = 0; run < 2; run++) {
     const { token } = await (
       await send("/reviews", { board, alias, player })

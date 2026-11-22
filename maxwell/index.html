@@ -66,7 +66,7 @@
         <section class="console" aria-label="Game board">
           <div class="console-head">
             <span><i data-icon="scope"></i>CHAMBER VIEW</span
-            ><span class="status" id="status"><b></b>Ready</span>
+            ><span class="status" id="status" role="status"><b></b>Ready</span>
           </div>
           <div id="screen">
             <svg
@@ -117,8 +117,7 @@
               <h2>Lab notes</h2>
             </div>
             <p id="tip">
-              Click Maxwell to open or close a gate. Match each ball to its
-              chamber color.
+              Click Maxwell to toggle the gate. Sort the balls by color, then close the gate.
             </p>
             <div class="signature">— Maxwell <span>✧</span></div>
             <img src="assets/maxwell.png" alt="" class="note-imp" />
@@ -145,6 +144,6 @@
       </button>
       <div id="modalBody"></div>
     </dialog>
-    <script type="module" src="app.js"></script>
+    <script type="module" src="app.js?rules=sealed"></script>
   </body>
 </html>
