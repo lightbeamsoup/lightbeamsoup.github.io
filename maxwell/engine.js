@@ -64,16 +64,16 @@ const lessons = [
     [188, 153, 1.45, -0.06, 1],
     [635, 162, -1.48, 0.06, 0],
   ],
-  // Two pairs exchange chambers on staggered approaches.
+  // One Mint ball is already home and returns between the travelers.
   [
-    [380, 150, 1.42, 0.08, 1],
-    [62, 183, 1.35, 0.06, 1],
-    [678, 187, -1.4, -0.02, 0],
-    [618, 152, 1.25, -0.08, 0],
+    [135, 159, 1.42, 0.2, 1],
+    [623, 115, -1.35, 0.1, 0],
+    [556, 201, 1.27, -0.2, 0],
+    [732, 157, -1.32, -0.03, 1],
   ],
   // Three travelers approach three different openings around the elbow.
   [
-    [293, 94, 1.4, 0.074, 1],
+    [253, 86, 1.4, 0.074, 1],
     [390, 114, 0.028, -0.82, 1],
     [681, 72, -1.28, 0.062, 0],
     [565, 257, -1.26, -0.045, 0],
@@ -117,12 +117,12 @@ const transfers = [
   ],
 ];
 // Fixed starts tested at 200, 300 and 400 ms between possible gate inputs.
-const campaignSeeds = [26, 92, 229, 64, 148, 154];
-export const campaignKey = (index) => "level-" + (index + 1) + "-v3";
+const campaignSeeds = [214, 92, 176, 99, 245, 244];
+export const campaignKey = (index) => "level-" + (index + 1) + "-v4";
 export const dayKey = (date = new Date()) => date.toISOString().slice(0, 10);
-export const dailyBoardKey = (date) => "daily-v3-" + dayKey(date);
+export const dailyBoardKey = (date) => "daily-v4-" + dayKey(date);
 export const validBoard = (key) =>
-  /^level-(?:[1-9]|10)-v3$/.test(key) || /^daily-v3-\d{4}-\d\d-\d\d$/.test(key);
+  /^level-(?:[1-9]|10)-v4$/.test(key) || /^daily-v4-\d{4}-\d\d-\d\d$/.test(key);
 function rng(seed) {
   return () => {
     seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
@@ -331,11 +331,14 @@ function collide(a, b, diameter) {
   b.y += ny * correction;
   const approach = vx * nx + vy * ny;
   if (approach <= 0) return 0;
-  // Equal masses exchange normal velocity and retain their tangential velocity.
-  a.vx -= approach * nx;
-  a.vy -= approach * ny;
-  b.vx += approach * nx;
-  b.vy += approach * ny;
+  // Reflect each incoming normal component. A ball already moving away
+  // keeps its heading when a faster ball catches up from behind.
+  const intoB = Math.max(0, a.vx * nx + a.vy * ny);
+  const intoA = Math.min(0, b.vx * nx + b.vy * ny);
+  a.vx -= 2 * intoB * nx;
+  a.vy -= 2 * intoB * ny;
+  b.vx -= 2 * intoA * nx;
+  b.vy -= 2 * intoA * ny;
   return 1;
 }
 

@@ -2,7 +2,7 @@
 
 [Play Maxwell](https://www.joshcodes.ai/maxwell/)
 
-Maxwell is a top-down gate-timing game. Balls bounce off the walls and each other. A glancing hit changes direction, while a head-on hit swaps the balls’ forward velocities. Click a seated demon or its striped barrier to toggle the gate. A gate waits for a clear doorway before it can close. The run ends on the first simulation step when every ball is in its own colored chamber and every gate is closed. The timer keeps running while any gate is open.
+Maxwell is a top-down gate-timing game. Balls bounce off the walls and each other. Each ball keeps its own speed through head-on hits and glancing rebounds. Click a seated demon or its striped barrier to toggle the gate. A gate waits for a clear doorway before it can close. The run ends on the first simulation step when every ball is in its own colored chamber and every gate is closed. The timer keeps running while any gate is open.
 
 ## Interface
 
@@ -13,7 +13,7 @@ The chamber view shows the entire arena, colored chamber labels, moving balls an
 | Level | Name | Chambers | Balls | What changes |
 | --- | --- | ---: | ---: | --- |
 | 1 | The Split | 2 | 2 | Open once for a pair of travelers, then close behind them |
-| 2 | Short Circuit | 2 | 4 | Admit two staggered pairs and close behind each wave |
+| 2 | Short Circuit | 2 | 4 | Let three travelers through while keeping a returning Mint ball home |
 | 3 | The Elbow | 2 | 4 | Read the trail to pick the upper, lower, or sideways opening |
 | 4 | Three’s Company | 3 | 6 | Trade the outer colors through Mint while protecting the residents |
 | 5 | Dogleg | 3 | 6 | Send two colors beyond the middle room around a bend |
@@ -27,7 +27,7 @@ Run `node maxwell-service/playtest.js 12` for a repeatable timing and routing pl
 
 ## Saves and daily challenges
 
-A first-party cookie stores campaign completion, selected level, personal bests, sound preference, an anonymous player identifier and the last leaderboard name for one year. An unfinished run starts over on reload. Clearing cookies creates a new player identity. Finishing a level saves the personal best automatically. Posting a public time is optional. Earlier campaign completions carry forward. Personal and global time rankings compare finishes on the current course layout with all gates closed. The collision edition has separate time rankings for both campaign and daily runs.
+A first-party cookie stores campaign completion, selected level, personal bests, sound preference, an anonymous player identifier and the last leaderboard name for one year. An unfinished run starts over on reload. Clearing cookies creates a new player identity. Finishing a level saves the personal best automatically. Posting a public time is optional. Earlier campaign completions carry forward. Personal and global time rankings compare finishes on the current course layout with all gates closed. The constant-speed edition has its own campaign and daily time rankings.
 
 Ten Toggles uses the same UTC-date seed for everyone and permits ten successful gate changes, counting each open and close separately. The final gate closure counts toward the limit. The daily ranking is separate from every campaign ranking. Each board lists the fastest twenty players and keeps each player's best verified run. Time measures active simulation time and excludes pauses.
 

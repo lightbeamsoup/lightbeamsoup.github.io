@@ -9,7 +9,7 @@ import {
   formatTime,
   dailyBoardKey,
   HZ,
-} from "./engine.js?campaign=3";
+} from "./engine.js?campaign=4";
 import { icon, icons, miniMap, drawBoard } from "./art.js";
 const $ = (id) => document.getElementById(id),
   modal = $("modal"),
@@ -35,8 +35,10 @@ if (typeof saved !== "object" || Array.isArray(saved)) saved = {};
 // earned under the current rule with one another.
 if (!saved.sealedBest || typeof saved.sealedBest !== "object") saved.sealedBest = {};
 const clearedLevel = (key) => {
-  const original = key.replace(/-v3$/, "");
-  return Number.isFinite(saved.sealedBest[key]) || Number.isFinite(saved.sealedBest[original + "-v2"]) || Number.isFinite(saved.sealedBest[original]) || Number.isFinite(saved.best?.[original]);
+  const original = key.replace(/-v4$/, "");
+  const editions = [key, original + "-v3", original + "-v2", original];
+  return editions.some((edition) => Number.isFinite(saved.sealedBest[edition])) ||
+    Number.isFinite(saved.best?.[original]);
 };
 if (!/^[a-f\d-]{36}$/i.test(saved.player || ""))
   saved.player = crypto.randomUUID();
@@ -70,7 +72,7 @@ let game,
   tipTimer;
 const levelNotes = [
   "Open for both travelers. Watch their trails change when they bump, then close the clear gate.",
-  "A second pair is on its way. Close between pairs to keep the first arrivals home.",
+  "One Mint ball is already home. Watch its return trip before letting the next traveler through.",
   "Watch where each trail points. The elbow has an upper, a lower and a sideways opening.",
   "Coral and Honey need to trade ends. Pass them through Mint and seal the gate behind each crossing.",
   "A ball headed past Mint needs a second gate. Follow it around the bend before admitting the next color.",
@@ -490,7 +492,7 @@ $("audio").onclick = () => {
 $("help").onclick = () => {
   pause();
   show(
-    '<img class="modal-sprite" src="assets/maxwell.png" alt=""><div class="eyebrow">FIELD GUIDE</div><h2>How to play</h2><p>Get every ball into the chamber that matches its color. Balls ricochet off the walls and each other. You control the gates.</p><ol><li>Start the level and watch the balls approach.</li><li>Click a demon or the striped gate to let balls through. Click again to close it once the doorway is clear.</li><li>The timer stops when every ball is home and every gate is closed. Post your time to compete worldwide.</li></ol><p><kbd>Space</kbd> pauses or resumes. Tab to a gate and press Enter to toggle it. Daily challenges reset at midnight UTC.</p>',
+    '<img class="modal-sprite" src="assets/maxwell.png" alt=""><div class="eyebrow">FIELD GUIDE</div><h2>How to play</h2><p>Get every ball into the chamber that matches its color. Balls change direction on impact and keep their own speed. You control the gates.</p><ol><li>Start the level and watch the balls approach.</li><li>Click a demon or the striped gate to let balls through. Click again to close it once the doorway is clear.</li><li>The timer stops when every ball is home and every gate is closed. Post your time to compete worldwide.</li></ol><p><kbd>Space</kbd> pauses or resumes. Tab to a gate and press Enter to toggle it. Daily challenges reset at midnight UTC.</p>',
   );
 };
 $("dismiss").onclick = endDialog;

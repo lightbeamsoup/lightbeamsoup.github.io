@@ -48,14 +48,14 @@ for (let i = 0; i < levels.length; i++)
       );
     }
   });
-test("Head-on balls exchange velocity, separate, and can pass once the gate opens", () => {
+test("Head-on balls reverse direction at their own speeds, separate, and can pass once the gate opens", () => {
   const g = createGame(campaignKey(0));
   const [a, b] = g.balls;
   Object.assign(a, { x: 200, y: 160, vx: 2, vy: 0 });
   Object.assign(b, { x: 228, y: 160, vx: -1, vy: 0 });
   assert.equal(step(g), 1);
-  assert.equal(a.vx, -1);
-  assert.equal(b.vx, 2);
+  assert.equal(a.vx, -2);
+  assert.equal(b.vx, 1);
   assert.equal(b.x - a.x, 2 * g.radius);
   assert.equal(step(g), 0);
   Object.assign(a, { x: 350, y: 160, vx: 2, vy: 0 });
@@ -66,20 +66,19 @@ test("Head-on balls exchange velocity, separate, and can pass once the gate open
   assert.ok(toggle(g, 0));
   Object.assign(a, { x: 350, y: 160, vx: 2, vy: 0 });
   for (let i = 0; i < 30; i++) step(g);
-  assert.equal(b.vx, 2);
+  assert.equal(b.vx, 0);
+  assert.equal(a.vx, -2);
   assert.equal(roomAt(g, a.x, a.y), 1);
 });
-test("A glancing contact conserves momentum and kinetic energy", () => {
+test("A glancing contact redirects both balls and preserves each speed", () => {
   const g = createGame(campaignKey(0));
   const [a, b] = g.balls;
   Object.assign(a, { x: 200, y: 160, vx: 2, vy: 0 });
   Object.assign(b, { x: 224, y: 175, vx: -1, vy: 0 });
   assert.equal(step(g), 1);
   assert.ok(Math.abs(a.vy) > 0.1 && Math.abs(b.vy) > 0.1);
-  assert.ok(Math.abs(a.vx + b.vx - 1) < 1e-12 && Math.abs(a.vy + b.vy) < 1e-12);
-  assert.ok(
-    Math.abs(a.vx ** 2 + a.vy ** 2 + b.vx ** 2 + b.vy ** 2 - 5) < 1e-12,
-  );
+  assert.ok(Math.abs(Math.hypot(a.vx, a.vy) - 2) < 1e-12);
+  assert.ok(Math.abs(Math.hypot(b.vx, b.vy) - 1) < 1e-12);
 });
 test("The opening lessons offer another pass after missing the first window", () => {
   for (let i = 0; i < 3; i++) {
@@ -88,6 +87,32 @@ test("The opening lessons offer another pass after missing the first window", ()
     const run = playtest(game, 18, 240 + 15 * 60);
     assert.ok(run.won, "Missed opening on level " + (i + 1));
   }
+});
+test("The resident Mint ball can escape through a gate left open after the first arrival", () => {
+  const g = createGame(campaignKey(1));
+  const resident = g.balls.find((b) => roomAt(g, b.x, b.y) === b.target);
+  assert.equal(resident.target, 1);
+  const { events } = playtest(createGame(g.key));
+  const [[firstOpen], [firstClose], [secondOpen]] = events;
+  let escaped = false;
+  for (let tick = 0; tick < secondOpen; tick++) {
+    if (tick === firstOpen) assert.ok(toggle(g, 0));
+    step(g);
+    if (tick > firstClose && roomAt(g, resident.x, resident.y) === 0) escaped = true;
+  }
+  assert.ok(escaped);
+});
+test("Individual ball speeds stay stable through repeated collisions and wall rebounds", () => {
+  const g = createGame(campaignKey(9));
+  const speeds = g.balls.map(b => Math.hypot(b.vx, b.vy));
+  let impacts = 0;
+  for (let tick = 0; tick < 6000; tick++) {
+    impacts += step(g);
+    g.balls.forEach((b, i) => {
+      assert.ok(Math.abs(Math.hypot(b.vx, b.vy) - speeds[i]) < 1e-10);
+    });
+  }
+  assert.ok(impacts > 100);
 });
 test("A sorted board finishes only after the last open gate closes", () => {
   const g = createGame(campaignKey(3));
@@ -111,9 +136,9 @@ test("A sorted board finishes only after the last open gate closes", () => {
   assert.equal(hasWon(g), false);
 });
 test("Daily boards repeat for everyone and enforce ten toggles", () => {
-  const daily = playtest(createGame("daily-v3-2026-11-22"));
+  const daily = playtest(createGame("daily-v4-2026-11-22"));
   assert.ok(daily.won && daily.events.length <= 10);
-  const g = createGame("daily-v3-2026-11-21");
+  const g = createGame("daily-v4-2026-11-21");
   for (let color = 0; color < g.rooms; color++) {
     assert.equal(
       g.balls.filter((b) => b.target === color).length,
