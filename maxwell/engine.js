@@ -11,18 +11,18 @@ export const colors = [
   ["Rose", "#f4a1d2", "#50384c", "♥"],
 ];
 export const levels = [
-  ["The Split", "Two colors. Two chambers. One little demon.", ["01"], 4],
+  ["The Split", "Two colors. Two chambers. One little demon.", ["01"], 2],
   [
     "Short Circuit",
     "One small room makes timing the return trip trickier.",
     ["001", "001"],
-    5,
+    3,
   ],
   [
     "The Elbow",
     "Watch for rebounds around the first corner.",
     ["001", "011"],
-    5,
+    3,
   ],
   [
     "Three’s Company",
@@ -53,13 +53,84 @@ export const levels = [
   [
     "Grand Central",
     "Six colors compete for space at the junctions.",
-    ["001122", "033142", "335544"],
+    ["00011222", "00111122", "55444433", "55544333"],
     4,
   ],
 ];
+// Each teaching ball is [x, y, vx, vy, destination] in board units per tick.
+const lessons = [
+  // Both travelers fit through one opening.
+  [
+    [176, 121, 1.45, 0.126, 1],
+    [105, 224, -1.05, -0.45, 0],
+    [633, 201, -1.48, -0.154, 0],
+    [682, 78, 0.9, 0.54, 1],
+  ],
+  // Two exchanges with a home ball approaching in between.
+  [
+    [372, 126, 1.42, 0.113, 1],
+    [67, 201, 1.35, -0.074, 1],
+    [261, 105, 1.34, 0.25, 0],
+    [674, 183, -1.4, -0.113, 0],
+    [608, 62, 1.25, 0.176, 0],
+    [666, 218, -0.78, -0.36, 1],
+  ],
+  // Three travelers approach three different openings around the elbow.
+  [
+    [333, 62, 1.4, 0.074, 1],
+    [390, 114, 0.028, -0.82, 1],
+    [128, 111, -1.1, 0.363, 0],
+    [681, 72, -1.28, 0.062, 0],
+    [721, 196, 0.95, -0.346, 1],
+    [565, 257, -1.26, -0.045, 0],
+  ],
+  // Outer colors cross two boundaries. Mint belongs in the middle.
+  [
+    [86, 110, 1.46, 0.11, 2],
+    [170, 64, -1.08, 0.47, 0],
+    [104, 243, -1.22, -0.32, 0],
+    [357, 209, 0.83, -0.25, 1],
+    [447, 85, -0.79, 0.48, 1],
+    [405, 260, 0.74, 0.63, 1],
+    [701, 200, -1.39, -0.11, 0],
+    [650, 66, 0.93, 0.49, 2],
+    [728, 252, 0.85, -0.54, 2],
+  ],
+];
+
+// Each destination list is a permutation of the starting rooms.
+const transfers = [
+  [
+    [2, 1, 0],
+    [1, 0, 2],
+  ],
+  [
+    [2, 3, 0, 1],
+    [0, 1, 2, 3],
+  ],
+  [
+    [1, 3, 0, 2],
+    [3, 1, 2, 0],
+  ],
+  [
+    [3, 2, 1, 0, 4],
+    [1, 0, 3, 2, 4],
+  ],
+  [
+    [4, 3, 0, 2, 1],
+    [2, 4, 3, 1, 0],
+  ],
+  [
+    [3, 4, 5, 0, 1, 2],
+    [2, 5, 0, 1, 3, 4],
+  ],
+];
+// Fixed starts tested at 200, 300 and 400 ms between possible gate inputs.
+const campaignSeeds = [38, 66, 61, 116, 109, 119];
+export const campaignKey = (index) => "level-" + (index + 1) + "-v2";
 export const dayKey = (date = new Date()) => date.toISOString().slice(0, 10);
 export const validBoard = (key) =>
-  /^level-(?:[1-9]|10)$/.test(key) || /^daily-\d{4}-\d\d-\d\d$/.test(key);
+  /^level-(?:[1-9]|10)-v2$/.test(key) || /^daily-\d{4}-\d\d-\d\d$/.test(key);
 function rng(seed) {
   return () => {
     seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
@@ -71,9 +142,10 @@ export function createGame(key) {
   const daily = key.startsWith("daily-");
   let seed = 7919;
   for (const c of key) seed = (Math.imul(seed, 31) + c.charCodeAt(0)) >>> 0;
-  const random = rng(seed);
-  const level = daily ? seed % 3 : Number(key.slice(6)) - 1;
-  const [, , map, perRoom] = levels[level];
+  const level = daily ? seed % 3 : Number(key.split("-")[1]) - 1;
+  const random = rng(daily ? seed : (campaignSeeds[level - 4] ?? seed));
+  const [, , map, campaignCount] = levels[level];
+  const perRoom = daily ? [4, 5, 5][level] : campaignCount;
   const rows = map.length,
     cols = map[0].length,
     cw = WIDTH / cols,
@@ -90,11 +162,16 @@ export function createGame(key) {
     segment(WIDTH, 0, WIDTH, HEIGHT),
   );
   // Merge continuous shared edges so long boundaries get one central gate.
-  function divider(x, y, vertical, count, step) {
+  function divider(x, y, vertical, count, step, a, b) {
     const length = count * step,
-      half = Math.min(54, length * 0.3);
+      half = daily ? Math.min(54, length * 0.3) : Math.min(73, length * 0.39);
     const part = (a, b) =>
       vertical ? segment(x, y + a, x, y + b) : segment(x + a, y, x + b, y);
+    // Pocket Change routes its three outer rooms through the Honey pocket.
+    if (level === 6 && a !== "2" && b !== "2") {
+      walls.push(part(0, length));
+      return;
+    }
     walls.push(part(0, length / 2 - half), part(length / 2 + half, length));
     gates.push({
       ...part(length / 2 - half, length / 2 + half),
@@ -112,7 +189,7 @@ export function createGame(key) {
       }
       let end = r + 1;
       while (end < rows && map[end][c - 1] === a && map[end][c] === b) end++;
-      divider(c * cw, r * ch, true, end - r, ch);
+      divider(c * cw, r * ch, true, end - r, ch, a, b);
       r = end;
     }
   for (let r = 1; r < rows; r++)
@@ -125,53 +202,49 @@ export function createGame(key) {
       }
       let end = c + 1;
       while (end < cols && map[r - 1][end] === a && map[r][end] === b) end++;
-      divider(c * cw, r * ch, false, end - c, cw);
+      divider(c * cw, r * ch, false, end - c, cw, a, b);
       c = end;
     }
   map.forEach((row, r) =>
     [...row].forEach((id, c) => cells[Number(id)].push([c * cw, r * ch])),
   );
   const radius = rooms < 3 ? 14 : rooms < 5 ? 10 : 8;
-  const balls = [];
-  for (let room = 0; room < rooms; room++)
-    for (let i = 0; i < perRoom; i++) {
-      const cell = cells[room][Math.floor(random() * cells[room].length)];
-      let x, y;
-      for (let attempt = 0; attempt < 100; attempt++) {
-        x = cell[0] + radius + 8 + random() * (cw - 2 * radius - 16);
-        y = cell[1] + radius + 8 + random() * (ch - 2 * radius - 16);
-        if (balls.every((b) => Math.hypot(x - b.x, y - b.y) > radius * 3.4))
-          break;
+  const balls =
+    !daily && level < lessons.length
+      ? lessons[level].map(([x, y, vx, vy, target]) => ({
+          x,
+          y,
+          vx,
+          vy,
+          target,
+        }))
+      : [];
+  if (!balls.length)
+    for (let room = 0; room < rooms; room++)
+      for (let i = 0; i < perRoom; i++) {
+        const cell = cells[room][Math.floor(random() * cells[room].length)];
+        let x, y;
+        for (let attempt = 0; attempt < 100; attempt++) {
+          x = cell[0] + radius + 8 + random() * (cw - 2 * radius - 16);
+          y = cell[1] + radius + 8 + random() * (ch - 2 * radius - 16);
+          if (balls.every((b) => Math.hypot(x - b.x, y - b.y) > radius * 3.4))
+            break;
+        }
+        const angle = (random() * 0.85 + 0.25) * [1, -1][i % 2],
+          speed = (1.45 + random() * 0.52) * (1 + level * 0.022);
+        const target = daily
+          ? i === 0
+            ? (room + 1) % rooms
+            : room
+          : (transfers[level - 4][i]?.[room] ?? room);
+        balls.push({
+          x,
+          y,
+          vx: Math.cos(angle) * speed * (room % 2 ? -1 : 1),
+          vy: Math.sin(angle) * speed,
+          target,
+        });
       }
-      const angle = (random() * 0.85 + 0.25) * [1, -1][i % 2],
-        speed = (1.45 + random() * 0.52) * (1 + level * 0.022);
-      const target =
-        i < (daily ? 1 : Math.ceil(perRoom / 2)) ? (room + 1) % rooms : room;
-      balls.push({
-        x,
-        y,
-        vx: Math.cos(angle) * speed * (room % 2 ? -1 : 1),
-        vy: Math.sin(angle) * speed,
-        target,
-      });
-    }
-  if (level === 0 && !daily) {
-    const positions = [
-      [101, 79],
-      [254, 205],
-      [295, 91],
-      [119, 233],
-      [498, 206],
-      [670, 82],
-      [501, 77],
-      [669, 241],
-    ];
-    balls.forEach((b, i) => {
-      [b.x, b.y] = positions[i];
-    });
-    Object.assign(balls[1], { vx: 1.65, vy: -0.54 });
-    Object.assign(balls[4], { vx: -1.6, vy: -0.55 });
-  }
   return {
     key,
     daily,
@@ -202,7 +275,9 @@ export function countSorted(g) {
   );
 }
 export function hasWon(g) {
-  return g.gates.every((gate) => !gate.open) && countSorted(g) === g.balls.length;
+  return (
+    g.gates.every((gate) => !gate.open) && countSorted(g) === g.balls.length
+  );
 }
 function nearest(b, s) {
   const dx = b.x - Math.max(s.x1, Math.min(s.x2, b.x)),

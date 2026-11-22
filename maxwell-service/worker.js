@@ -118,6 +118,7 @@ async function api(request, env, url) {
     .first();
   if (!row) fail("Run expired. Submit again.", 410);
   if (row.tick !== from) fail("Run position changed. Submit again.", 409);
+  if (!validBoard(row.board)) fail("This course has changed. Refresh and start a new run.", 410);
   const g = createGame(row.board);
   if (row.state) {
     const state = JSON.parse(row.state);

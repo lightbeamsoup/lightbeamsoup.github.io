@@ -12,20 +12,22 @@ The chamber view shows the entire arena, colored chamber labels, moving balls an
 
 | Level | Name | Chambers | Balls | What changes |
 | --- | --- | ---: | ---: | --- |
-| 1 | The Split | 2 | 8 | One central gate between equal rooms |
-| 2 | Short Circuit | 2 | 10 | A narrow room shortens the return trip |
-| 3 | The Elbow | 2 | 10 | Interlocking L-shaped rooms share several openings |
-| 4 | Three’s Company | 3 | 9 | The middle room becomes a passage |
-| 5 | Dogleg | 3 | 9 | Offset walls interrupt a straight route |
-| 6 | Cross Purposes | 4 | 12 | A four-room loop offers alternate paths |
-| 7 | Pocket Change | 4 | 12 | A small interior pocket meets larger rooms |
-| 8 | Switchboard | 5 | 15 | Four outer rooms surround a shared hub |
-| 9 | The Detour | 5 | 20 | Uneven rooms require longer transfers |
-| 10 | Grand Central | 6 | 24 | Six colors share interconnected junctions |
+| 1 | The Split | 2 | 4 | Open once for a pair of travelers, then close behind them |
+| 2 | Short Circuit | 2 | 6 | Two waves share a gate with a home ball in between |
+| 3 | The Elbow | 2 | 6 | Read the trail to pick the upper, lower, or sideways opening |
+| 4 | Three’s Company | 3 | 9 | Trade the outer colors through Mint while protecting the residents |
+| 5 | Dogleg | 3 | 9 | Send two colors beyond the middle room around a bend |
+| 6 | Cross Purposes | 4 | 12 | Choose either side of a loop for opposite-corner deliveries |
+| 7 | Pocket Change | 4 | 12 | Three outer rooms share the Honey pocket as their only interchange |
+| 8 | Switchboard | 5 | 15 | Mix transfers through the hub with shortcuts around its edge |
+| 9 | The Detour | 5 | 20 | Balls sharing a starting chamber need different exits |
+| 10 | Grand Central | 6 | 24 | Mix short deliveries with three-boundary trips across a six-room ladder |
+
+Run `node maxwell-service/playtest.js 12` for a repeatable timing and routing playtest. The player considers approaching balls and can click at most once per twelve simulation ticks (200 ms). The report shows the time, inputs, gates used, and longest gap between inputs. These are automated runs. The campaign tests also check a 400 ms input interval and recovery after a missed opening in the first three lessons.
 
 ## Saves and daily challenges
 
-A first-party cookie stores campaign completion, selected level, personal bests, sound preference, an anonymous player identifier and the last leaderboard name for one year. An unfinished run starts over on reload. Clearing cookies creates a new player identity. Finishing a level saves the personal best automatically. Posting a public time is optional. Earlier campaign completions carry forward. Personal and global time rankings compare finishes under the current closed-gate rule.
+A first-party cookie stores campaign completion, selected level, personal bests, sound preference, an anonymous player identifier and the last leaderboard name for one year. An unfinished run starts over on reload. Clearing cookies creates a new player identity. Finishing a level saves the personal best automatically. Posting a public time is optional. Earlier campaign completions carry forward. Personal and global time rankings compare finishes on the current course layout with all gates closed. The daily boards retain their original layouts and rankings.
 
 Ten Toggles uses the same UTC-date seed for everyone and permits ten successful gate changes, counting each open and close separately. The final gate closure counts toward the limit. The daily ranking is separate from every campaign ranking. Each board lists the fastest twenty players and keeps each player's best verified run. Time measures active simulation time and excludes pauses.
 

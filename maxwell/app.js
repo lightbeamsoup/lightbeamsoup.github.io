@@ -1,5 +1,6 @@
 import {
   levels,
+  campaignKey as keyFor,
   createGame,
   step,
   toggle,
@@ -8,7 +9,7 @@ import {
   formatTime,
   dayKey,
   HZ,
-} from "./engine.js?rules=sealed";
+} from "./engine.js?campaign=2";
 import { icon, icons, miniMap, drawBoard } from "./art.js";
 const $ = (id) => document.getElementById(id),
   modal = $("modal"),
@@ -16,8 +17,7 @@ const $ = (id) => document.getElementById(id),
 const API = ["localhost", "127.0.0.1"].includes(location.hostname)
   ? "http://127.0.0.1:8787"
   : "https://maxwell-scores.joshcodes-ai.workers.dev";
-const cookieName = "maxwell_lab_v1",
-  keyFor = (i) => "level-" + (i + 1);
+const cookieName = "maxwell_lab_v1";
 let saved = {};
 try {
   saved =
@@ -34,7 +34,10 @@ if (typeof saved !== "object" || Array.isArray(saved)) saved = {};
 // Original finishes still count toward campaign progress. Only compare times
 // earned under the current rule with one another.
 if (!saved.sealedBest || typeof saved.sealedBest !== "object") saved.sealedBest = {};
-const clearedLevel = (key) => Number.isFinite(saved.sealedBest[key]) || Number.isFinite(saved.best?.[key]);
+const clearedLevel = (key) => {
+  const original = key.replace(/-v2$/, "");
+  return Number.isFinite(saved.sealedBest[key]) || Number.isFinite(saved.sealedBest[original]) || Number.isFinite(saved.best?.[original]);
+};
 if (!/^[a-f\d-]{36}$/i.test(saved.player || ""))
   saved.player = crypto.randomUUID();
 let cookieOK = true;
@@ -66,16 +69,16 @@ let game,
   ticket = 0,
   tipTimer;
 const levelNotes = [
-  "Click Maxwell to toggle the gate. Sort the balls by color, then close the gate.",
-  "The smaller room sends balls back sooner. Keep an eye on the return trip.",
-  "Follow the corner wall. Each shared opening has its own gatekeeper.",
-  "The middle chamber doubles as a passage for the two outer colors.",
-  "Let a ball finish its turn before you open the next gate.",
-  "Try routing balls around the loop in one direction.",
-  "Give the smallest pocket a clear exit before sending more balls in.",
-  "Open a route through the middle, then close it behind the right ball.",
-  "Look one room ahead. A short detour can save you a long wait.",
-  "Take it one junction at a time. Watch the colors already at home.",
+  "Watch the two travelers near the middle. Open for both, then close once their tails clear the doorway.",
+  "A second pair is on its way. Close between pairs to keep the home colors inside.",
+  "Watch where each trail points. The elbow has an upper, a lower and a sideways opening.",
+  "Coral and Honey need to trade ends. Pass them through Mint and seal the gate behind each crossing.",
+  "A ball headed past Mint needs a second gate. Follow it around the bend before admitting the next color.",
+  "Opposite corners have two routes. Pick the side with a clear exit and keep the other route closed.",
+  "The outer rooms connect through the Honey pocket. Choose the exit for the ball already inside.",
+  "Two balls leaving the same room may need different exits. Use the hub or go around its edge.",
+  "Check the next room before opening a shortcut. An arriving ball can share a gate with one leaving.",
+  "Several colors must cross three boundaries. Stage one in the middle while you line up its next gate.",
 ];
 const notes = () =>
   game.daily
