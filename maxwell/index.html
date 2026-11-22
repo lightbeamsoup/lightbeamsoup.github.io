@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#17141f" />
     <title>Maxwell · Entropy Arcade</title>
     <link rel="icon" href="assets/maxwell.png" />
-    <link rel="stylesheet" href="style.css?campaign=5" />
+    <link rel="stylesheet" href="style.css?intro=1" />
   </head>
   <body>
     <header>
@@ -36,7 +36,8 @@
           ><button
             class="iconbtn"
             id="help"
-            title="How to play"
+            title="How to play (?)"
+            aria-keyshortcuts="?"
             aria-label="How to play"
           >
             <i data-icon="help"></i>
@@ -144,6 +145,31 @@
       </button>
       <div id="modalBody"></div>
     </dialog>
-    <script type="module" src="app.js?campaign=5"></script>
+    <dialog id="guide" aria-labelledby="guideTitle">
+      <div class="guide-layout">
+        <div class="studio-cover">
+          <div class="game-wordmark">maxwell<span>.</span></div>
+          <img class="studio-heads" width="640" height="320" src="assets/three-guys-one-beard.webp"
+            alt="Three cartoon heads: one with bushy hair, glasses and a beard, one balding with glasses, and one with swept hair." />
+          <div class="studio-credit"><small>A game by</small><strong>Three Guys,<br /> One Beard</strong></div>
+        </div>
+        <form method="dialog" class="guide-body">
+          <h2 id="guideTitle">How to play</h2>
+          <p class="guide-lede">You’re Maxwell’s demon. Get each ball into the chamber that matches its color.</p>
+          <ul class="guide-rules">
+            <li><i data-icon="gate"></i><div><strong>Work the gates</strong>Tap a demon to open its gate. Tap again once the doorway is clear to close it.</div></li>
+            <li><i data-icon="bolt"></i><div><strong>Flick a ball</strong>Drag and release to send it in a new direction. You get one flick every 10 seconds of play.</div></li>
+            <li><i data-icon="cup"></i><div><strong>Seal the chambers</strong>When every ball is home, close every gate to stop the clock.</div></li>
+          </ul>
+          <details class="guide-keys"><summary>Keyboard controls</summary>
+            <p><kbd>1–9</kbd> toggle gates. Or <kbd>Tab</kbd> to a gate and press <kbd>Enter</kbd>. Tab to a ball and use an arrow key to flick. Use the Pause button or press <kbd>Space</kbd> on the board.</p>
+          </details>
+          <label class="guide-preference"><input type="checkbox" id="skipGuide" /> Never show this on startup again</label>
+          <button class="primary" id="enterLab"><i data-icon="play"></i><span>Enter the lab</span></button>
+          <p class="guide-hint">Press <kbd>?</kbd> or tap Help to reopen this guide.</p>
+        </form>
+      </div>
+    </dialog>
+    <script type="module" src="app.js?intro=1"></script>
   </body>
 </html>

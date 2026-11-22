@@ -14,6 +14,7 @@ import {
 import { icon, icons, miniMap, drawBoard } from "./art.js?campaign=5";
 const $ = (id) => document.getElementById(id),
   modal = $("modal"),
+  guide = $("guide"),
   body = $("modalBody");
 const API = ["localhost", "127.0.0.1"].includes(location.hostname)
   ? "http://127.0.0.1:8787"
@@ -279,7 +280,7 @@ function start() {
   chirp(330);
 }
 function canFlick() {
-  return !modal.open && (mode === "running" || mode === "ready") && game.tick >= game.flickReadyAt;
+  return !modal.open && !guide.open && (mode === "running" || mode === "ready") && game.tick >= game.flickReadyAt;
 }
 function flickBall(id, heading) {
   if (!canFlick() || !flick(game, id, heading)) return false;
@@ -291,7 +292,7 @@ function flickBall(id, heading) {
   return true;
 }
 function gateClick(i) {
-  if (modal.open || ["won", "failed"].includes(mode)) return;
+  if (modal.open || guide.open || ["won", "failed"].includes(mode)) return;
   if (mode === "paused") {
     tip("Resume the timer to use a gate.");
     return;
@@ -509,11 +510,17 @@ $("audio").onclick = () => {
   audioButton();
   chirp(490);
 };
-$("help").onclick = () => {
+function openGuide() {
   pause();
-  show(
-    '<img class="modal-sprite" src="assets/maxwell.png" alt=""><div class="eyebrow">FIELD GUIDE</div><h2>How to play</h2><p>Get every ball into the chamber that matches its color. Balls change direction on impact and keep their own speed. You control the gates and have one ball flick.</p><ol><li>Start the level and watch the balls approach.</li><li>Click a demon or the striped gate to let balls through. Click again to close it once the doorway is clear.</li><li>Drag a ball and release in the direction you want it to go. A flick preserves its speed and recharges after ten seconds of play. You can also Tab to a ball and press an arrow key.</li><li>The timer stops when every ball is home and every gate is closed. Post your time to compete worldwide.</li></ol><p><kbd>Space</kbd> pauses or resumes. Tab to a gate and press Enter to toggle it. Daily challenges reset at midnight UTC.</p>',
-  );
+  art.cancelAim();
+  $("skipGuide").checked = saved.skipGuide === true;
+  $("enterLab").querySelector("span").textContent = mode === "ready" ? "Enter the lab" : "Back to the board";
+  guide.showModal();
+}
+$("help").onclick = openGuide;
+$("skipGuide").onchange = () => {
+  saved.skipGuide = $("skipGuide").checked;
+  persist();
 };
 $("dismiss").onclick = endDialog;
 modal.addEventListener("close", () => {
@@ -523,7 +530,13 @@ document.addEventListener("visibilitychange", () => {
   if (document.hidden) pause();
 });
 document.addEventListener("keydown", (e) => {
-  if (modal.open || e.repeat) return;
+  if (modal.open || guide.open || e.repeat || e.defaultPrevented) return;
+  if (e.key === "?" && !e.altKey && !e.ctrlKey && !e.metaKey &&
+      !e.target.closest("input, textarea, select, [contenteditable]")) {
+    e.preventDefault();
+    openGuide();
+    return;
+  }
   if (
     e.code === "Space" &&
     (document.activeElement === document.body ||
@@ -545,4 +558,5 @@ load(
       : 0,
   ),
 );
+if (saved.skipGuide !== true) openGuide();
 requestAnimationFrame(advance);
