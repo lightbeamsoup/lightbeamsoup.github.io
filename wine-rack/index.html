@@ -1,28 +1,22 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#f7f4eb"><meta name="referrer" content="no-referrer">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
   <title>Wine Rack · joshcodes</title>
-  <link rel="stylesheet" href="https://wine-rack.joshcodes-ai.workers.dev/style.css">
-  <script defer src="https://accounts.google.com/gsi/client"></script>
-  <script type="module" src="https://wine-rack.joshcodes-ai.workers.dev/app.js"></script>
+  <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <header><a href="https://www.joshcodes.ai/">joshcodes</a><span class="slash">/</span><span>Wine Rack</span><button id="account" hidden>Sign out</button></header>
-  <main>
-    <section id="welcome">
-      <div class="intro"><p class="kicker">Personal collection</p><h1>The wine<br><i>rack.</i></h1><p class="lead">Open your cellar to explore bottles by winery, vintage, and where you keep them.</p><button class="primary" id="signin">Continue with Google</button><p class="message" id="login-message" role="status"></p></div>
-      <div class="still" aria-hidden="true"><div class="arch"><div class="group" id="still-life"></div></div></div>
-    </section>
-    <section id="collection" hidden>
-      <div class="title-row"><div><p class="kicker">Personal collection</p><h1>Wine <i>rack.</i></h1><p id="summary"></p></div><button id="ask" class="primary">Ask Codex</button></div>
-      <div class="tools"><label>Find a wine<input type="search" id="search" placeholder="Winery, wine, vintage…"></label><div id="filters"></div><button id="clear">Reset</button></div>
-      <div class="rack-meta"><span id="result" role="status"></span><button id="refresh">Refresh</button></div>
-      <p id="update" role="status"></p><div id="rack"></div>
-    </section>
+  <main class="container">
+    <nav aria-label="Site"><a href="/">joshcodes</a></nav>
+    <h1>Wine Rack</h1>
+    <p>Browse the household wine collection, recent purchases, and tasting notes.</p>
+    <p>The cellar runs at <strong style="overflow-wrap:anywhere">wine-rack.joshcodes-ai.workers.dev</strong> and uses its own shared cellar password.</p>
+    <nav aria-label="Wine Rack">
+      <a href="https://wine-rack.joshcodes-ai.workers.dev/">Open wine rack</a>
+      <a href="https://wine-rack.joshcodes-ai.workers.dev/#history">View history</a>
+    </nav>
   </main>
-  <footer><span>Wine Rack</span><span>joshcodes</span></footer>
-  <dialog id="details"><button class="close" aria-label="Close wine details">×</button><div id="detail-content"></div></dialog>
-  <dialog id="chat"><button class="close" aria-label="Close Codex">×</button><p class="kicker">Wine Rack</p><h2>Ask <i>Codex.</i></h2><p id="chat-context"></p><div id="pair-controls"><button id="pair">Connect local Codex</button><p>Run <code>npm run companion</code> in the Wine Rack folder on this computer, then connect using your ChatGPT sign-in.</p></div><div id="conversation" role="log" aria-live="polite"></div><form id="question-form"><label for="question">Question about your cellar</label><textarea id="question" rows="3" maxlength="2000" required placeholder="Which wines are in their drinking window?"></textarea><button class="primary" id="send">Ask Codex</button></form><p id="chat-status" role="status"></p></dialog>
-</body></html>
+</body>
+</html>
