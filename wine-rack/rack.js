@@ -1,6 +1,7 @@
 import {setupChat} from './chat.js';
 import {setupStock} from './stock-controls.js';
 import {setupHistory} from './history-view.js';
+import {bottlePhotoUrl,findBottlePhoto} from './bottle-photos.js';
 
 const $ = id => document.getElementById(id);
 const hostedOnPages = ['https://www.joshcodes.ai','https://joshcodes.ai'].includes(location.origin);
@@ -79,7 +80,22 @@ function renderRack() {
     heading.append(el('small',count(sum(items),'bottle')));
     for (const w of items) {
       const slot=el('button',null,'slot'), stage=el('span',null,'stage');
-      stage.append(bottle(w.producer || 'Unknown winery', w.year || '—',tone(w)));
+      const illustration = bottle(w.producer || 'Unknown winery', w.year || '—',tone(w));
+      stage.append(illustration);
+      const photo = findBottlePhoto(w);
+      if (photo) {
+        const image = el('img',null,'bottle-photo');
+        image.alt = '';
+        image.loading = 'lazy';
+        image.decoding = 'async';
+        image.addEventListener('load',()=>{
+          illustration.hidden=true;
+          image.classList.add('loaded');
+        },{once:true});
+        image.addEventListener('error',()=>image.remove(),{once:true});
+        image.src = bottlePhotoUrl(photo);
+        stage.append(image);
+      }
       slot.setAttribute('aria-label',[w.producer,w.name,w.year,count(w.quantity,'bottle')].filter(Boolean).join(', '));
       slot.append(stage,el('strong',w.name || w.producer || w.id),el('span',[w.type,w.year,count(w.quantity,'bottle')].filter(Boolean).join(' · '),'caption'));
       slot.onclick=()=>showWine(w);
@@ -92,6 +108,18 @@ function renderRack() {
 function showWine(w) {
   const content=$('detail-content'),facts=el('dl',null,'facts');
   content.replaceChildren(el('p',w.producer || 'Unknown winery','kicker'),el('h2',[w.name,w.year].filter(Boolean).join(' ') || w.id),el('p',[w.type,w.grape,w.appellation,w.region,w.country].filter(Boolean).join(' · ')));
+  const photo = findBottlePhoto(w);
+  if (photo) {
+    const credit = el('p',null,'photo-credit');
+    const vintage = photo.vintage && photo.vintage !== String(w.year ?? '').trim().toUpperCase()
+      ? ` (${photo.vintage === 'NV' ? 'non-vintage release' : photo.vintage + ' vintage'})` : '';
+    const source = el('a',`Bottle photo${vintage}`);
+    source.href = photo.source;
+    source.target = '_blank';
+    source.rel = 'noopener noreferrer';
+    credit.append(source);
+    content.append(credit);
+  }
   const fields={'On hand':w.quantity,'Pending pickup':w.pending,'Storage':[w.location,w.shelf].filter(Boolean).join(' · '),'Bottle size':w.size,'Average purchase price':w.price || 'Unrecorded','Acquisition cost':w.cost || 'Unrecorded','Value per bottle':w.value,'Drink from':w.from,'Peak year':w.peak,'Drink by':w.until,'Personal rating':w.rating,'Buy again':w.rebuy};
   for (const [label,value] of Object.entries(fields)) if (value || value===0) {
     const pair=el('div');pair.append(el('dt',label,'field-name'),el('dd',value));facts.append(pair);

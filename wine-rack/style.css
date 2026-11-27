@@ -75,3 +75,16 @@ dialog{border:1px solid var(--line);border-radius:10px;padding:2.2rem;width:min(
   .history-day h2 { padding-bottom:.25rem; }
   .entry-fields { margin-inline:.5rem; grid-template-columns:minmax(5rem,36%) minmax(0,1fr); }
 }
+
+.stage { position: relative; }
+.stage .bottle-photo {
+  position: absolute;
+  bottom: 0;
+  width: 90%;
+  height: 95%;
+  object-fit: contain;
+  object-position: center bottom;
+  opacity: 0;
+}
+.stage .bottle-photo.loaded { opacity: 1; }
+.photo-credit { margin-top: .4rem; color: var(--muted); font-size: .85rem; }
